@@ -8,6 +8,20 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Bundled data resources
+
+Reproducible checks: `python3 -u test/resources/check.py` and
+`tsc --noEmit --strict --skipLibCheck --lib ES2022,DOM test/resources/types.ts`.
+
+macOS arm64 verified 2026-10-11: real dev, bare executable and relocated
+.app backend/frontend reads, URL wrapper, binary bytes, null without resources,
+rebuild cleanup, local publish archive and ad-hoc signature verification.
+
+- [ ] Windows: actual dev/portable backend + frontend RPC, relocation,
+  binary bytes, path rejection/symlinks, null without resources, rebuild
+  cleanup and local publish archive. See `test/resources/README.md`.
+- [ ] Linux: the same checks on a real graphical session.
+
 ## How to run the app-surface checks
 
 ```sh

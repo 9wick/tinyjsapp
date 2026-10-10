@@ -411,6 +411,38 @@
   <i># remove the install dir and the PATH symlink (--yes: no prompt)</i></pre>
   </section>
 
+  <section id="resources">
+    <h2>Bundled data resources</h2>
+    <pre>{ "name": "resource-demo", "resources": ["assets/dictionary.json", "assets/fonts/"] }</pre>
+    <pre><i>// Backend: app.paths is an object.</i>
+export async function init(app) {
+  const root = app.paths.resources;
+  if (root === null) return;
+  const bytes = await tjs.readFile(root + '/assets/dictionary.json');
+  console.log(new TextDecoder().decode(bytes));
+}
+<i>// Frontend: the existing RPC returns the same root.</i>
+const paths = await tiny.app.paths();
+console.log(paths.resources); <i>// string | null</i></pre>
+    <p>Explicit files and directories are relative to the project root, including
+    in platform overrides. Dev validates and reads them in place: the root is the
+    absolute project directory. Builds preserve paths and binary bytes recursively
+    under <code>Contents/Resources/app/resources/</code> in a macOS .app, or
+    <code>resources/</code> beside a bare/Windows/Linux executable. Ship the whole
+    folder; these files stay outside TPK. Paths work after moving the build or
+    launching from another directory. Local publish archives include them.</p>
+    <p>Absent <code>resources</code> or <code>[]</code> means no extra copy and a
+    <code>null</code> root. Rebuilds remove excluded resources. Duplicate and
+    overlapping paths are normalized and copied once. Invalid config, missing
+    paths, absolute/drive/UNC paths, parent traversal, the project root, reserved
+    root directories (<code>.build</code>, <code>dist</code>, <code>.git</code>,
+    <code>node_modules</code>), and symlinks (also parents/nested entries) fail.
+    Windows components ending in a dot or space are also rejected.</p>
+    <p>Data only: no globs, destination mappings, sidecar execution/signing or
+    macOS Resources-root/Helpbook integration. <code>readAccess</code> and page
+    privileges stay as configured; expose data through your backend API.</p>
+  </section>
+
   <section id="config">
     <h2>tinyjs.json <span class="tag">every key is optional except name</span></h2>
     <div class="vtabs" role="tablist">

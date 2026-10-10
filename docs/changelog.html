@@ -171,6 +171,19 @@
   <section>
 
     <div class="rel">
+      <h2>Unreleased</h2>
+      <ul>
+        <li><b>Bundled data resources:</b> explicit project-relative files/directories
+        in <code>tinyjs.json</code> <code>resources</code>, with an absolute root
+        from backend <code>app.paths.resources</code> and frontend
+        <code>(await tiny.app.paths()).resources</code>. Dev reads in place;
+        builds preserve paths beside the executable or inside the .app, and
+        local publish archives carry them. Absent/empty resources returns null.
+        Unsafe paths and symlinks are rejected; no sidecar signing/execution.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.50.1 <span class="date">2026-10-07</span></h2>
       <p>Security fix.</p>
       <ul>

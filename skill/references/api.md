@@ -373,8 +373,10 @@ audio.src = tiny.fileURL(path);  // file:// URL for a disk path — ALWAYS this,
 // file:// media loads only under the frontend dir by default — widen with
 // "readAccess": true | "/path" in tinyjs.json.
 await tiny.app.paths();   // { home, data, cache, logs, temp, downloads,
-                          //   desktop, documents } — per-OS correct; backend
+                          //   desktop, documents, resources } — per-OS correct; backend
                           //   twin app.paths is a plain object (no await)
+// resources: absolute project root in dev, bundled data root in builds,
+// null without tinyjs.json resources. Backend: app.paths.resources.
 await tiny.app.shell.open('https://x.com');  // URL or path; resolves true/rejects
 await tiny.app.shell.reveal(path); await tiny.app.shell.trash(path);
 await tiny.app.thumbnail(path, size?);  // png for ANY path (macOS/Windows:

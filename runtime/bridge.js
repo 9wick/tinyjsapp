@@ -1157,7 +1157,7 @@ function makeStore(appId) {
   };
 }
 
-export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
+export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null, resourcesPath = null }) {
   const exeDir = dirOf(tjs.exePath) + '/';
   const xdgDirs = IS_LINUX ? await linuxUserDirs() : null;
 
@@ -2246,6 +2246,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     paths: IS_WIN
       ? {
           home: tjs.homeDir,
+          resources: resourcesPath,
           data: appDataDir(id),
           cache: (tjs.env.LOCALAPPDATA || tjs.homeDir + '/AppData/Local') + '/' + (id || 'tinyjs-app') + '/Cache',
           logs: (tjs.env.LOCALAPPDATA || tjs.homeDir + '/AppData/Local') + '/' + (id || 'tinyjs-app') + '/Logs',
@@ -2257,6 +2258,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       : IS_LINUX
       ? {
           home: tjs.homeDir,
+          resources: resourcesPath,
           data: appDataDir(id),
           cache: (tjs.env.XDG_CACHE_HOME || tjs.homeDir + '/.cache') + '/' + (id || 'tinyjs-app'),
           logs: (tjs.env.XDG_STATE_HOME || tjs.homeDir + '/.local/state') + '/' + (id || 'tinyjs-app'),
@@ -2267,6 +2269,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         }
       : {
           home: tjs.homeDir,
+          resources: resourcesPath,
           data: tjs.homeDir + '/Library/Application Support/' + (id || 'tinyjs-app'),
           cache: tjs.homeDir + '/Library/Caches/' + (id || 'tinyjs-app'),
           logs: tjs.homeDir + '/Library/Logs/' + (id || 'tinyjs-app'),

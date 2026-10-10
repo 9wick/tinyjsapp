@@ -53,6 +53,67 @@ async function copyTree(src, dest) {
   }
 }
 
+// Explicit project-relative data resources. Reject symlinks at every parent
+// and below selected directories, even when they point back into the project.
+async function validateResources(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) fail('tinyjs.json "resources" must be an array of relative paths (got ' + JSON.stringify(value) + ')');
+  const paths = [];
+  for (const raw of value) {
+    const bad = (why) => fail('tinyjs.json resource ' + JSON.stringify(raw) + ': ' + why);
+    if (typeof raw !== 'string' || !raw || raw.includes('\0')) bad('expected a non-empty relative path');
+    const p = raw.replace(/\\/g, '/');
+    if (p.startsWith('/') || p.includes(':')) bad('absolute, drive and UNC paths are not allowed');
+    const parts = p.split('/').filter((s) => s && s !== '.');
+    if (parts.includes('..')) bad('parent traversal is not allowed');
+    if (IS_WIN && parts.some((s) => /[. ]$/.test(s))) bad('Windows path components cannot end in a dot or space');
+    if (!parts.length) bad('the project root is not a resource');
+    if (/^(\.build|dist|\.git|node_modules)$/i.test(parts[0])) bad('generated and reserved root directories are not resources');
+    const rel = parts.join('/');
+    if (!paths.includes(rel)) paths.push(rel);
+  }
+  // A selected directory already includes its children. Keep the first
+  // occurrence of each root, independent of the order of overlapping entries.
+  const roots = paths.filter((p) => !paths.some((q) => p !== q && p.startsWith(q + '/')));
+  const root = await tjs.realPath('.');
+  async function check(rel, selected, recurse) {
+    const bad = (why) => fail('tinyjs.json resource ' + JSON.stringify(selected) + ' (' + rel + '): ' + why);
+    let st;
+    try { st = await tjs.lstat(root + '/' + rel); }
+    catch { bad('not found or unreadable'); }
+    if (st.isSymbolicLink) bad('symlinks are not supported');
+    if (!st.isDirectory && !st.isFile) bad('expected a regular file or directory');
+    if (recurse && st.isDirectory) {
+      try {
+        const iter = await tjs.readDir(root + '/' + rel);
+        for await (const e of iter) await check(rel + '/' + e.name, selected, true);
+      } catch (e) { bad('could not read directory: ' + String(e)); }
+    }
+  }
+  // Validate ALL entries before dropping overlaps: e.g. file.txt/child must
+  // still fail even if file.txt was also explicitly selected.
+  for (const p of paths) {
+    const parts = p.split('/');
+    for (let i = 1; i < parts.length; i++) await check(parts.slice(0, i).join('/'), p, false);
+    await check(p, p, true);
+  }
+  return roots;
+}
+
+async function stageResources(paths) {
+  // Recheck after any frontend build hook, before copying its output.
+  for (const p of await validateResources(paths)) {
+    const dest = '.build/resources/' + p;
+    try {
+      if ((await tjs.lstat(p)).isDirectory) await copyTree(p, dest);
+      else {
+        await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true });
+        await copyFile(p, dest);
+      }
+    } catch (e) { fail('tinyjs.json resource ' + JSON.stringify(p) + ': could not copy: ' + String(e)); }
+  }
+}
+
 // Portable rm -rf (replaces shelling out, which Windows has no equivalent for).
 async function rmTree(p) {
   try {
@@ -417,6 +478,7 @@ async function loadConfig() {
   if (cfg.activation && !['regular', 'accessory'].includes(cfg.activation)) {
     fail('tinyjs.json "activation" must be "regular" or "accessory"');
   }
+  cfg.resources = await validateResources(cfg.resources);
   await checkMinVersion(cfg);
   return { title: cfg.name, size: '960x640', id: 'com.example.' + cfg.name, ...cfg };
 }
@@ -580,10 +642,25 @@ try {
   if (/^\\/[A-Za-z]:\\//.test(FRONTEND)) FRONTEND = FRONTEND.slice(1); // windows /C:/…
 } catch { FRONTEND = tjs.exePath.replace(/[\\\\/][^\\\\/]*$/, '') + '/frontend'; }`;
 
+  // Resources stay outside the TPK, whose file URLs point at a temporary
+  // extraction directory. Use the existing .app/portable bundle detection,
+  // falling back to the executable's directory for a bare macOS binary.
+  if (!dev) await stageResources(cfg.resources);
+  const resourceResolver = !cfg.resources.length
+    ? 'const RESOURCES = null;'
+    : dev
+    ? `const RESOURCES = ${JSON.stringify(await tjs.realPath('.'))};`
+    : `import { bundlePath } from './update.js';
+const RESOURCE_BUNDLE = await bundlePath();
+const RESOURCES = RESOURCE_BUNDLE
+  ? RESOURCE_BUNDLE + ${JSON.stringify(IS_WIN || IS_LINUX ? '/resources' : '/Contents/Resources/app/resources')}
+  : tjs.exePath.replace(/[\\\\/][^\\\\/]*$/, '') + '/resources';`;
+
   let entry = `import { createApp } from './bridge.js';
 import * as appMod from './src/${entryName}';
 
 ${frontendResolver}
+${resourceResolver}
 
 const app = await createApp({
   htmlPath: ${devUrl ? 'FRONTEND' : "FRONTEND + '/index.html'"},
@@ -592,6 +669,7 @@ const app = await createApp({
   version: ${JSON.stringify(cfg.version || '0.0.0')},
   tinyjsVersion: ${JSON.stringify(await toolVersion())},
   id: ${JSON.stringify(cfg.id)},
+  resourcesPath: RESOURCES,
   api: appMod.api ?? {},
   onMenu: appMod.onMenu,
   onTray: appMod.onTray,
@@ -1808,6 +1886,7 @@ async function cmdBuild() {
   }
   await run([compiler, 'app', 'compile', cwd + '/dist/' + cfg.name], { cwd: cwd + '/.build' });
   if (compiler !== tjs.exePath) await tjs.remove(compiler).catch(() => {});
+  if (cfg.resources.length) await copyTree('.build/resources', 'dist/resources');
 
   if (IS_WIN) {
     // Windows build: a portable dist/ folder — just <name>.exe (compiled
@@ -1886,6 +1965,7 @@ async function cmdBuild() {
   await run(['cp', await macLauncher(), APP + '/Contents/MacOS/' + cfg.name]);
   await run(['cp', await macTjs(), APP + '/Contents/MacOS/tjs']);
   await run(['cp', '-R', '.build/app', APP + '/Contents/Resources/app']);
+  if (cfg.resources.length) await copyTree('.build/resources', APP + '/Contents/Resources/app/resources');
   // macOS convention: Resources/Credits.html feeds the standard About panel —
   // the launcher defers to it when present instead of the tinyjs credit (#8).
   if (await exists('Credits.html')) {

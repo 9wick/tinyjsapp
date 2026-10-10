@@ -4,6 +4,15 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Bundled data resources:** explicit project-relative files/directories in
+  `tinyjs.json` `resources`, with the absolute root available as backend
+  `app.paths.resources` and frontend `(await tiny.app.paths()).resources`.
+  Dev reads in place; builds preserve paths beside the executable or inside
+  the .app, and local publish archives carry them. No resources returns null.
+  Unsafe paths and symlinks are rejected; no sidecar signing/execution.
+
 ## 0.50.1 — 2026-10-07
 
 Security fix.
