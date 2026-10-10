@@ -34,3 +34,29 @@ then removes only its own temporary files and processes. It checks:
 Windows/Linux portable builds and archives use the same script, but must be
 run on those OSes to claim verification. The test doesn't notarize, sign
 third-party executables, install an update, or build other CPU architectures.
+
+## Verified runs — 2026-10-11
+
+- macOS 27.0 arm64: `python3 -u test/resources/check.py` — PASS, including
+  actual webview RPC in dev, compiled bare executables and relocated .app
+  bundles; `codesign --verify --deep --strict` passed. The nullable type
+  check above also passed with TypeScript 7.0.2.
+- Linux x86_64: Ubuntu 22.04.5 in an isolated Docker container, txiki.js
+  v26.6.0, GTK 3.24.33 and WebKitGTK 2.50.4. `./setup.sh` compiled the native
+  launcher. As an unprivileged user, after installing Xvfb, xauth and
+  dbus-x11 alongside the normal setup build dependencies:
+
+  ```sh
+  xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- python3 -u test/resources/check.py
+  ```
+
+  PASS, including actual WebKitGTK/frontend RPC in dev and compiled portable
+  executables, relocation, binary bytes, all path/symlink checks, platform
+  overrides, repeated-build cleanup, publish tar.gz contents, URL wrappers
+  and null without resources. Xvfb runs the real launcher/webview on virtual
+  X11; no manual visual inspection or Wayland run was performed. The nullable
+  type check also passed on the Debian 12 Linux host with TypeScript 7.0.2.
+
+Windows, Linux arm64, Wayland, macOS Intel/universal, notarization and actual
+update installation remain untested. These runs exercised the implementation
+at commit `bc51a85`; subsequent changes only document verification results.
