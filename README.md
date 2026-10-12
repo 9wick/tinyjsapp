@@ -192,7 +192,7 @@ myapp/
                          #   Ctrl+F find, Ctrl+R reload…; default suppressed, Windows only),
                          #   activation? ("accessory" = menu-bar agent: no Dock, starts hidden),
                          #   mainWindow? (false = no main window/WebView at all — tray agents;
-                         #   macOS only so far, elsewhere a hidden main window),
+                         #   macOS + Linux, on Windows a hidden main window),
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
   icon.png                # 1024×1024 app icon (template ships a default)
@@ -1124,7 +1124,8 @@ back into a regular one.
 or WebView. `"activation": "accessory"` only hides the main window, so WebKit
 still runs; with this flag there is no `main` window at all, and WebKit's
 processes don't start until you open a window. On macOS that took a tray
-agent's idle footprint from ~65 MiB to ~17 MiB. Combine the two flags for an
+agent's idle footprint from ~65 MiB to ~17 MiB; on Linux, from ~330 MiB to
+~110 MiB (launcher plus WebKit processes). Combine the two flags for an
 agent with a menu-bar icon and no Dock icon:
 
 ```json
@@ -1157,7 +1158,10 @@ Main-window operations don't create a window — use `app.openWindow` and
 frontend only if that directory exists. `"url"` can't be combined with
 `"mainWindow": false`, because there is no main window to load it into.
 
-**macOS only so far.** Windows and Linux accept the flag but keep the main
+On Linux, which has no app-level hide, `app.hide()` hides every visible
+named window and `app.show()` brings exactly those back.
+
+**macOS and Linux so far.** Windows accepts the flag but keeps the main
 window, hidden, as `"activation": "accessory"` does: the same tinyjs.json
 works, `app.windows()` starts as `["main"]`, and you don't get the memory
 saving. The CLI prints a notice there.

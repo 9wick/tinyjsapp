@@ -1,6 +1,7 @@
 # Windowless tray lifecycle (`"mainWindow": false`)
 
-Requires a logged-in macOS GUI session and this checkout's rebuilt launcher:
+Requires a logged-in macOS or Linux GUI session and this checkout's rebuilt
+launcher (`tinyjs dev` rebuilds it on Linux by itself):
 
 ```sh
 ./setup.sh
@@ -49,10 +50,15 @@ A regular app without the flag must still report `["main"]` and load its
 initial page. A non-boolean `mainWindow` must fail, and so must
 `"mainWindow": false` together with `"url"`.
 
-## Windows / Linux
+Linux packaged path: `../../tinyjs build`, then
+`TINYJS_WINDOWLESS_TEST=1 ./dist/windowless-tray-test`. The tray rectangle
+prints `null` there (an AppIndicator has no readable geometry). Before the
+first open, `pgrep -P <launcher pid>` must show no WebKit processes.
+
+## Windows
 
 Not implemented yet: there the main window still exists, hidden (as with
 `"activation": "accessory"`), and the CLI prints a notice. The same
 timed run should therefore print `BOOT ["main"]` (not `[]`), still show the
 tray, open/close the editor twice and quit — no `index.html` needed, the
-hidden main window gets a blank page. The memory saving is macOS-only.
+hidden main window gets a blank page. The memory saving is macOS/Linux-only.

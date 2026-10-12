@@ -1160,11 +1160,11 @@ function makeStore(appId) {
 export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, mainWindow = true, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
   if (typeof mainWindow !== 'boolean') throw new Error('mainWindow must be a boolean');
   if (!mainWindow && url) throw new Error('`url` needs a main window to load into — drop mainWindow: false');
-  // mainWindow: false — macOS starts with no main window or WebView at all
-  // (tray agents skip WebKit's processes until a named window opens).
-  // Windows/Linux don't do that yet: they keep the main window, hidden, the
-  // same as accessory activation, so one tinyjs.json runs everywhere.
-  const windowless = !mainWindow && !IS_WIN && !IS_LINUX;
+  // mainWindow: false — macOS and Linux start with no main window or WebView
+  // at all (tray agents skip WebKit's processes until a named window opens).
+  // Windows doesn't do that yet: it keeps the main window, hidden, the same
+  // as accessory activation, so one tinyjs.json runs everywhere.
+  const windowless = !mainWindow && !IS_WIN;
   if (!mainWindow && !windowless) activation = 'accessory';
   const exeDir = dirOf(tjs.exePath) + '/';
   const xdgDirs = IS_LINUX ? await linuxUserDirs() : null;

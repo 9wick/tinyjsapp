@@ -160,11 +160,13 @@ Two options:
   isn't composited, but WebKit still runs, at ~50 MiB on macOS.
 - `{ "mainWindow": false, "activation": "accessory" }`: there's no main
   window or WebView at all; WebKit starts only when `app.openWindow` opens a
-  named window. Idle cost on macOS is ~17 MiB instead of ~65 MiB.
+  named window. Idle cost on macOS is ~17 MiB instead of ~65 MiB (Linux:
+  ~110 MiB instead of ~330 MiB).
   `app.windows()` starts as `[]`, and no `index.html` is needed. Anything
   that needs a page, like the Web Audio sampler, only works while a named
-  window is open. Not combinable with `"url"`. macOS only for now: Windows
-  and Linux fall back to the hidden main window.
+  window is open (Linux's sampler is native, so it doesn't). Not combinable
+  with `"url"`. macOS and Linux only for now: Windows falls back to the
+  hidden main window.
 
 ## Self-driving test page (headless-ish verification)
 

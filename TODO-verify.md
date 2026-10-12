@@ -3215,5 +3215,35 @@ blank page). Fixture + steps: `test/windowless-tray/README.md`.
 - [ ] **Real Intel Mac**: nice to have; Rosetta covers the x86_64 code path.
 - [ ] **Windows**: fixture runs with `BOOT ["main"]`, no main window visible,
   no taskbar button, tray works, editor opens/closes twice, quits. CLI prints
-  the macOS-only notice.
-- [ ] **Linux**: same as Windows.
+  the macOS/Linux-only notice.
+- [x] **Linux (arm64, GNOME/Wayland VM)**: now truly windowless too
+  (`g_windowless` in launcher-linux.cc: no main GtkWindow/WebView; main-window
+  `app.hide()`/`show()` hide and restore the visible named windows, RELOAD
+  reloads them, ATTENTION is a no-op, APPICON goes to the named windows).
+  *(2026-10-12: timed fixture passes dev + packaged (`BOOT [] null`, `MENU`,
+  `PAGE` ×2, `WINDOW_CLOSED editor`, `CLOSED []` ×2, exit 0); no WebKit
+  children before the first open; idle launcher+children RSS ~111 MiB vs
+  ~329 MiB with a hidden main window. Scripted: hide → editor invisible, show
+  → visible, reload re-runs the page, attention/icon don't crash, main
+  `getWinState()` null. Scratch app with no frontend dir starts, `[]`.
+  Regular app: `["main"]`, visible, page loads. Non-boolean `mainWindow` and
+  `+ url` rejected. `dialogs` run: confirm `true` / prompt `"value"` on both
+  opens.)*
+- [x] **Linux tray clicks, page input, X11, x86_64**: *(2026-10-12, same VM.
+  Tray: sent the real AppIndicator menu's dbusmenu `Event … clicked` (what
+  the shell sends on a click) — Close with nothing open is harmless,
+  Open → `PAGE`, Open again doesn't duplicate, Close → `WINDOW_CLOSED`, a
+  second Open/Close cycle, icon still registered after every close, Quit
+  exits; WebKitWebProcess starts on Open and exits on Close. Page input via
+  real XTest keys (`app.keystroke`) under `GDK_BACKEND=x11`: `<input
+  type=file>` cancel (`cancel` event) and pick (typed path → `change:
+  ["wlpick"]`), then the page's Close button → `WINDOW_CLOSED editor`,
+  `[]`, reopen works. X11 (XWayland, `GDK_BACKEND=x11`): timed fixture +
+  tray clicks pass. x86_64: launcher built in an ubuntu:22.04 amd64
+  container + the v0.50.1 release tjs, run under Rosetta on XWayland with
+  the host session bus (`--security-opt apparmor=unconfined`, else the
+  tray can't reach the bus): timed fixture, tray clicks, `dialogs` run and
+  the keyboard picker/Close test all pass. Not covered: a real X11
+  session (only GTK's X11 backend on XWayland), real Intel hardware, and the
+  file picker on native Wayland (portal, out of process — XTest can't reach
+  it).)*

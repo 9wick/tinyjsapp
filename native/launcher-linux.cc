@@ -88,6 +88,10 @@ static GtkAccelGroup* g_accel = nullptr; // main's accelerators
 
 static bool g_hide_on_close = false;
 static bool g_accessory = false;
+// "mainWindow": false (TINYJS_NO_MAIN_WINDOW=1): no main window or WebView
+// at all — g_win/g_wv stay null, so WebKit's processes don't start until the
+// app opens a named window. Tray agents.
+static bool g_windowless = false;
 static bool g_quitting = false;
 
 // chrome state (main window), reported by GET win
@@ -1333,10 +1337,39 @@ static void rescue_offscreen(GtkWindow* win) {
   if (nx != x || ny != y) gdk_window_move(gwin, nx, ny);
 }
 
+// Windowless app.hide()/app.show(): there's no main window to hide, so hide
+// the app — every visible named window — and bring exactly those back on
+// show (macOS hides/unhides NSApp here). Presence has nothing to act on: a
+// named window's taskbar entry is its own.
+static std::vector<std::string> g_app_hidden;
+
+static void windowless_app_op(const std::string& op) {
+  if (op == "hide") {
+    for (auto& kv : g_secwins)
+      if (kv.second->win && gtk_widget_get_visible(GTK_WIDGET(kv.second->win))) {
+        g_app_hidden.push_back(kv.first);
+        gtk_widget_hide(GTK_WIDGET(kv.second->win));
+      }
+  } else if (op == "show" || op == "show 1" || op == "show 0") {
+    for (auto& id : g_app_hidden) {
+      SecWin* sw = sec_for(id);
+      if (!sw || !sw->win) continue;
+      if (op == "show 0") gtk_window_set_focus_on_map(sw->win, FALSE);
+      gtk_widget_show(GTK_WIDGET(sw->win));
+      if (op == "show 0") gtk_window_set_focus_on_map(sw->win, TRUE);
+      else gtk_window_present(sw->win);
+    }
+    g_app_hidden.clear();
+  }
+}
+
 static void do_winop(const std::string& winid, const std::string& op) {
   GtkWindow* win = win_for(winid);
-  if (!win) return;
   bool main_win = (winid.empty() || winid == "main");
+  if (!win) {
+    if (main_win && g_windowless) windowless_app_op(op);
+    return;
+  }
 
   // "hidewin" is hide({ app: false }) — window-scoped, which is all a hide has
   // ever been here (only macOS's main-window hide takes the app with it).
@@ -2538,8 +2571,8 @@ static std::string idle_json();  // fwd (D-Bus)
 
 static void answer_get(const std::string& qid, const std::string& what) {
   if (what == "windows") {
-    std::string out = "[\"main\"";
-    for (auto& kv : g_secwins) out += "," + json_escape(kv.first);
+    std::string out = g_win ? "[\"main\"" : "[";
+    for (auto& kv : g_secwins) out += (out.size() > 1 ? "," : "") + json_escape(kv.first);
     out += "]";
     send_got(qid, out);
   } else if (what == "win" || what.rfind("win:", 0) == 0) {
@@ -3188,7 +3221,9 @@ static void mpris_method_call(GDBusConnection*, const gchar*, const gchar*,
       pipe_write_line(buf);
     }
   } else if (!strcmp(method, "Raise")) {
-    gtk_window_present(g_win);
+    if (g_win) gtk_window_present(g_win);
+    else for (auto& kv : g_secwins)
+      if (kv.second->win) { gtk_window_present(kv.second->win); break; }
   }
   g_dbus_method_invocation_return_value(inv, nullptr);
 }
@@ -6738,7 +6773,13 @@ static void handle_line(const std::string& line) {
   }
 
   if (line == "QUIT") { g_quitting = true; gtk_main_quit(); return; }
-  if (line == "RELOAD") { webkit_web_view_reload_bypass_cache(g_wv); return; }
+  if (line == "RELOAD") {
+    // Windowless: app.reload() means the named windows that are open.
+    if (g_wv) webkit_web_view_reload_bypass_cache(g_wv);
+    else for (auto& kv : g_secwins)
+      if (kv.second->wv) webkit_web_view_reload_bypass_cache(kv.second->wv);
+    return;
+  }
   // PRINT | PRINT@<winid> — the asking window is the one that prints.
   if (line == "PRINT" || line.rfind("PRINT@", 0) == 0) {
     std::string wid = line.size() > 6 ? line.substr(6) : "";
@@ -7050,17 +7091,22 @@ static void handle_line(const std::string& line) {
   if (line.rfind("HKUNREG ", 0) == 0) { hotkey_unregister(line.substr(8)); return; }
 
   if (line.rfind("ATTENTION", 0) == 0) {
-    gtk_window_set_urgency_hint(g_win, TRUE);
+    if (g_win) gtk_window_set_urgency_hint(g_win, TRUE);
     return;
   }
   if (line.rfind("APPICON ", 0) == 0) {
     std::string path = wire_unescape(line.substr(8));
     if (path.empty()) {
       const char* icon = getenv("TINYJS_ICON");
-      if (icon && *icon) set_window_icon(g_win, icon);
-    } else if (file_exists(path)) {
-      set_window_icon(g_win, path);
+      path = icon ? icon : "";
+    } else if (!file_exists(path)) {
+      return;
     }
+    if (path.empty()) return;
+    // Windowless: no main window to carry it — the named ones do.
+    if (g_win) set_window_icon(g_win, path);
+    else for (auto& kv : g_secwins)
+      if (kv.second->win) set_window_icon(kv.second->win, path);
     return;
   }
   if (line.rfind("BADGE", 0) == 0) {
@@ -7219,6 +7265,8 @@ int main(int argc, char** argv) {
   if (app_id && *app_id) g_app_id = app_id;
   const char* activation = getenv("TINYJS_ACTIVATION");
   g_accessory = activation && !strcmp(activation, "accessory");
+  const char* no_main = getenv("TINYJS_NO_MAIN_WINDOW");
+  g_windowless = no_main && !strcmp(no_main, "1");
 
   // WM_CLASS ↔ .desktop matching (StartupWMClass); must precede gtk_init
   g_set_prgname((g_app_id.empty() ? g_app_name : g_app_id).c_str());
@@ -7294,60 +7342,64 @@ int main(int argc, char** argv) {
     }
   }
 
-  g_win = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
-  gtk_window_set_title(g_win, g_app_name.c_str());
-  gtk_window_set_default_size(g_win, g_width, g_height);
-  gtk_window_set_position(g_win, GTK_WIN_POS_CENTER);
-  apply_rgba_visual(GTK_WIDGET(g_win));
-  const char* icon = getenv("TINYJS_ICON");
-  if (icon && *icon) set_window_icon(g_win, icon);
+  // Windowless: no main window, no WebView — the bridge opens named windows
+  // on demand. Everything below that isn't the main window still runs.
+  if (!g_windowless) {
+    g_win = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+    gtk_window_set_title(g_win, g_app_name.c_str());
+    gtk_window_set_default_size(g_win, g_width, g_height);
+    gtk_window_set_position(g_win, GTK_WIN_POS_CENTER);
+    apply_rgba_visual(GTK_WIDGET(g_win));
+    const char* icon = getenv("TINYJS_ICON");
+    if (icon && *icon) set_window_icon(g_win, icon);
 
-  g_accel = gtk_accel_group_new();
-  gtk_window_add_accel_group(g_win, g_accel);
+    g_accel = gtk_accel_group_new();
+    gtk_window_add_accel_group(g_win, g_accel);
 
-  g_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  gtk_container_add(GTK_CONTAINER(g_win), g_vbox);
-  g_menubar = gtk_menu_bar_new();
-  gtk_box_pack_start(GTK_BOX(g_vbox), g_menubar, FALSE, FALSE, 0);
-  // main's WinMenu points at the widgets it already had; from here on every
-  // window (main included) resolves its bar the same way.
-  g_main_menu.bar = g_menubar;
-  g_main_menu.accel = g_accel;
+    g_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_add(GTK_CONTAINER(g_win), g_vbox);
+    g_menubar = gtk_menu_bar_new();
+    gtk_box_pack_start(GTK_BOX(g_vbox), g_menubar, FALSE, FALSE, 0);
+    // main's WinMenu points at the widgets it already had; from here on every
+    // window (main included) resolves its bar the same way.
+    g_main_menu.bar = g_menubar;
+    g_main_menu.accel = g_accel;
 
-  g_wv = make_webview("main");
-  gtk_box_pack_start(GTK_BOX(g_vbox), GTK_WIDGET(g_wv), TRUE, TRUE, 0);
+    g_wv = make_webview("main");
+    gtk_box_pack_start(GTK_BOX(g_vbox), GTK_WIDGET(g_wv), TRUE, TRUE, 0);
 
-  g_signal_connect(g_win, "window-state-event", G_CALLBACK(on_window_state), nullptr);
-  g_signal_connect(g_win, "delete-event", G_CALLBACK(on_main_delete), nullptr);
-  g_signal_connect(g_win, "destroy", G_CALLBACK(on_main_destroy), nullptr);
-  g_signal_connect(g_win, "focus-in-event", G_CALLBACK(on_main_focus_in), nullptr);
+    g_signal_connect(g_win, "window-state-event", G_CALLBACK(on_window_state), nullptr);
+    g_signal_connect(g_win, "delete-event", G_CALLBACK(on_main_delete), nullptr);
+    g_signal_connect(g_win, "destroy", G_CALLBACK(on_main_destroy), nullptr);
+    g_signal_connect(g_win, "focus-in-event", G_CALLBACK(on_main_focus_in), nullptr);
+
+    load_target_into(g_wv, g_target);
+
+    // Chrome from tinyjs.json, via the bridge's spawn env — applied before the
+    // show below so a frameless app never flashes a decorated frame (the
+    // socket CHROME line lands only after the window is up, and still arrives
+    // and re-applies harmlessly). Note set_mwm_buttons is a no-op this early
+    // (no GdkWindow yet); the socket pass covers it post-realize.
+    if (const char* ch = getenv("TINYJS_CHROME"); ch && *ch)
+      apply_chrome("", split_tabs(ch));
+
+    if (g_accessory) {
+      gtk_window_set_skip_taskbar_hint(g_win, TRUE);
+      // window stays hidden; only WINOP show reveals it
+      gtk_widget_show_all(g_vbox);
+      gtk_widget_hide(g_menubar);
+    } else {
+      gtk_widget_show_all(GTK_WIDGET(g_win));
+      gtk_widget_hide(g_menubar);  // shown only when the app declares menus
+    }
+  }
 
   GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
   g_signal_connect(cb, "owner-change", G_CALLBACK(on_clip_owner_change), nullptr);
 
-  load_target_into(g_wv, g_target);
-
-  // Chrome from tinyjs.json, via the bridge's spawn env — applied before the
-  // show below so a frameless app never flashes a decorated frame (the
-  // socket CHROME line lands only after the window is up, and still arrives
-  // and re-applies harmlessly). Note set_mwm_buttons is a no-op this early
-  // (no GdkWindow yet); the socket pass covers it post-realize.
-  if (const char* ch = getenv("TINYJS_CHROME"); ch && *ch)
-    apply_chrome("", split_tabs(ch));
-
-  if (g_accessory) {
-    gtk_window_set_skip_taskbar_hint(g_win, TRUE);
-    // window stays hidden; only WINOP show reveals it
-    gtk_widget_show_all(g_vbox);
-    gtk_widget_hide(g_menubar);
-  } else {
-    gtk_widget_show_all(GTK_WIDGET(g_win));
-    gtk_widget_hide(g_menubar);  // shown only when the app declares menus
-  }
-
   install_system_observers();
   send_theme();
-  if (debug_mode() == 2) inspector_open(g_wv);
+  if (g_wv && debug_mode() == 2) inspector_open(g_wv);
 
   std::thread reader(reader_thread);
   reader.detach();
