@@ -322,6 +322,16 @@ static void set_window_icon(GtkWindow* win, const std::string& path) {
   g_object_unref(src);
 }
 
+// The icon windows should wear right now: app.icon()'s, else the startup
+// TINYJS_ICON. Named windows read it at open, so one opened after an
+// app.icon() matches the rest (windowless apps have nothing but named ones).
+static std::string g_icon_path; // app.icon() override; empty = TINYJS_ICON
+static std::string app_icon_path() {
+  if (!g_icon_path.empty()) return g_icon_path;
+  const char* icon = getenv("TINYJS_ICON");
+  return icon ? icon : "";
+}
+
 // True when GTK is driving a real X11 display (including XWayland). Wayland
 // forbids a client from placing its own toplevels, so this is what decides
 // whether setPosition/center can do anything.
@@ -5994,8 +6004,8 @@ static GtkWidget* on_create_webview(WebKitWebView* parent,
     gtk_window_set_default_size(sec->win, 900, 600);
     gtk_window_set_position(sec->win, GTK_WIN_POS_CENTER);
     apply_rgba_visual(GTK_WIDGET(sec->win));
-    const char* icon = getenv("TINYJS_ICON");
-    if (icon && *icon) set_window_icon(sec->win, icon);
+    std::string icon = app_icon_path();
+    if (!icon.empty()) set_window_icon(sec->win, icon);
     sec->req_w = 900;
     sec->req_h = 600;
     // Same box shape as every other window so nothing downstream special-
@@ -6527,8 +6537,8 @@ static void do_winopen(const std::string& rest) {
   gtk_window_set_title(sec->win, title.c_str());
   gtk_window_set_default_size(sec->win, w, h);
   apply_rgba_visual(GTK_WIDGET(sec->win));
-  const char* icon = getenv("TINYJS_ICON");
-  if (icon && *icon) set_window_icon(sec->win, icon);
+  std::string icon = app_icon_path();
+  if (!icon.empty()) set_window_icon(sec->win, icon);
   sec->req_w = w;
   sec->req_h = h;
   // Same shape as main: a vertical box with the (initially empty) menu bar
@@ -7096,12 +7106,9 @@ static void handle_line(const std::string& line) {
   }
   if (line.rfind("APPICON ", 0) == 0) {
     std::string path = wire_unescape(line.substr(8));
-    if (path.empty()) {
-      const char* icon = getenv("TINYJS_ICON");
-      path = icon ? icon : "";
-    } else if (!file_exists(path)) {
-      return;
-    }
+    if (!path.empty() && !file_exists(path)) return;
+    g_icon_path = path; // empty = back to the startup icon
+    path = app_icon_path();
     if (path.empty()) return;
     // Windowless: no main window to carry it — the named ones do.
     if (g_win) set_window_icon(g_win, path);

@@ -3278,3 +3278,21 @@ blank page). Fixture + steps: `test/windowless-tray/README.md`.
   session (only GTK's X11 backend on XWayland), real Intel hardware, and the
   file picker on native Wayland (portal, out of process — XTest can't reach
   it).)*
+- [ ] **Windows DPI (review fix, 2026-10-12)**: `run_windowless` now calls
+  `enable_dpi_awareness()`. The webview library did that while building main,
+  so without it windowless named windows were DPI-unaware. At **150%
+  scaling**, open the fixture's editor next to a named window from a regular
+  app: text equally sharp (not soft or stretched); `app.window('editor')
+  .getState()` reports the same size for the same `size` in both modes;
+  `setPosition` / `center` land in the same place. Repeat after dragging the
+  editor to a monitor at a different scale, if there is one.
+- [ ] **Windows `hide({ app: false })` (review fix)**: with `"mainWindow":
+  false` and the editor open, it must do nothing (it used to hide every named
+  window, unlike macOS/Linux). Plain `app.hide()` / `app.show()` still hide
+  and restore the editor.
+- [ ] **Linux icon for windows opened later (review fix)**: named windows now
+  open with the current `app.icon()` instead of always the startup icon.
+  Windowless fixture: `app.icon('/abs/other.png')`, then open the editor →
+  taskbar/alt-tab shows the new icon; `app.icon('')`, reopen → back to the
+  startup icon. Regular app: same for a named window opened after
+  `app.icon()`.

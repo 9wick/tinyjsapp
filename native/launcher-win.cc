@@ -4616,7 +4616,9 @@ static bool menu_allowed(HWND hwnd) {
 static std::vector<std::string> g_app_hidden;
 
 static void windowless_app_op(const std::string &op) {
-  if (op == "hide" || op == "hidewin") {
+  // Only the app-wide hide: hide({ app: false }) ("hidewin") targets the main
+  // window, and there isn't one — a no-op, as on macOS and Linux.
+  if (op == "hide") {
     for (auto &kv : g_windows)
       if (kv.second->hwnd && IsWindowVisible(kv.second->hwnd)) {
         g_app_hidden.push_back(kv.first);
@@ -8309,6 +8311,11 @@ static void ensure_start_menu_shortcut() {
 // miss the broadcasts (theme, power, display changes), and the tray menu
 // needs a window it can SetForegroundWindow.
 static int run_windowless() {
+  // The webview library makes the process per-monitor DPI-aware while
+  // building main (win32_edge.hh window_init); with no main that never runs,
+  // and there's no manifest to say it instead. Unaware, named windows are
+  // bitmap-stretched above 100% scaling and window_scale() reads 1.0.
+  webview::detail::enable_dpi_awareness();
   WNDCLASSW wc = {};
   wc.lpfnWndProc = DefWindowProcW;
   wc.hInstance = GetModuleHandleW(nullptr);
