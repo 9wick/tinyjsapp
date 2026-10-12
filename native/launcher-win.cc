@@ -96,6 +96,14 @@ static HWND g_hwnd = nullptr;
 static WNDPROC g_orig_wndproc = nullptr;
 static ICoreWebView2 *g_wv2 = nullptr; // stashed for Reload()/settings
 static ICoreWebView2Controller *g_ctrl = nullptr;
+// "mainWindow": false (TINYJS_NO_MAIN_WINDOW=1): no main window or WebView at
+// all — g_w/g_hwnd/g_wv2/g_ctrl stay null, so WebView2's browser processes
+// don't start until the app opens a named window. Tray agents.
+static bool g_windowless = false;
+// The window the app-wide plumbing hangs off: tray callbacks, hotkeys, the
+// clipboard timer, posted UI work, system broadcasts. That's main itself
+// normally; windowless, a hidden window that is never shown.
+static HWND g_host = nullptr;
 static bool g_accessory = false;       // tray-only app: no taskbar button
 static std::string g_target;           // html path or http(s) url
 static bool g_target_is_url = false;
@@ -163,7 +171,20 @@ static bool g_theme_dark = false;
 static bool g_asleep = false;
 
 #define WM_TINY_TRAY (WM_APP + 2)
+#define WM_TINY_DISPATCH (WM_APP + 3) // windowless: posted UI work, see below
 #define TIMER_CLIPWATCH 0x7101
+
+// Hop to the UI thread. webview_dispatch needs the library's instance, which
+// a windowless launcher never creates — there the work rides a message to the
+// host window instead, and the do_* handlers get a null webview_t (any that
+// touch it check first).
+typedef void (*tiny_fn)(webview_t, void *);
+static void tiny_dispatch(tiny_fn fn, void *arg) {
+  if (g_w)
+    webview_dispatch(g_w, fn, arg);
+  else
+    PostMessageW(g_host, WM_TINY_DISPATCH, (WPARAM)fn, (LPARAM)arg);
+}
 
 static void drag_dbg(const std::string &msg); // drag&drop diagnostics (below)
 static double window_scale(HWND hwnd);        // DPI: logical<->physical (below)
@@ -826,7 +847,7 @@ static NOTIFYICONDATAW g_nid = {};
 static void tray_ensure_icon_struct() {
   memset(&g_nid, 0, sizeof(g_nid));
   g_nid.cbSize = sizeof(g_nid);
-  g_nid.hWnd = g_hwnd;
+  g_nid.hWnd = g_host;
   g_nid.uID = 1;
 }
 
@@ -886,11 +907,11 @@ static void tray_popup(HMENU menu, const char *event_prefix) {
     return;
   POINT pt;
   GetCursorPos(&pt);
-  SetForegroundWindow(g_hwnd);
+  SetForegroundWindow(g_host);
   UINT cmd = (UINT)TrackPopupMenu(menu,
                                   TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
-                                  pt.x, pt.y, 0, g_hwnd, nullptr);
-  PostMessageW(g_hwnd, WM_NULL, 0, 0);
+                                  pt.x, pt.y, 0, g_host, nullptr);
+  PostMessageW(g_host, WM_NULL, 0, 0);
   if (cmd) {
     auto it = g_cmd_reg.find(cmd);
     if (it != g_cmd_reg.end() && !it->second->role.empty())
@@ -1682,7 +1703,7 @@ static bool run_prompt_raw(const std::string &message, const std::string &defval
   st.message = widen(message);
   st.value = widen(defval);
   DialogBoxIndirectParamW(GetModuleHandleW(nullptr),
-                          (LPCDLGTEMPLATEW)t.data(), owner ? owner : g_hwnd,
+                          (LPCDLGTEMPLATEW)t.data(), owner ? owner : g_host,
                           prompt_proc, (LPARAM)&st);
   if (st.ok && out)
     *out = st.value;
@@ -1747,7 +1768,7 @@ static std::string run_file_dialog(const std::string &op,
   }
   if (save && !name.empty())
     dlg->SetFileName(widen(name).c_str()); // suggested name (#36)
-  hr = dlg->Show(g_hwnd);
+  hr = dlg->Show(g_host);
   if (SUCCEEDED(hr)) {
     if (op == "openmulti") {
       IFileOpenDialog *odlg = nullptr;
@@ -1803,7 +1824,7 @@ static void do_dialog(webview_t w, void *arg) {
       text += "\n\n" + a(1);
     UINT flags = req->op == "confirm" ? (MB_OKCANCEL | MB_ICONQUESTION)
                                       : (MB_OK | MB_ICONINFORMATION);
-    int r = MessageBoxW(g_hwnd, widen(text).c_str(), widen(g_app_name).c_str(),
+    int r = MessageBoxW(g_host, widen(text).c_str(), widen(g_app_name).c_str(),
                         flags);
     json = req->op == "alert" ? "true" : (r == IDOK ? "true" : "false");
   } else if (req->op == "prompt") {
@@ -1950,12 +1971,16 @@ struct WinopReq {
   std::string win, op;
 };
 
+static void windowless_app_op(const std::string &op); // below TinyWin
+
 static void do_winop(webview_t, void *arg) {
   WinopReq *req = static_cast<WinopReq *>(arg);
   const std::string &op = req->op;
   HWND hwnd = hwnd_for_win(req->win);
   bool main = hwnd == g_hwnd;
   if (!hwnd) {
+    if (g_windowless && (req->win.empty() || req->win == "main"))
+      windowless_app_op(op);
     delete req;
     return;
   }
@@ -2260,7 +2285,7 @@ static double window_scale(HWND hwnd) {
   typedef UINT(WINAPI * GetDpiForWindowT)(HWND);
   static GetDpiForWindowT fn = (GetDpiForWindowT)GetProcAddress(
       GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
-  UINT dpi = fn ? fn(hwnd ? hwnd : g_hwnd) : 0;
+  UINT dpi = fn ? fn(hwnd ? hwnd : g_host) : 0;
   return dpi ? dpi / 96.0 : 1.0;
 }
 
@@ -2283,7 +2308,7 @@ static std::string clipboard_json(bool count_only) {
   DWORD seq = GetClipboardSequenceNumber();
   if (count_only)
     return "{\"changeCount\":" + std::to_string(seq) + "}";
-  if (!OpenClipboard(g_hwnd))
+  if (!OpenClipboard(g_host))
     return "{\"kind\":\"empty\",\"changeCount\":" + std::to_string(seq) + "}";
   std::string kind = "empty", text = "null", html = "null", paths = "null",
               image = "null", imageSize = "null";
@@ -2456,7 +2481,7 @@ static HGLOBAL bitmap_to_dib(Gdiplus::Bitmap *bmp) {
 
 static void do_clip_write(webview_t, void *arg) {
   ClipWriteReq *req = static_cast<ClipWriteReq *>(arg);
-  if (!OpenClipboard(g_hwnd)) {
+  if (!OpenClipboard(g_host)) {
     delete req;
     return;
   }
@@ -2527,9 +2552,9 @@ static void do_clip_watch(webview_t, void *arg) {
   int *ms = static_cast<int *>(arg);
   if (*ms > 0) {
     g_clip_last_seq = GetClipboardSequenceNumber();
-    SetTimer(g_hwnd, TIMER_CLIPWATCH, (UINT)*ms, nullptr);
+    SetTimer(g_host, TIMER_CLIPWATCH, (UINT)*ms, nullptr);
   } else {
-    KillTimer(g_hwnd, TIMER_CLIPWATCH);
+    KillTimer(g_host, TIMER_CLIPWATCH);
   }
   delete ms;
 }
@@ -2687,7 +2712,7 @@ static void do_hotkey(webview_t, void *arg) {
   // unregister an existing binding for this id either way
   for (auto it = g_hotkeys.begin(); it != g_hotkeys.end();) {
     if (it->second == req->id) {
-      UnregisterHotKey(g_hwnd, it->first);
+      UnregisterHotKey(g_host, it->first);
       it = g_hotkeys.erase(it);
     } else {
       ++it;
@@ -2699,7 +2724,7 @@ static void do_hotkey(webview_t, void *arg) {
     UINT hmods = 0;
     if (parse_combo(req->combo, mods, key, &hmods)) {
       int id = g_next_hotkey++;
-      if (RegisterHotKey(g_hwnd, id, hmods | MOD_NOREPEAT, key))
+      if (RegisterHotKey(g_host, id, hmods | MOD_NOREPEAT, key))
         g_hotkeys[id] = req->id;
     }
   }
@@ -2750,7 +2775,7 @@ static void do_shell(webview_t, void *arg) {
       std::wstring wpath = widen(target);
       wpath.push_back(0); // double-null terminated
       SHFILEOPSTRUCTW fo = {};
-      fo.hwnd = g_hwnd;
+      fo.hwnd = g_host;
       fo.wFunc = FO_DELETE;
       fo.pFrom = wpath.c_str();
       fo.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
@@ -3146,7 +3171,7 @@ struct AuthAvailHandler
     AuthVerifyStart *vs = new AuthVerifyStart{call, statics, reason};
     call->AddRefC();
     statics->AddRef();
-    webview_dispatch(g_w, do_auth_verify, vs);
+    tiny_dispatch(do_auth_verify, vs);
     return S_OK;
   }
 };
@@ -4163,9 +4188,9 @@ static void do_get(webview_t, void *arg) {
   std::string json = "null";
   const std::string &what = req->what;
   if (what == "windows") {
-    json = "[\"main\"";
+    json = g_hwnd ? "[\"main\"" : "["; // windowless: no main
     for (auto &kv : g_windows)
-      json += "," + json_escape(kv.first);
+      json += (json.size() > 1 ? "," : "") + json_escape(kv.first);
     json += "]";
   } else if (what == "win" || what.rfind("win:", 0) == 0) {
     HWND h = hwnd_for_win(what == "win" ? "main" : what.substr(4));
@@ -4176,7 +4201,7 @@ static void do_get(webview_t, void *arg) {
   } else if (what == "mouse" || what.rfind("mouse:", 0) == 0) {
     HWND target = hwnd_for_win(what == "mouse" ? "main" : what.substr(6));
     if (!target)
-      target = g_hwnd;
+      target = g_host;
     POINT p;
     GetCursorPos(&p);
     POINT c = p;
@@ -4254,7 +4279,7 @@ static void do_get(webview_t, void *arg) {
   } else if (what == "traypos") {
     if (g_tray_added) {
       NOTIFYICONIDENTIFIER nii = {sizeof(nii)};
-      nii.hWnd = g_hwnd;
+      nii.hWnd = g_host;
       nii.uID = 1;
       RECT r;
       if (SUCCEEDED(Shell_NotifyIconGetRect(&nii, &r))) {
@@ -4584,6 +4609,35 @@ static bool menu_allowed(HWND hwnd) {
   return false;
 }
 
+// Windowless app.hide()/app.show(): there's no main window to hide, so hide
+// the app — every visible named window — and bring exactly those back on
+// show (macOS hides/unhides NSApp here, Linux does this). The other
+// main-window ops have nothing to act on, bar the app-wide rescue switch.
+static std::vector<std::string> g_app_hidden;
+
+static void windowless_app_op(const std::string &op) {
+  if (op == "hide" || op == "hidewin") {
+    for (auto &kv : g_windows)
+      if (kv.second->hwnd && IsWindowVisible(kv.second->hwnd)) {
+        g_app_hidden.push_back(kv.first);
+        ShowWindow(kv.second->hwnd, SW_HIDE);
+      }
+  } else if (op.rfind("show", 0) == 0) {
+    bool activate = op != "show 0";
+    HWND last = nullptr;
+    for (auto &id : g_app_hidden)
+      if (TinyWin *tw = win_for_id(id)) {
+        ShowWindow(tw->hwnd, activate ? SW_SHOW : SW_SHOWNA);
+        last = tw->hwnd;
+      }
+    if (activate && last)
+      SetForegroundWindow(last);
+    g_app_hidden.clear();
+  } else if (op.rfind("rescue ", 0) == 0) {
+    g_rescue_on = op.substr(7) == "1";
+  }
+}
+
 static void set_win_transparent_flag(const std::string &id, bool on) {
   TinyWin *tw = win_for_id(id);
   if (tw)
@@ -4614,7 +4668,8 @@ static void route_ret(webview_t w, const std::string &composite, int status,
   }
   size_t c = composite.find(':');
   if (c == std::string::npos) {
-    webview_return(w, composite.c_str(), status == 0 ? 0 : 1, json.c_str());
+    if (w)
+      webview_return(w, composite.c_str(), status == 0 ? 0 : 1, json.c_str());
     return;
   }
   std::string winid = composite.substr(0, c);
@@ -4990,6 +5045,144 @@ static LRESULT CALLBACK secwin_proc(HWND hwnd, UINT msg, WPARAM wp,
   return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
+// -- the WebView2 environment named windows share ----------------------------
+// Normally every named window borrows the main webview's environment. A
+// windowless launcher has no main webview, so the first named window creates
+// the environment — with exactly what the webview library's embed() passes
+// (per-app profile, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS), so localStorage
+// and cookies are the same whichever mode the app runs in. That first open is
+// also the moment WebView2's processes start. Controllers asked for while it
+// is being created wait here.
+static ICoreWebView2Environment *g_env = nullptr;
+struct EnvWaiter {
+  HWND hwnd;
+  SecCtrlHandler *ch;
+};
+static std::vector<EnvWaiter> g_env_waiters;
+static bool g_env_creating = false;
+static unsigned g_env_attempts = 0;
+
+// embed()'s user data folder (see the tinyjs patch in win32_edge.hh): the
+// bridge's TINYJS_WEBVIEW2_DATA, else stock's %APPDATA%\<exe name>.
+static std::wstring webview2_data_dir() {
+  wchar_t own[MAX_PATH];
+  DWORD n = GetEnvironmentVariableW(L"TINYJS_WEBVIEW2_DATA", own, MAX_PATH);
+  if (n > 0 && n < MAX_PATH) {
+    SHCreateDirectoryExW(nullptr, own, nullptr);
+    return own;
+  }
+  wchar_t exe[MAX_PATH], data[MAX_PATH], dir[MAX_PATH];
+  GetModuleFileNameW(nullptr, exe, MAX_PATH);
+  if (FAILED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, data)))
+    return L"";
+  PathCombineW(dir, data, PathFindFileNameW(exe));
+  return dir;
+}
+
+static void flush_env_waiters() {
+  std::vector<EnvWaiter> waiters;
+  waiters.swap(g_env_waiters);
+  for (auto &w : waiters) {
+    // The window may have closed (or closed and reopened as a new HWND)
+    // while the environment was on its way.
+    TinyWin *tw = win_for_id(w.ch->winid);
+    if (g_env && tw && tw->hwnd == w.hwnd)
+      g_env->CreateCoreWebView2Controller(w.hwnd, w.ch);
+    w.ch->Release(); // a never-started popup completes its deferral here
+  }
+}
+
+static void try_create_env();
+
+// Retries mirror embed(): a profile still held by an exiting instance fails
+// with ERROR_INVALID_STATE for a moment.
+static void env_failed(HRESULT hr) {
+  if (++g_env_attempts < 60) {
+    SetTimer(nullptr, 0, 200, [](HWND, UINT, UINT_PTR t, DWORD) {
+      KillTimer(nullptr, t);
+      try_create_env();
+    });
+    return;
+  }
+  std::fprintf(stderr,
+               "launcher: failed to create the WebView2 environment (0x%08lx; "
+               "is the WebView2 runtime installed?)\n",
+               (unsigned long)hr);
+  g_env_creating = false;
+  flush_env_waiters();
+}
+
+struct EnvCreatedHandler
+    : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
+  ULONG refs = 1;
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    if (refs > 1) return --refs;
+    delete this;
+    return 0;
+  }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv) return E_POINTER;
+    if (riid == IID_IUnknown ||
+        riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    *ppv = nullptr;
+    return E_NOINTERFACE;
+  }
+  HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr,
+                                   ICoreWebView2Environment *env) override {
+    if (FAILED(hr) || !env) {
+      env_failed(FAILED(hr) ? hr : E_FAIL);
+      return S_OK;
+    }
+    env->AddRef();
+    g_env = env;
+    g_env_creating = false;
+    flush_env_waiters();
+    return S_OK;
+  }
+};
+
+static void try_create_env() {
+  static webview::detail::mswebview2::loader loader;
+  std::wstring dir = webview2_data_dir();
+  EnvCreatedHandler *h = new EnvCreatedHandler();
+  HRESULT hr = loader.create_environment_with_options(
+      nullptr, dir.empty() ? nullptr : dir.c_str(),
+      webview::detail::tinyjs_environment_options(), h);
+  h->Release();
+  if (FAILED(hr)) // no callback is coming
+    env_failed(hr);
+}
+
+// Start a named window's controller: on the main webview's environment, on
+// our own (windowless), or once ours exists. False = no environment can come.
+static bool create_sec_controller(HWND hwnd, SecCtrlHandler *ch) {
+  if (!g_env && g_wv2) {
+    ICoreWebView2_2 *wv22 = nullptr;
+    if (SUCCEEDED(g_wv2->QueryInterface(IID_ICoreWebView2_2, (void **)&wv22)) &&
+        wv22) {
+      wv22->get_Environment(&g_env);
+      wv22->Release();
+    }
+  }
+  if (g_env)
+    return SUCCEEDED(g_env->CreateCoreWebView2Controller(hwnd, ch));
+  if (!g_windowless)
+    return false;
+  ch->AddRef();
+  g_env_waiters.push_back({hwnd, ch});
+  if (!g_env_creating) {
+    g_env_creating = true;
+    g_env_attempts = 0;
+    try_create_env();
+  }
+  return true;
+}
+
 struct WinOpenReq {
   std::string id, page, title;
   int width = 600, height = 400;
@@ -5013,6 +5206,8 @@ static void ensure_secwin_class() {
   RegisterClassW(&wc);
   registered = true;
 }
+
+static void apply_app_icon(HWND hwnd); // below, with app.icon
 
 static void do_winopen(webview_t, void *arg) {
   WinOpenReq *wr = static_cast<WinOpenReq *>(arg);
@@ -5091,6 +5286,8 @@ static void do_winopen(webview_t, void *arg) {
     return;
   }
   apply_relaunch_props(hwnd);
+  if (g_windowless)
+    apply_app_icon(hwnd);
   if (wr->square == "1") {
     DWORD pref = 1; // DWMWCP_DONOTROUND
     DwmSetWindowAttribute(hwnd, 33, &pref, sizeof(pref));
@@ -5115,23 +5312,12 @@ static void do_winopen(webview_t, void *arg) {
   // a menu-bar's-worth short: attach_menu hands the row back to the frame.
   render_menu(hwnd);
   ShowWindow(hwnd, SW_SHOW);
-  // Reuse the main webview's environment for the new controller.
-  ICoreWebView2_2 *wv22 = nullptr;
-  if (g_wv2 &&
-      SUCCEEDED(g_wv2->QueryInterface(IID_ICoreWebView2_2, (void **)&wv22)) &&
-      wv22) {
-    ICoreWebView2Environment *env = nullptr;
-    if (SUCCEEDED(wv22->get_Environment(&env)) && env) {
-      SecCtrlHandler *ch = new SecCtrlHandler();
-      ch->winid = wr->id;
-      ch->transparent = tw->transparent;
-      ch->frameless = tw->frameless;
-      env->CreateCoreWebView2Controller(hwnd, ch);
-      ch->Release();
-      env->Release();
-    }
-    wv22->Release();
-  }
+  SecCtrlHandler *ch = new SecCtrlHandler();
+  ch->winid = wr->id;
+  ch->transparent = tw->transparent;
+  ch->frameless = tw->frameless;
+  create_sec_controller(hwnd, ch);
+  ch->Release();
   delete wr;
 }
 
@@ -5159,7 +5345,7 @@ static void do_winclose(webview_t, void *arg) {
 //          FIND <id> <term>\t<forward>\t<matchCase>   (call-style, no RET line:
 //          STOPFIND <id>                               answered via route_ret)
 // Everything here runs on the UI thread: WebView2 events, WM_TIMER timeouts,
-// and the webview_dispatch'd do_* handlers — no locking needed.
+// and the tiny_dispatch'd do_* handlers — no locking needed.
 //
 // One Windows-only divergence worth knowing: NavigationStarting has no
 // deferral, so a policy ask CANCELS the navigation and re-Navigates on
@@ -5664,7 +5850,7 @@ struct JsDialogHandler : public ICoreWebView2ScriptDialogOpeningEventHandler {
     }
     HWND owner = hwnd_for_win(winid);
     if (!owner)
-      owner = g_hwnd;
+      owner = g_host;
     std::wstring title = widen(js_dialog_title(uri));
     if (kind == COREWEBVIEW2_SCRIPT_DIALOG_KIND_ALERT) {
       MessageBoxW(owner, widen(msg).c_str(), title.c_str(), MB_OK);
@@ -5774,7 +5960,7 @@ static std::string download_save_panel(const std::string &suggested) {
     dlg->SetFolder(folder);
     folder->Release();
   }
-  if (SUCCEEDED(dlg->Show(g_hwnd))) {
+  if (SUCCEEDED(dlg->Show(g_host))) {
     IShellItem *item = nullptr;
     if (SUCCEEDED(dlg->GetResult(&item)) && item) {
       PWSTR path = nullptr;
@@ -5980,7 +6166,7 @@ struct DownloadStartHandler
         r->op = op;
         r->def = def;
         args->AddRef(); // both released by do_download_ask
-        webview_dispatch(g_w, do_download_ask, r);
+        tiny_dispatch(do_download_ask, r);
         return S_OK;    // op ownership moved with the request
       }
       // No deferral (shouldn't happen): the old in-callback panel, which
@@ -6165,24 +6351,14 @@ struct NewWindowHandler : public ICoreWebView2NewWindowRequestedEventHandler {
     ICoreWebView2Deferral *def = nullptr;
     args->GetDeferral(&def);
     args->AddRef();
-    ICoreWebView2_2 *wv22 = nullptr;
-    bool kicked = false;
-    if (g_wv2 &&
-        SUCCEEDED(g_wv2->QueryInterface(IID_ICoreWebView2_2, (void **)&wv22)) &&
-        wv22) {
-      ICoreWebView2Environment *env = nullptr;
-      if (SUCCEEDED(wv22->get_Environment(&env)) && env) {
-        SecCtrlHandler *ch2 = new SecCtrlHandler();
-        ch2->winid = pid;
-        ch2->popup_args = args;
-        ch2->popup_deferral = def;
-        env->CreateCoreWebView2Controller(hwnd, ch2);
-        ch2->Release();
-        env->Release();
-        kicked = true;
-      }
-      wv22->Release();
+    SecCtrlHandler *ch2 = new SecCtrlHandler();
+    ch2->winid = pid;
+    bool kicked = create_sec_controller(hwnd, ch2);
+    if (kicked) {
+      ch2->popup_args = args;
+      ch2->popup_deferral = def;
     }
+    ch2->Release();
     if (!kicked) {
       if (def) {
         def->Complete();
@@ -6412,9 +6588,11 @@ struct EvalReq {
 static void do_eval_win(webview_t w, void *arg) {
   EvalReq *er = static_cast<EvalReq *>(arg);
   if (er->win == "main") {
-    webview_eval(w, er->js.c_str());
+    if (w)
+      webview_eval(w, er->js.c_str());
   } else if (er->win == "*") {
-    webview_eval(w, er->js.c_str());
+    if (w)
+      webview_eval(w, er->js.c_str());
     for (auto &kv : g_windows)
       secwin_eval(kv.first, er->js);
   } else {
@@ -6472,7 +6650,14 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
       return r;
     }
     break;
+  case WM_TINY_DISPATCH: // windowless tiny_dispatch
+    ((tiny_fn)wp)(g_w, (void *)lp);
+    return 0;
   case WM_CLOSE:
+    // The windowless host is plumbing, not a window anyone closes — it can be
+    // the foreground window after a tray menu, where Alt+F4 would land on it.
+    if (g_windowless)
+      return 0;
     if (g_hide_on_close && can_live_hidden()) {
       ShowWindow(hwnd, SW_HIDE);
       return 0;
@@ -6579,17 +6764,24 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
 // ---------------------------------------------------------------------------
 // simple UI-thread thunks
 
-static void do_terminate(webview_t w, void *) { webview_terminate(w); }
+static void do_terminate(webview_t w, void *) {
+  if (w)
+    webview_terminate(w);
+  else
+    PostQuitMessage(0); // windowless: our own loop (see run)
+}
 
 static void do_eval(webview_t w, void *arg) {
   std::string *js = static_cast<std::string *>(arg);
-  webview_eval(w, js->c_str());
+  if (w)
+    webview_eval(w, js->c_str());
   delete js;
 }
 
 static void do_title(webview_t w, void *arg) {
   std::string *t = static_cast<std::string *>(arg);
-  webview_set_title(w, t->c_str());
+  if (w)
+    webview_set_title(w, t->c_str());
   delete t;
 }
 
@@ -6643,8 +6835,12 @@ static void do_title_win(webview_t, void *arg) {
 static void do_reload(webview_t w, void *) {
   if (g_wv2)
     g_wv2->Reload();
-  else
+  else if (w)
     webview_eval(w, "location.reload()");
+  else // windowless: app.reload() means the named windows that are open
+    for (auto &kv : g_windows)
+      if (kv.second->wv)
+        kv.second->wv->Reload();
 }
 
 struct ReplyReq {
@@ -6822,34 +7018,57 @@ static void free_app_icons() {
   g_icon_big = g_icon_small = nullptr;
 }
 
+// Windowless there's no main window to carry the app icon — the named
+// windows do (they also get it at open, see do_winopen).
+static void send_app_icon(HICON big, HICON small) {
+  std::vector<HWND> targets;
+  if (g_hwnd)
+    targets.push_back(g_hwnd);
+  else
+    for (auto &kv : g_windows)
+      if (kv.second->hwnd)
+        targets.push_back(kv.second->hwnd);
+  for (HWND h : targets) {
+    SendMessageW(h, WM_SETICON, ICON_BIG, (LPARAM)big);
+    SendMessageW(h, WM_SETICON, ICON_SMALL, (LPARAM)small);
+  }
+}
+
+// Windowless: a new named window wears the current app icon, the way main
+// would have.
+static void apply_app_icon(HWND hwnd) {
+  HICON big = g_icon_big ? g_icon_big : g_icon_default;
+  HICON small = g_icon_small ? g_icon_small : g_icon_default;
+  if (!big)
+    return;
+  SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)big);
+  SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)small);
+}
+
 static void do_appicon(webview_t, void *arg) {
   std::string *path = static_cast<std::string *>(arg);
-  if (g_hwnd) {
-    if (path->empty()) {
-      // Back to the icon the app started with. Sending 0 instead would fall
-      // through to the window class icon and lose icon.png for the session.
-      free_app_icons();
-      SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_icon_default);
-      SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_icon_default);
-    } else {
-      std::wstring w = widen(*path);
-      HICON big = (HICON)LoadImageW(nullptr, w.c_str(), IMAGE_ICON,
-                                    GetSystemMetrics(SM_CXICON),
-                                    GetSystemMetrics(SM_CYICON), LR_LOADFROMFILE);
-      HICON small = big ? (HICON)LoadImageW(nullptr, w.c_str(), IMAGE_ICON,
-                                            GetSystemMetrics(SM_CXSMICON),
-                                            GetSystemMetrics(SM_CYSMICON),
-                                            LR_LOADFROMFILE)
-                        : nullptr;
-      if (!big) // not an .ico (or an unreadable one) — try it as an image
-        big = small = icon_from_png(*path);
-      if (big) {
-        free_app_icons(); // only after the new icon is in hand
-        g_icon_big = big;
-        g_icon_small = small ? small : big;
-        SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_icon_big);
-        SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_icon_small);
-      }
+  if (path->empty()) {
+    // Back to the icon the app started with. Sending 0 instead would fall
+    // through to the window class icon and lose icon.png for the session.
+    free_app_icons();
+    send_app_icon(g_icon_default, g_icon_default);
+  } else {
+    std::wstring w = widen(*path);
+    HICON big = (HICON)LoadImageW(nullptr, w.c_str(), IMAGE_ICON,
+                                  GetSystemMetrics(SM_CXICON),
+                                  GetSystemMetrics(SM_CYICON), LR_LOADFROMFILE);
+    HICON small = big ? (HICON)LoadImageW(nullptr, w.c_str(), IMAGE_ICON,
+                                          GetSystemMetrics(SM_CXSMICON),
+                                          GetSystemMetrics(SM_CYSMICON),
+                                          LR_LOADFROMFILE)
+                      : nullptr;
+    if (!big) // not an .ico (or an unreadable one) — try it as an image
+      big = small = icon_from_png(*path);
+    if (big) {
+      free_app_icons(); // only after the new icon is in hand
+      g_icon_big = big;
+      g_icon_small = small ? small : big;
+      send_app_icon(g_icon_big, g_icon_small);
     }
   }
   delete path;
@@ -6857,6 +7076,10 @@ static void do_appicon(webview_t, void *arg) {
 
 static void do_attention(webview_t, void *arg) {
   int *critical = static_cast<int *>(arg);
+  if (!g_hwnd) { // windowless: no main taskbar button to flash
+    delete critical;
+    return;
+  }
   FLASHWINFO fi = {sizeof(fi)};
   fi.hwnd = g_hwnd;
   fi.dwFlags = FLASHW_ALL | (*critical ? FLASHW_TIMER : FLASHW_TIMERNOFG);
@@ -7089,7 +7312,7 @@ static void tiny_audiotap_start(AudioTapReq req) {
 }
 
 // ---------------------------------------------------------------------------
-// pipe read loop (background thread; UI work hops via webview_dispatch)
+// pipe read loop (background thread; UI work hops via tiny_dispatch)
 
 static void lock_instance_pipe(const std::string &name); // PIPELOCK, below
 
@@ -7150,7 +7373,7 @@ static void pipe_read_loop() {
         rr->id = line.substr(4, sp1 - 4);
         rr->status = std::atoi(line.c_str() + sp1 + 1);
         rr->json = line.substr(sp2 + 1);
-        webview_dispatch(g_w, do_reply, rr);
+        tiny_dispatch(do_reply, rr);
       } else if (line.rfind("EVAL", 0) == 0 &&
                  (line[4] == ' ' || line[4] == '@')) {
         EvalReq *er = new EvalReq;
@@ -7166,16 +7389,16 @@ static void pipe_read_loop() {
           er->win = line.substr(5, sp - 5);
           er->js = wire_unescape(line.substr(sp + 1));
         }
-        webview_dispatch(g_w, do_eval_win, er);
+        tiny_dispatch(do_eval_win, er);
       } else if (line.rfind("TITLE@", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_title_win,
+        tiny_dispatch(do_title_win,
                          new EvalReq{line.substr(6, sp - 6),
                                      line.substr(sp + 1)});
       } else if (line.rfind("TITLE ", 0) == 0) {
-        webview_dispatch(g_w, do_title, new std::string(line.substr(6)));
+        tiny_dispatch(do_title, new std::string(line.substr(6)));
       } else if (line.rfind("SIZE@", 0) == 0) {
         size_t sp = line.find(' ', 5);
         if (sp == std::string::npos)
@@ -7183,11 +7406,11 @@ static void pipe_read_loop() {
         SizeReq *s = new SizeReq{600, 400};
         s->win = line.substr(5, sp - 5);
         std::sscanf(line.c_str() + sp + 1, "%d %d", &s->width, &s->height);
-        webview_dispatch(g_w, do_size, s);
+        tiny_dispatch(do_size, s);
       } else if (line.rfind("SIZE ", 0) == 0) {
         SizeReq *s = new SizeReq{960, 640};
         std::sscanf(line.c_str() + 5, "%d %d", &s->width, &s->height);
-        webview_dispatch(g_w, do_size, s);
+        tiny_dispatch(do_size, s);
       } else if (line.rfind("WINOPEN ", 0) == 0) {
         // <id>\t<page>\t<title>\t<WxH>[\t<frame>\t<traffic>\t<transp>\t<vib>
         //   \t<square>\t<firstMouse>\t<x>\t<y>\t<menu>\t<wcPos>\t<parent>]
@@ -7212,11 +7435,11 @@ static void pipe_read_loop() {
         wr->menu = p.size() > 12 ? p[12] : "";
         // p[13] is windowControlsPos (macOS-only), p[14] parent.
         wr->parent = p.size() > 14 ? p[14] : "";
-        webview_dispatch(g_w, do_winopen, wr);
+        tiny_dispatch(do_winopen, wr);
       } else if (line.rfind("PIPELOCK ", 0) == 0) {
         lock_instance_pipe(line.substr(9)); // off the UI thread on purpose
       } else if (line.rfind("WINCLOSE ", 0) == 0) {
-        webview_dispatch(g_w, do_winclose, new std::string(line.substr(9)));
+        tiny_dispatch(do_winclose, new std::string(line.substr(9)));
       } else if (line.rfind("DLG ", 0) == 0) {
         size_t sp1 = line.find(' ', 4);
         if (sp1 == std::string::npos)
@@ -7226,7 +7449,7 @@ static void pipe_read_loop() {
         req->id = line.substr(4, sp1 - 4);
         req->op = parts[0];
         req->args.assign(parts.begin() + 1, parts.end());
-        webview_dispatch(g_w, do_dialog, req);
+        tiny_dispatch(do_dialog, req);
       } else if (line == "MENUBEGIN" || line.rfind("MENUBEGIN@", 0) == 0) {
         // Bare: the app menu, shown by every window that hasn't overridden.
         // @<win>: that window's own, main included (main has to name itself —
@@ -7237,7 +7460,7 @@ static void pipe_read_loop() {
         build_stack.assign(1, {});
         in_menu_block = true;
       } else if (line.rfind("MENURESET@", 0) == 0) {
-        webview_dispatch(g_w, do_reset_menu, new std::string(line.substr(10)));
+        tiny_dispatch(do_reset_menu, new std::string(line.substr(10)));
       } else if (in_menu_block && line.rfind("MENU ", 0) == 0) {
         flush_root();
         pending_menus.push_back(MenuSpec{line.substr(5), {}});
@@ -7294,7 +7517,7 @@ static void pipe_read_loop() {
       } else if (line == "MENUEND") {
         flush_root();
         in_menu_block = false;
-        webview_dispatch(g_w, do_apply_menus,
+        tiny_dispatch(do_apply_menus,
                          new ApplyMenuReq{pending_menu_win, pending_menus});
       } else if (line.rfind("TRAYBEGIN", 0) == 0) {
         pending_tray = TraySpec{};
@@ -7312,11 +7535,11 @@ static void pipe_read_loop() {
       } else if (line == "TRAYEND") {
         in_tray_block = false;
         pending_tray.items = take_root();
-        webview_dispatch(g_w, apply_tray, new TraySpec(pending_tray));
+        tiny_dispatch(apply_tray, new TraySpec(pending_tray));
       } else if (line == "TRAYREMOVE") {
         TraySpec *rm = new TraySpec{};
         rm->remove = true;
-        webview_dispatch(g_w, apply_tray, rm);
+        tiny_dispatch(apply_tray, rm);
       } else if (line.rfind("WINOP", 0) == 0 &&
                  (line[5] == ' ' || line[5] == '@')) {
         std::string win = "main";
@@ -7328,27 +7551,27 @@ static void pipe_read_loop() {
           win = line.substr(6, sp - 6);
           body = sp + 1;
         }
-        webview_dispatch(g_w, do_winop, new WinopReq{win, line.substr(body)});
+        tiny_dispatch(do_winop, new WinopReq{win, line.substr(body)});
       } else if (line == "CTXBEGIN") {
         collapse_subs();
         build_stack.assign(1, {});
         in_ctx_block = true;
       } else if (line == "CTXEND") {
         in_ctx_block = false;
-        webview_dispatch(g_w, apply_ctx, new CtxReq{take_root(), true});
+        tiny_dispatch(apply_ctx, new CtxReq{take_root(), true});
       } else if (line == "CTXCLEAR") {
-        webview_dispatch(g_w, apply_ctx, new CtxReq{{}, false});
+        tiny_dispatch(apply_ctx, new CtxReq{{}, false});
       } else if (line.rfind("CTXSUPPRESS ", 0) == 0) {
         g_ctx_suppress = line.substr(12) == "1";
-        webview_dispatch(g_w, [](webview_t, void *arg) {
+        tiny_dispatch([](webview_t, void *arg) {
           apply_ctx_suppress_fallback(arg != nullptr);
         }, g_ctx_suppress ? (void *)1 : nullptr);
       } else if (line.rfind("HKREG ", 0) == 0) {
         std::vector<std::string> p = split_tabs(line.substr(6));
         if (p.size() >= 2)
-          webview_dispatch(g_w, do_hotkey, new HotkeyReq{p[0], p[1]});
+          tiny_dispatch(do_hotkey, new HotkeyReq{p[0], p[1]});
       } else if (line.rfind("HKUNREG ", 0) == 0) {
-        webview_dispatch(g_w, do_hotkey, new HotkeyReq{line.substr(8), ""});
+        tiny_dispatch(do_hotkey, new HotkeyReq{line.substr(8), ""});
       } else if (line.rfind("MENUUPD", 0) == 0 &&
                  (line[7] == ' ' || line[7] == '@')) {
         // MENUUPD <fields> patches every window's copy of the id;
@@ -7369,12 +7592,12 @@ static void pipe_read_loop() {
         req->label = p.size() > 1 ? p[1] : "";
         req->checked = p.size() > 2 ? p[2] : "";
         req->enabled = p.size() > 3 ? p[3] : "";
-        webview_dispatch(g_w, do_menu_update, req);
+        tiny_dispatch(do_menu_update, req);
       } else if (line.rfind("GET ", 0) == 0) {
         size_t sp1 = line.find(' ', 4);
         if (sp1 == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_get,
+        tiny_dispatch(do_get,
                          new GetReq{line.substr(4, sp1 - 4),
                                     line.substr(sp1 + 1)});
       } else if (line.rfind("NOTIFY ", 0) == 0) {
@@ -7386,7 +7609,7 @@ static void pipe_read_loop() {
         req->subtitle = p.size() > 3 ? p[3] : "";
         req->sound = p.size() > 4 && p[4] == "1";
         req->actions_json = p.size() > 5 ? wire_unescape(p[5]) : "";
-        webview_dispatch(g_w, do_notify, req);
+        tiny_dispatch(do_notify, req);
       } else if (line.rfind("CHROME", 0) == 0 &&
                  (line[6] == ' ' || line[6] == '@')) {
         std::string win = "main";
@@ -7408,11 +7631,11 @@ static void pipe_read_loop() {
         req->square = p.size() > 4 ? p[4] : "";
         req->first_mouse = p.size() > 5 ? p[5] : "";
         req->menu = p.size() > 6 ? p[6] : "";
-        webview_dispatch(g_w, do_chrome, req);
+        tiny_dispatch(do_chrome, req);
       } else if (line.rfind("DRAGWIN", 0) == 0 &&
                  (line.size() == 7 || line[7] == '@')) {
         std::string win = line.size() > 8 ? line.substr(8) : "main";
-        webview_dispatch(g_w, do_ncdrag, new NcDragReq{win, HTCAPTION});
+        tiny_dispatch(do_ncdrag, new NcDragReq{win, HTCAPTION});
       } else if (line.rfind("RESIZEWIN", 0) == 0 && line.size() > 9 &&
                  (line[9] == ' ' || line[9] == '@')) {
         std::string win = "main";
@@ -7424,9 +7647,8 @@ static void pipe_read_loop() {
           win = line.substr(10, sp - 10);
           body = sp + 1;
         }
-        webview_dispatch(
-            g_w, do_ncdrag,
-            new NcDragReq{win, ht_for_edge(line.substr(body))});
+        tiny_dispatch(do_ncdrag,
+                      new NcDragReq{win, ht_for_edge(line.substr(body))});
       } else if (line.rfind("CLIPWRITE ", 0) == 0) {
         std::vector<std::string> p = split_tabs(line.substr(10));
         ClipWriteReq *req = new ClipWriteReq;
@@ -7437,15 +7659,15 @@ static void pipe_read_loop() {
         for (size_t i = 4; i < p.size(); i++)
           if (!p[i].empty())
             req->paths.push_back(wire_unescape(p[i]));
-        webview_dispatch(g_w, do_clip_write, req);
+        tiny_dispatch(do_clip_write, req);
       } else if (line.rfind("CLIPWATCH ", 0) == 0) {
-        webview_dispatch(g_w, do_clip_watch,
+        tiny_dispatch(do_clip_watch,
                          new int(std::atoi(line.c_str() + 10)));
       } else if (line.rfind("KEYSTROKE ", 0) == 0) {
         size_t sp = line.find(' ', 10);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_keystroke,
+        tiny_dispatch(do_keystroke,
                          new KeystrokeReq{line.substr(10, sp - 10),
                                           line.substr(sp + 1)});
       } else if (line.rfind("PERMCHK ", 0) == 0 ||
@@ -7453,19 +7675,19 @@ static void pipe_read_loop() {
         size_t sp = line.find(' ', 8);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_perm,
+        tiny_dispatch(do_perm,
                          new QReq{line.substr(8, sp - 8), line.substr(sp + 1)});
       } else if (line.rfind("SHELL ", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_shell,
+        tiny_dispatch(do_shell,
                          new QReq{line.substr(6, sp - 6), line.substr(sp + 1)});
       } else if (line.rfind("POWER ", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_power,
+        tiny_dispatch(do_power,
                          new QReq{line.substr(6, sp - 6), line.substr(sp + 1)});
       } else if (line.rfind("SOUND", 0) == 0 &&
                  (line.size() == 5 || line[5] == ' ')) {
@@ -7473,29 +7695,29 @@ static void pipe_read_loop() {
         size_t sp = rest.find(' ');
         std::string qid = sp == std::string::npos ? rest : rest.substr(0, sp);
         std::string target = sp == std::string::npos ? "" : rest.substr(sp + 1);
-        webview_dispatch(g_w, do_sound, new QReq{qid, target});
+        tiny_dispatch(do_sound, new QReq{qid, target});
       } else if (line.rfind("SECRET ", 0) == 0) {
         size_t sp = line.find(' ', 7);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_secret,
+        tiny_dispatch(do_secret,
                          new QReq{line.substr(7, sp - 7), line.substr(sp + 1)});
       } else if (line.rfind("ATTENTION", 0) == 0) {
-        webview_dispatch(g_w, do_attention,
+        tiny_dispatch(do_attention,
                          new int(line.size() > 10 ? std::atoi(line.c_str() + 10)
                                                   : 0));
       } else if (line == "BADGE" || line.rfind("BADGE ", 0) == 0) {
-        webview_dispatch(g_w, do_badge,
+        tiny_dispatch(do_badge,
                          new std::string(line.size() > 6
                                              ? wire_unescape(line.substr(6))
                                              : ""));
       } else if (line.rfind("PROGRESS", 0) == 0) {
-        webview_dispatch(g_w, do_progress,
+        tiny_dispatch(do_progress,
                          new double(line.size() > 9
                                         ? std::atof(line.c_str() + 9)
                                         : -1.0));
       } else if (line == "APPICON" || line.rfind("APPICON ", 0) == 0) {
-        webview_dispatch(g_w, do_appicon,
+        tiny_dispatch(do_appicon,
                          new std::string(line.size() > 8
                                              ? wire_unescape(line.substr(8))
                                              : ""));
@@ -7505,23 +7727,23 @@ static void pipe_read_loop() {
           got(line.substr(6), "{\"status\":\"unsupported\"}");
           continue;
         }
-        webview_dispatch(g_w, do_login,
+        tiny_dispatch(do_login,
                          new QReq{line.substr(6, sp - 6), line.substr(sp + 1)});
       } else if (line.rfind("VOICES ", 0) == 0) {
-        webview_dispatch(g_w, do_voices, new QReq{line.substr(7), ""});
+        tiny_dispatch(do_voices, new QReq{line.substr(7), ""});
       } else if (line == "SAYSTOP") {
-        webview_dispatch(g_w, do_saystop, nullptr);
+        tiny_dispatch(do_saystop, nullptr);
       } else if (line.rfind("SAY ", 0) == 0) {
         size_t sp = line.find(' ', 4);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_say,
+        tiny_dispatch(do_say,
                          new QReq{line.substr(4, sp - 4), line.substr(sp + 1)});
       } else if (line.rfind("PDF ", 0) == 0) {
         size_t sp = line.find(' ', 4);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_pdf,
+        tiny_dispatch(do_pdf,
                          new QReq{line.substr(4, sp - 4), line.substr(sp + 1), ""});
       } else if (line.rfind("PDF@", 0) == 0) {
         // PDF@<winid> <qid> <path>
@@ -7531,7 +7753,7 @@ static void pipe_read_loop() {
         size_t sp = line.find(' ', sp0 + 1);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_pdf,
+        tiny_dispatch(do_pdf,
                          new QReq{line.substr(sp0 + 1, sp - sp0 - 1),
                                   line.substr(sp + 1), line.substr(4, sp0 - 4)});
       } else if (line.rfind("CAPTURE ", 0) == 0) {
@@ -7539,12 +7761,12 @@ static void pipe_read_loop() {
         std::string qid = sp == std::string::npos ? line.substr(8)
                                                   : line.substr(8, sp - 8);
         std::string rest = sp == std::string::npos ? "0" : line.substr(sp + 1);
-        webview_dispatch(g_w, do_capture, new QReq{qid, rest});
+        tiny_dispatch(do_capture, new QReq{qid, rest});
       } else if (line.rfind("THUMB ", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_thumb,
+        tiny_dispatch(do_thumb,
                          new QReq{line.substr(6, sp - 6), line.substr(sp + 1)});
       } else if (line.rfind("DRAGOUT", 0) == 0 &&
                  (line[7] == ' ' || line[7] == '@')) {
@@ -7561,7 +7783,7 @@ static void pipe_read_loop() {
         for (size_t i = 1; i < p.size(); i++)
           if (!p[i].empty())
             req->paths.push_back(wire_unescape(p[i]));
-        webview_dispatch(g_w, do_dragout, req);
+        tiny_dispatch(do_dragout, req);
       } else if (line.rfind("AUTH ", 0) == 0) {
         // AUTH <qid> <wire-escaped-reason>. A missing reason must still reply
         // (never hang the promise), so treat it as empty rather than dropping.
@@ -7570,7 +7792,7 @@ static void pipe_read_loop() {
             sp == std::string::npos ? line.substr(5) : line.substr(5, sp - 5);
         std::string reason =
             sp == std::string::npos ? "" : wire_unescape(line.substr(sp + 1));
-        webview_dispatch(g_w, do_auth, new AuthReq{qid, reason});
+        tiny_dispatch(do_auth, new AuthReq{qid, reason});
       } else if (line.rfind("OSA ", 0) == 0 || line.rfind("OCR ", 0) == 0) {
         got_unsupported(qid_of(line, 4));
       } else if (line.rfind("RECORD ", 0) == 0) {
@@ -7605,25 +7827,25 @@ static void pipe_read_loop() {
             p.size() > 1 && p[1] == "1",
             p.size() > 2 ? atoi(p[2].c_str()) : 80});
       } else if (line == "PRINT") {
-        webview_dispatch(g_w, do_eval, new std::string("window.print()"));
+        tiny_dispatch(do_eval, new std::string("window.print()"));
       } else if (line.rfind("PRINT@", 0) == 0) {
         // the asking window prints its own page
-        webview_dispatch(g_w, do_eval_win,
+        tiny_dispatch(do_eval_win,
                          new EvalReq{line.substr(6), "window.print()"});
       } else if (line == "RELOAD") {
-        webview_dispatch(g_w, do_reload, nullptr);
+        tiny_dispatch(do_reload, nullptr);
       } else if (line.rfind("NAVR ", 0) == 0) {
         size_t sp = line.find(' ', 5);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_navr,
+        tiny_dispatch(do_navr,
                          new NavrReq{line.substr(5, sp - 5),
                                      line.substr(sp + 1)});
       } else if (line.rfind("POPUPR ", 0) == 0) {
         size_t sp = line.find(' ', 7);
         if (sp == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_popupr,
+        tiny_dispatch(do_popupr,
                          new PopuprReq{line.substr(7, sp - 7),
                                        line.substr(sp + 1)});
       } else if (line.rfind("FIND ", 0) == 0) {
@@ -7636,18 +7858,18 @@ static void pipe_read_loop() {
         fr->term = p.size() > 0 ? p[0] : "";
         fr->forward = !(p.size() > 1 && p[1] == "0");
         fr->matchCase = p.size() > 2 && p[2] == "1";
-        webview_dispatch(g_w, do_find, fr);
+        tiny_dispatch(do_find, fr);
       } else if (line.rfind("STOPFIND ", 0) == 0) {
-        webview_dispatch(g_w, do_stopfind, new std::string(line.substr(9)));
+        tiny_dispatch(do_stopfind, new std::string(line.substr(9)));
       } else if (line == "QUIT") {
-        webview_dispatch(g_w, do_terminate, nullptr);
+        tiny_dispatch(do_terminate, nullptr);
       }
       // WINCLOSE / SHARE / QUICKLOOK: not wired up yet. BADGE now draws an
       // overlay icon, but it has never been run on Windows, so
       // capabilities() still reports badge:false — see TODO-verify.md.
     }
   }
-  webview_dispatch(g_w, do_terminate, nullptr);
+  tiny_dispatch(do_terminate, nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -8054,6 +8276,86 @@ static int spawn_detached() {
   return 0;
 }
 
+// Browser-affordance policy modes ride the spawn env (Windows has no attach
+// mode, so env is the whole story).
+static void read_browser_policy_env() {
+  char v[16];
+  DWORD n = GetEnvironmentVariableA("TINYJS_DOWNLOADS", v, sizeof(v));
+  if (n > 0 && n < sizeof(v))
+    g_downloads_mode = v;
+  n = GetEnvironmentVariableA("TINYJS_POPUPS", v, sizeof(v));
+  if (n > 0 && n < sizeof(v))
+    g_popup_mode = v;
+}
+
+// Built apps get their Start-Menu shortcut on FIRST RUN, not on a first
+// toast that may never arrive. That shortcut is what makes an app findable
+// in Start/search and is what a taskbar pin resolves through, so tying it to
+// notifications left apps that never notify unpinnable. Dev spawns are
+// skipped: with no TINYJS_APP_EXE there is no app exe worth pointing at, and
+// stamping one anyway is what littered Start with dead launcher shortcuts.
+static void ensure_start_menu_shortcut() {
+  if (!app_exe_env().empty()) {
+    std::wstring aumid = tinyjs_aumid();
+    create_start_menu_shortcut(aumid, aumid.substr(7)); // strip "tinyjs."
+  }
+}
+
+// "mainWindow": false. No webview library instance, no main window, no
+// WebView2 environment yet (the first named window creates it, see
+// create_sec_controller) — just a hidden host window for the tray, hotkeys,
+// clipboard watch, system broadcasts and tiny_dispatch, and our own message
+// loop. It's a real top-level window, not HWND_MESSAGE: message-only windows
+// miss the broadcasts (theme, power, display changes), and the tray menu
+// needs a window it can SetForegroundWindow.
+static int run_windowless() {
+  WNDCLASSW wc = {};
+  wc.lpfnWndProc = DefWindowProcW;
+  wc.hInstance = GetModuleHandleW(nullptr);
+  wc.lpszClassName = L"TinyjsHost";
+  RegisterClassW(&wc);
+  g_host = CreateWindowExW(WS_EX_TOOLWINDOW, L"TinyjsHost",
+                           widen(g_app_name).c_str(), WS_OVERLAPPED, 0, 0, 0,
+                           0, nullptr, nullptr, GetModuleHandleW(nullptr),
+                           nullptr);
+  if (!g_host) {
+    std::fprintf(stderr, "launcher: cannot create the host window\n");
+    return 1;
+  }
+  g_orig_wndproc = (WNDPROC)SetWindowLongPtrW(g_host, GWLP_WNDPROC,
+                                              (LONG_PTR)tiny_wndproc);
+  ensure_start_menu_shortcut();
+  read_browser_policy_env();
+  autodlg_arm();
+  // No main window to wear TINYJS_ICON: the named windows get it at open.
+  {
+    char icon[MAX_PATH];
+    DWORD n = GetEnvironmentVariableA("TINYJS_ICON", icon, sizeof(icon));
+    if (n > 0 && n < sizeof(icon))
+      g_icon_default = icon_from_png(icon);
+  }
+  {
+    char act[64];
+    DWORD n = GetEnvironmentVariableA("TINYJS_ACTIVATION", act, sizeof(act));
+    g_accessory = n > 0 && n < sizeof(act) && strcmp(act, "accessory") == 0;
+  }
+
+  send_theme();
+  std::thread(pipe_read_loop).detach();
+
+  MSG msg;
+  while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    TranslateMessage(&msg);
+    DispatchMessageW(&msg);
+  }
+  if (g_tray_added) {
+    tray_ensure_icon_struct();
+    Shell_NotifyIconW(NIM_DELETE, &g_nid);
+  }
+  // The pipe thread may still be blocked in ReadFile; exit hard.
+  ExitProcess(0);
+}
+
 static int run(int argc, char **argv) {
   if (argc == 4 && strcmp(argv[1], "--embed-icon") == 0)
     return embed_icon(argv[2], argv[3]);
@@ -8158,6 +8460,14 @@ static int run(int argc, char **argv) {
     n = GetEnvironmentVariableA("TINYJS_BROWSERACCEL", v, sizeof(v));
     g_browser_accel = n > 0 && v[0] == '1';
   }
+  {
+    char v[4];
+    DWORD n = GetEnvironmentVariableA("TINYJS_NO_MAIN_WINDOW", v, sizeof(v));
+    g_windowless = n == 1 && v[0] == '1';
+  }
+  if (g_windowless)
+    return run_windowless();
+
   g_w = webview_create(g_debug ? 1 : 0, nullptr);
   if (!g_w) {
     std::fprintf(stderr,
@@ -8168,6 +8478,7 @@ static int run(int argc, char **argv) {
 
   g_hwnd = (HWND)webview_get_native_handle(g_w,
                                            WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW);
+  g_host = g_hwnd;
   g_orig_wndproc = (WNDPROC)SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC,
                                               (LONG_PTR)tiny_wndproc);
   // The webview library created main with (or without) a redirection bitmap
@@ -8179,16 +8490,7 @@ static int run(int argc, char **argv) {
     g_main_transparent = n > 0 && t[0] == '1';
   }
   apply_relaunch_props(g_hwnd);
-  // Built apps get their Start-Menu shortcut on FIRST RUN, not on a first
-  // toast that may never arrive. That shortcut is what makes an app findable
-  // in Start/search and is what a taskbar pin resolves through, so tying it to
-  // notifications left apps that never notify unpinnable. Dev spawns are
-  // skipped: with no TINYJS_APP_EXE there is no app exe worth pointing at, and
-  // stamping one anyway is what littered Start with dead launcher shortcuts.
-  if (!app_exe_env().empty()) {
-    std::wstring aumid = tinyjs_aumid();
-    create_start_menu_shortcut(aumid, aumid.substr(7)); // strip "tinyjs."
-  }
+  ensure_start_menu_shortcut(); // first run, not first toast (see the helper)
 
   // Page RPC + injected client library (document-start, every navigation).
   webview_bind(g_w, "__invoke", on_invoke, nullptr);
@@ -8217,18 +8519,9 @@ static int run(int argc, char **argv) {
   apply_webview_policy(g_wv2);
   if (g_debug_open && g_wv2)
     g_wv2->OpenDevToolsWindow();
-  // Browser affordances for wrapped sites: policy modes ride the spawn env
-  // (Windows has no attach mode, so env is the whole story), and the
-  // handlers must be registered BEFORE the first navigation below.
-  {
-    char v[16];
-    DWORD n = GetEnvironmentVariableA("TINYJS_DOWNLOADS", v, sizeof(v));
-    if (n > 0 && n < sizeof(v))
-      g_downloads_mode = v;
-    n = GetEnvironmentVariableA("TINYJS_POPUPS", v, sizeof(v));
-    if (n > 0 && n < sizeof(v))
-      g_popup_mode = v;
-  }
+  // Browser affordances for wrapped sites: the handlers must be registered
+  // BEFORE the first navigation below.
+  read_browser_policy_env();
   install_browser_affordances(g_wv2, "main");
   autodlg_arm();
   install_ctx_handler();

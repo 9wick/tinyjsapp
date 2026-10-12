@@ -1,7 +1,7 @@
 # Windowless tray lifecycle (`"mainWindow": false`)
 
-Requires a logged-in macOS or Linux GUI session and this checkout's rebuilt
-launcher (`tinyjs dev` rebuilds it on Linux by itself):
+Requires a logged-in GUI session and this checkout's rebuilt launcher
+(`tinyjs dev` rebuilds it on Linux and Windows by itself):
 
 ```sh
 ./setup.sh
@@ -57,8 +57,18 @@ first open, `pgrep -P <launcher pid>` must show no WebKit processes.
 
 ## Windows
 
-Not implemented yet: there the main window still exists, hidden (as with
-`"activation": "accessory"`), and the CLI prints a notice. The same
-timed run should therefore print `BOOT ["main"]` (not `[]`), still show the
-tray, open/close the editor twice and quit — no `index.html` needed, the
-hidden main window gets a blank page. The memory saving is macOS/Linux-only.
+From the fixture directory, in PowerShell:
+`$env:TINYJS_WINDOWLESS_TEST='1'; ..\..\tinyjs.cmd dev`. Packaged:
+`..\..\tinyjs.cmd build`, then run `dist\windowless-tray-test.exe` with the
+same variable; it detaches from the console, so use
+`Start-Process -RedirectStandardOutput` to see the output. Before the first
+open the launcher must have no `msedgewebview2.exe` children
+(`Get-CimInstance Win32_Process -Filter "ParentProcessId=<launcher pid>"`);
+they start on Open and exit on Close.
+
+Tray clicks without a mouse: post the host window (class `TinyjsHost`) the
+callback the shell sends (`WM_APP+2`, wParam 1, lParam `WM_RBUTTONUP`), find
+the launcher's visible `#32768` menu window and post `WM_KEYDOWN` arrows and
+Enter to THAT window. Never inject keys with `SendInput`/`keybd_event`: a
+posted click doesn't give the launcher foreground rights, so the menu opens
+without focus and the keys land in whatever app has it.

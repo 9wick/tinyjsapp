@@ -191,8 +191,7 @@ myapp/
                          #   browserAccelerators? (true re-enables the engine's own keys —
                          #   Ctrl+F find, Ctrl+R reload…; default suppressed, Windows only),
                          #   activation? ("accessory" = menu-bar agent: no Dock, starts hidden),
-                         #   mainWindow? (false = no main window/WebView at all — tray agents;
-                         #   macOS + Linux, on Windows a hidden main window),
+                         #   mainWindow? (false = no main window/WebView at all — tray agents),
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
   icon.png                # 1024×1024 app icon (template ships a default)
@@ -1125,8 +1124,9 @@ or WebView. `"activation": "accessory"` only hides the main window, so WebKit
 still runs; with this flag there is no `main` window at all, and WebKit's
 processes don't start until you open a window. On macOS that took a tray
 agent's idle footprint from ~65 MiB to ~17 MiB; on Linux, from ~330 MiB to
-~110 MiB (launcher plus WebKit processes). Combine the two flags for an
-agent with a menu-bar icon and no Dock icon:
+~110 MiB (launcher plus WebKit processes); on Windows, from ~110 MiB private
+(launcher plus six WebView2 processes) to ~12 MiB with none. Combine the
+two flags for an agent with a menu-bar icon and no Dock icon:
 
 ```json
 { "mainWindow": false, "activation": "accessory" }
@@ -1158,7 +1158,7 @@ Main-window operations don't create a window — use `app.openWindow` and
 frontend only if that directory exists. `"url"` can't be combined with
 `"mainWindow": false`, because there is no main window to load it into.
 
-On Linux, which has no app-level hide, `app.hide()` hides every visible
+On Windows and Linux, which have no app-level hide, `app.hide()` hides every visible
 named window and `app.show()` brings exactly those back.
 
 **macOS and Linux so far.** Windows accepts the flag but keeps the main

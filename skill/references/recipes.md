@@ -165,8 +165,7 @@ Two options:
   `app.windows()` starts as `[]`, and no `index.html` is needed. Anything
   that needs a page, like the Web Audio sampler, only works while a named
   window is open (Linux's sampler is native, so it doesn't). Not combinable
-  with `"url"`. macOS and Linux only for now: Windows falls back to the
-  hidden main window.
+  with `"url"`.
 
 ## Self-driving test page (headless-ish verification)
 

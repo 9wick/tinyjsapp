@@ -419,13 +419,6 @@ async function loadConfig() {
   }
   if (cfg.mainWindow !== undefined && typeof cfg.mainWindow !== 'boolean') fail('tinyjs.json "mainWindow" must be a boolean');
   if (cfg.mainWindow === false && cfg.url) fail('tinyjs.json "url" needs a main window to load into — drop "mainWindow": false');
-  // macOS + Linux so far: on Windows the main window still exists, just
-  // hidden (the "activation": "accessory" behaviour), so the same tinyjs.json
-  // runs everywhere — only the memory saving is missing. TODO-verify.md.
-  if (cfg.mainWindow === false && IS_WIN) {
-    console.log('tinyjs: "mainWindow": false is macOS/Linux-only so far — Windows starts the');
-    console.log('        main window hidden instead (same as "activation": "accessory").');
-  }
   await checkMinVersion(cfg);
   return { title: cfg.name, size: '960x640', id: 'com.example.' + cfg.name, ...cfg };
 }

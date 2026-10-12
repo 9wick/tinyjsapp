@@ -3213,9 +3213,40 @@ blank page). Fixture + steps: `test/windowless-tray/README.md`.
 - [ ] **macOS 14** (any CPU; an Apple Silicon VM via UTM/tart would do):
   the AppKit startup/shutdown change has only been seen on macOS 26/27.
 - [ ] **Real Intel Mac**: nice to have; Rosetta covers the x86_64 code path.
-- [ ] **Windows**: fixture runs with `BOOT ["main"]`, no main window visible,
-  no taskbar button, tray works, editor opens/closes twice, quits. CLI prints
-  the macOS/Linux-only notice.
+- [x] **Windows 11 (x64)**: now truly windowless too (`run_windowless` in
+  launcher-win.cc: no webview library instance, no main window; a hidden
+  `TinyjsHost` window carries the tray, hotkeys, clipboard timer, broadcasts
+  and `tiny_dispatch`; the first named window creates the WebView2
+  environment with embed()'s profile and options). Main-window
+  `app.hide()`/`show()` hide and restore the visible named windows, RELOAD
+  reloads them, ATTENTION/BADGE/PROGRESS are no-ops, APPICON goes to the
+  named windows. *(2026-10-12: timed fixture passes dev + packaged (`BOOT
+  []`, `MENU`, `PAGE` ×2, `WINDOW_CLOSED editor` ×2, `CLOSED []` ×2, exit
+  0); no `msedgewebview2.exe` before the first open, six while the editor
+  is up, none after it closes; idle launcher + WebView2 private bytes ~12
+  MiB vs ~111 MiB with a hidden main window (working set 20 vs 383 MiB).
+  Real tray menu (shell callback posted to the host, keys posted to the
+  menu window): Close with nothing open is harmless, Open, Open again via
+  left click doesn't duplicate, Close, a WM_CLOSE to the host is ignored,
+  second Open/Close, Quit exits. Scripted: hide one window, app.hide/show
+  restores only what it hid, reload re-runs both pages, main-window
+  title/size/center/presence/eval leave the host hidden, icon/attention/
+  badge/progress don't crash, clipboard watch + hotkey (via
+  `app.keystroke`) fire, close/reopen, page `tiny.win.close()`. Page
+  `tiny.dialog.confirm` + `window.confirm`/`prompt` (AUTODLG ok),
+  `window.open` with `"popups": "window"`, localStorage shared with the
+  regular profile. App with no frontend dir: `[]`. Non-boolean
+  `mainWindow` and `+ url` rejected. Regression, same build: regular app
+  `["main"]` visible 960x640, hide/show/title/size, named windows
+  open/close/reopen, clipboard, hotkey; `"activation": "accessory"` main
+  starts hidden as a tool window and shows on `app.show()`. By hand, same
+  day, real mouse on the real notification-area icon: Close with nothing
+  open, Open (right-click), Open again (left-click, no duplicate),
+  `<input type=file>` cancel (`cancel` event) and pick (`change:
+  ["pick-me.txt"]`), `tiny.dialog.openFile` cancel (`null`) and pick (a
+  `\\Mac\…` UNC path), page Close button → `WINDOW_CLOSED`, reopen, title-bar
+  X → `WINDOW_CLOSED`, tray Quit exits. Not covered: packaged open-file /
+  URL-scheme handoff.)*
 - [x] **Linux (arm64, GNOME/Wayland VM)**: now truly windowless too
   (`g_windowless` in launcher-linux.cc: no main GtkWindow/WebView; main-window
   `app.hide()`/`show()` hide and restore the visible named windows, RELOAD

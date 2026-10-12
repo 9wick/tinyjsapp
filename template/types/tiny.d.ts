@@ -1161,10 +1161,10 @@ declare interface TinyApp {
   startDrag(): void;
   zoom(): void;
   setChrome(opts: TinyChromeOptions): void;
-  /** null when there is no main window ("mainWindow": false; macOS/Linux). */
+  /** null when there is no main window ("mainWindow": false). */
   getWinState(): Promise<TinyWinState | null>;
 
-  /** With "mainWindow": false (macOS/Linux) there is no main window; open named ones
+  /** With "mainWindow": false there is no main window; open named ones
    *  on demand. Closing the last one keeps the backend and tray running. */
   openWindow(id: string, opts?: TinyOpenWindowOptions): void;
   window(id: string): TinyWindowHandle;
