@@ -1,17 +1,17 @@
 export const api = {
-  testDialogs: async () => tjs.env.TINYJS_HEADLESS_TEST === 'dialogs',
+  testDialogs: async () => tjs.env.TINYJS_WINDOWLESS_TEST === 'dialogs',
   report: async (params) => { console.log('PAGE', JSON.stringify(params)); return true; },
 };
 
 export function init(app) {
-  app.tray.set({ title: 'Headless Test', icon: 'sf:camera', menu: [
+  app.tray.set({ title: 'Windowless Test', icon: 'sf:camera', menu: [
     { id: 'open', label: 'Open editor' },
     { id: 'close', label: 'Close editor' },
     { separator: true },
     { id: 'quit', label: 'Quit' },
   ] });
-  // TINYJS_HEADLESS_TEST is only a fixture switch, not a runtime API.
-  if (tjs.env.TINYJS_HEADLESS_TEST) {
+  // TINYJS_WINDOWLESS_TEST is only a fixture switch, not a runtime API.
+  if (tjs.env.TINYJS_WINDOWLESS_TEST) {
     setTimeout(async () => {
       console.log('BOOT', JSON.stringify(await app.windows()), JSON.stringify(await app.tray.position()));
       console.log('MENU', JSON.stringify(await app.getMenuItem('open')));

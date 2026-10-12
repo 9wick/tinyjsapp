@@ -151,12 +151,20 @@ Other notes:
 
 ## Windowless / agent app
 
-`{ "activation": "accessory" }` — the main window EXISTS (it always does;
-it can be hidden but never closed) and quietly hosts anything page-side the
-app needs (the sampler's Web Audio host on mac/win lives there). Backend
-does the work; `tiny.win.show()` only when there's something to show.
-Hidden windows cost ~nothing: not composited (no GPU), audio render threads
-unaffected by visibility.
+Two options:
+
+- `{ "activation": "accessory" }`: the main window exists but stays hidden
+  (it can't be closed) and hosts anything page-side the app needs, such as
+  the sampler's Web Audio host on mac/win. The backend does the work; call
+  `tiny.win.show()` only when there's something to show. A hidden window
+  isn't composited, but WebKit still runs, at ~50 MiB on macOS.
+- `{ "mainWindow": false, "activation": "accessory" }`: there's no main
+  window or WebView at all; WebKit starts only when `app.openWindow` opens a
+  named window. Idle cost on macOS is ~17 MiB instead of ~65 MiB.
+  `app.windows()` starts as `[]`, and no `index.html` is needed. Anything
+  that needs a page, like the Web Audio sampler, only works while a named
+  window is open. Not combinable with `"url"`. macOS only for now: Windows
+  and Linux fall back to the hidden main window.
 
 ## Self-driving test page (headless-ish verification)
 

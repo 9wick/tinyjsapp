@@ -1157,9 +1157,15 @@ function makeStore(appId) {
   };
 }
 
-export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, headless = false, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
-  if (typeof headless !== 'boolean') throw new Error('headless must be a boolean');
-  if (headless && (IS_WIN || IS_LINUX)) throw new Error('headless is currently supported only on macOS');
+export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, mainWindow = true, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
+  if (typeof mainWindow !== 'boolean') throw new Error('mainWindow must be a boolean');
+  if (!mainWindow && url) throw new Error('`url` needs a main window to load into — drop mainWindow: false');
+  // mainWindow: false — macOS starts with no main window or WebView at all
+  // (tray agents skip WebKit's processes until a named window opens).
+  // Windows/Linux don't do that yet: they keep the main window, hidden, the
+  // same as accessory activation, so one tinyjs.json runs everywhere.
+  const windowless = !mainWindow && !IS_WIN && !IS_LINUX;
+  if (!mainWindow && !windowless) activation = 'accessory';
   const exeDir = dirOf(tjs.exePath) + '/';
   const xdgDirs = IS_LINUX ? await linuxUserDirs() : null;
 
@@ -1225,12 +1231,16 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // materialize; the launcher navigates straight there (the same branch
       // a frontend.devUrl rides). Packaged .apps carry it as TinyjsUrl.
       pagePath = String(url);
-    } else if (!overridePath && htmlPath) {
+    } else if (!overridePath && htmlPath &&
+               (mainWindow || /^https?:\/\//i.test(String(htmlPath)) || await exists(htmlPath))) {
       pagePath = htmlPath;
     } else {
       let pageHtml = html;
       if (overridePath) pageHtml = dec.decode(await tjs.readFile(overridePath));
-      if (pageHtml == null && !headless) throw new Error('createApp needs `html` (string) or `htmlPath`');
+      // A windowless app needn't ship an index.html; where the main window
+      // still exists (hidden, see mainWindow above) it gets a blank page.
+      if (pageHtml == null && !mainWindow && !windowless) pageHtml = '<!doctype html><meta charset="utf-8">';
+      if (pageHtml == null && mainWindow) throw new Error('createApp needs `html` (string) or `htmlPath`');
       pagePath = workDir + '/index.html';
       if (pageHtml != null) {
         await tjs.writeFile(pagePath, enc.encode(pageHtml));
@@ -1254,7 +1264,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       }
     }
     if (activation === 'accessory') spawnEnv.TINYJS_ACTIVATION = 'accessory';
-    spawnEnv.TINYJS_HEADLESS = headless ? '1' : '0';
+    spawnEnv.TINYJS_NO_MAIN_WINDOW = windowless ? '1' : '0';
     // Windows: a transparent main window must drop its GDI redirection
     // bitmap AT CREATION (stale white shows through a late-cleared webview
     // otherwise) — but a window without one can't draw a Win32 menu bar

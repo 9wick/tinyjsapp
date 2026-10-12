@@ -191,6 +191,8 @@ myapp/
                          #   browserAccelerators? (true re-enables the engine's own keys —
                          #   Ctrl+F find, Ctrl+R reload…; default suppressed, Windows only),
                          #   activation? ("accessory" = menu-bar agent: no Dock, starts hidden),
+                         #   mainWindow? (false = no main window/WebView at all — tray agents;
+                         #   macOS only so far, elsewhere a hidden main window),
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
   icon.png                # 1024×1024 app icon (template ships a default)
@@ -1116,15 +1118,17 @@ dev mode behaves the same. The window exists but stays hidden until you call
 `tiny.win.show()` / `app.show()`, and `app.presence('normal')` turns the app
 back into a regular one.
 
-### Windowless tray agents (macOS)
+### Windowless tray agents
 
-`"headless": true` starts the native launcher and backend without constructing
-an initial window or WebView. Unlike `"activation": "accessory"`, which hides
-an existing window, this mode has no `main` window. Combine the two for an
+`"mainWindow": false` starts the launcher and backend without a main window
+or WebView. `"activation": "accessory"` only hides the main window, so WebKit
+still runs; with this flag there is no `main` window at all, and WebKit's
+processes don't start until you open a window. On macOS that took a tray
+agent's idle footprint from ~65 MiB to ~17 MiB. Combine the two flags for an
 agent with a menu-bar icon and no Dock icon:
 
 ```json
-{ "headless": true, "activation": "accessory" }
+{ "mainWindow": false, "activation": "accessory" }
 ```
 
 ```js
@@ -1144,22 +1148,25 @@ export function onTray(id, app) {
 }
 ```
 
-The frontend and `index.html` are optional at startup. Supply frontend files
-when opening local pages later. `app.windows()` starts as `[]`; closing the
-last named window leaves the backend and tray running, and it can be opened
-again. Main-window operations do not create a window implicitly — use
-`app.openWindow` and `app.window(id)`. `app.hide()` / `app.show()` control
-application visibility without creating a main window. In headless mode,
-`app.reload()` reloads the currently open named pages; dev watches the
-frontend only when that directory exists.
+You don't need a frontend or `index.html` at startup; add pages only for
+the windows you open later. `app.windows()` starts as `[]`. Closing the last
+named window leaves the backend and tray running, and you can open it again.
+Main-window operations don't create a window — use `app.openWindow` and
+`app.window(id)`. `app.hide()` / `app.show()` hide and show the whole app.
+`app.reload()` reloads the named windows that are open. Dev watches the
+frontend only if that directory exists. `"url"` can't be combined with
+`"mainWindow": false`, because there is no main window to load it into.
 
-This is a windowless **GUI agent**, not an SSH/server mode: it still needs a
-logged-in macOS WindowServer session for AppKit and the tray. Windows and
-Linux currently reject `headless: true` rather than silently create a WebView.
-WebKit may cache its worker processes after an on-demand window closes;
-window closure is not a promise that physical memory immediately returns to
-the cold-start footprint. For strict editor-process teardown, launch the
-editor as a separate application from the windowless agent.
+**macOS only so far.** Windows and Linux accept the flag but keep the main
+window, hidden, as `"activation": "accessory"` does: the same tinyjs.json
+works, `app.windows()` starts as `["main"]`, and you don't get the memory
+saving. The CLI prints a notice there.
+
+This mode still needs a logged-in GUI session for the tray; it isn't a
+server or SSH mode. Closing a window may not free all of WebKit's memory,
+because WebKit can keep its worker processes cached. If the editor must
+release everything when it closes, ship it as a separate app that the agent
+launches.
 
 ### Apps that place their own windows
 

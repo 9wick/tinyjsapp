@@ -1,7 +1,0 @@
-{
-  "name": "headless-tray-test",
-  "title": "Headless Tray Test",
-  "id": "com.tinyjs.headless-tray-test",
-  "headless": true,
-  "activation": "accessory"
-}

@@ -3176,3 +3176,44 @@ one only when an `"api".origins` key names its origin. Probe:
   the iframe's `store.set` runs, replies still 41. Regressions: smoke.html
   passes on a top-level page; proxy-gate's wrapped-site trio (no `"api"` /
   `media.proxy`+`store.*` / `store.*`) refused / SECRET-PAYLOAD / refused.)*
+
+## PR #50 — `"mainWindow": false` windowless tray agents (`feat/headless-tray`, 2026-10-12)
+
+macOS starts the launcher with no main window or WebView (`g_windowless`;
+`TINYJS_NO_MAIN_WINDOW` in dev, `TinyjsNoMainWindow` plist key when
+packaged). Every macOS app now runs `[NSApp run]` / `[NSApp stop:]` directly
+instead of `webview_run` / `webview_terminate` (same calls the Cocoa backend
+makes), so regular apps need a regression look too. Windows/Linux fall back
+to a hidden main window (bridge forces accessory activation and supplies a
+blank page). Fixture + steps: `test/windowless-tray/README.md`.
+
+- [x] **macOS (Apple Silicon)**: timed fixture run in dev and packaged:
+  `BOOT []`, tray rect non-null, `PAGE` ×2, `WINDOW_CLOSED editor`,
+  `CLOSED []` ×2. No WebKit processes before the first open. `dialogs` run:
+  confirm `true` / prompt `"value"`. Manual: tray clicks, `<input type=file>`
+  pick + cancel. Regression: a regular app shows `["main"]` and its page;
+  ⌘Q, menu Quit and closing the main window all exit cleanly; open-file /
+  URL-scheme handoff still reaches a windowless app.
+  *(2026-10-12: timed fixture passes dev + packaged after the rename;
+  `dialogs` run gives confirm `true` / prompt `"value"` on both opens;
+  packaged windowless app receives `open -a` file and `tinyhandoff://` URL
+  handoffs. By hand: tray Open/Close editor, page Close button, tray Quit,
+  file picker pick + cancel all correct, icon survives every close. Regular
+  app: page loads, `["main"]`, and ⌘Q / menu Quit / red close each exit 0.
+  Non-boolean `mainWindow` and `mainWindow: false` + `url` rejected. Not
+  checked: the "no WebKit processes before first open" claim — trusted to
+  the PR's vmmap run. Seen along the way, NOT from this PR: packaged macOS
+  apps get a bogus onOpenFiles([".../entry.js"]) at launch — the argv scan
+  (bridge.js cliPaths) reads the backend's `run entry.js`; f3e64c3 fixed
+  dev only.)*
+- [x] **macOS x86_64 (Rosetta)**: *(2026-10-12: `TINYJS_UNIVERSAL=1
+  ./setup.sh` + `tinyjs build --arch x86_64`, both executables x86_64-only,
+  run translated on Apple Silicon / macOS 27. Timed fixture and `dialogs`
+  run both pass, exit 0. Not a real Intel Mac.)*
+- [ ] **macOS 14** (any CPU; an Apple Silicon VM via UTM/tart would do):
+  the AppKit startup/shutdown change has only been seen on macOS 26/27.
+- [ ] **Real Intel Mac**: nice to have; Rosetta covers the x86_64 code path.
+- [ ] **Windows**: fixture runs with `BOOT ["main"]`, no main window visible,
+  no taskbar button, tray works, editor opens/closes twice, quits. CLI prints
+  the macOS-only notice.
+- [ ] **Linux**: same as Windows.

@@ -1161,11 +1161,11 @@ declare interface TinyApp {
   startDrag(): void;
   zoom(): void;
   setChrome(opts: TinyChromeOptions): void;
-  /** null when no main window exists (macOS headless mode). */
+  /** null when there is no main window (macOS, "mainWindow": false). */
   getWinState(): Promise<TinyWinState | null>;
 
-  /** In macOS headless mode no main window exists; create named windows on
-   *  demand. Closing the last named window keeps the backend/tray alive. */
+  /** With "mainWindow": false (macOS) there is no main window; open named ones
+   *  on demand. Closing the last one keeps the backend and tray running. */
   openWindow(id: string, opts?: TinyOpenWindowOptions): void;
   window(id: string): TinyWindowHandle;
   windows(): Promise<string[]>;

@@ -417,8 +417,15 @@ async function loadConfig() {
   if (cfg.activation && !['regular', 'accessory'].includes(cfg.activation)) {
     fail('tinyjs.json "activation" must be "regular" or "accessory"');
   }
-  if (cfg.headless !== undefined && typeof cfg.headless !== 'boolean') fail('tinyjs.json "headless" must be a boolean');
-  if (cfg.headless && (IS_WIN || IS_LINUX)) fail('headless is currently supported only on macOS');
+  if (cfg.mainWindow !== undefined && typeof cfg.mainWindow !== 'boolean') fail('tinyjs.json "mainWindow" must be a boolean');
+  if (cfg.mainWindow === false && cfg.url) fail('tinyjs.json "url" needs a main window to load into — drop "mainWindow": false');
+  // macOS-only so far: elsewhere the main window still exists, just hidden
+  // (the "activation": "accessory" behaviour), so the same tinyjs.json runs
+  // everywhere — only the memory saving is missing. TODO-verify.md.
+  if (cfg.mainWindow === false && (IS_WIN || IS_LINUX)) {
+    console.log('tinyjs: "mainWindow": false is macOS-only so far — this OS starts the');
+    console.log('        main window hidden instead (same as "activation": "accessory").');
+  }
   await checkMinVersion(cfg);
   return { title: cfg.name, size: '960x640', id: 'com.example.' + cfg.name, ...cfg };
 }
@@ -563,10 +570,11 @@ async function generateBuild(cfg, dev = false) {
     await run(shellArgv(fe.build));
     frontendSrc = fe.dist ?? 'dist';
   }
-  if (!cfg.headless && !devUrl && !cfg.url && !(await exists(frontendSrc + '/index.html'))) {
+  const noMain = cfg.mainWindow === false;
+  if (!noMain && !devUrl && !cfg.url && !(await exists(frontendSrc + '/index.html'))) {
     fail(frontendSrc + '/index.html not found');
   }
-  if (!dev && (await exists(cfg.headless ? frontendSrc : frontendSrc + '/index.html'))) {
+  if (!dev && (await exists(noMain ? frontendSrc : frontendSrc + '/index.html'))) {
     await copyTree(frontendSrc, B + '/frontend');
   }
 
@@ -624,7 +632,7 @@ const app = await createApp({
   chrome: ${JSON.stringify(cfg.chrome ?? null)},
   update: ${JSON.stringify(cfg.update ?? null)},
   activation: ${JSON.stringify(cfg.activation ?? null)},
-  headless: ${JSON.stringify(cfg.headless ?? false)},
+  mainWindow: ${JSON.stringify(cfg.mainWindow ?? true)},
   readAccess: ${JSON.stringify(cfg.readAccess ?? null)},
   userAgent: ${JSON.stringify(cfg.userAgent ?? null)},
   audioTap: ${JSON.stringify(cfg.audioTap ?? null)},
@@ -1972,8 +1980,11 @@ async function cmdBuild() {
     extraKeys += `
   <key>TinyjsDebug</key>         <string>${cfg.debug === 'open' ? 'open' : '1'}</string>`;
   }
-  if (cfg.headless) {
-    extraKeys += '\n  <key>TinyjsHeadless</key> <true/>';
+  if (cfg.mainWindow === false) {
+    // No main window/WebView at all (see createApp mainWindow); the plist is
+    // the only channel a LaunchServices-started launcher has.
+    extraKeys += `
+  <key>TinyjsNoMainWindow</key>      <true/>`;
   }
   if (cfg.activation === 'accessory') {
     // Menu-bar agent: LSUIElement starts the process with no Dock icon at the

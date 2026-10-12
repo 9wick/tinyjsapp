@@ -341,7 +341,7 @@
 
 extern char **environ;
 
-static bool g_headless = false;
+static bool g_windowless = false;
 static webview_t g_w = nullptr;
 
 // Both modes use the same AppKit main queue as the webview Cocoa backend.
@@ -1488,7 +1488,7 @@ static void do_winop(webview_t w, void *arg) {
   @autoreleasepool {
     NSWindow *win = window_for_id(w, wr->win);
     bool is_main = wr->win == "main";
-    if (is_main && !win && g_headless) {
+    if (is_main && !win && g_windowless) {
       if (*op == "presence 0")
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
       else if (*op == "presence 1") {
@@ -7139,7 +7139,7 @@ static bool tiny_nav_error_is_noise(NSError *error) {
 }
 @end
 
-// No webview library engine is constructed in headless mode, so its dynamic
+// No webview library engine is constructed in windowless mode, so its dynamic
 // UIDelegate class does not exist. Reuse our dialog hooks on a native delegate.
 @interface TinyWindowUIDelegate : NSObject <WKUIDelegate>
 @end
@@ -7171,7 +7171,7 @@ static void tiny_apply_web_delegates(WKWebView *wv) {
   wv.navigationDelegate = g_web_delegate;
   if (!wv.UIDelegate) {
     if (!g_secondary_ui_delegate) {
-      Class cls = g_headless ? [TinyWindowUIDelegate class]
+      Class cls = g_windowless ? [TinyWindowUIDelegate class]
                              : objc_lookUpClass("WebviewWKUIDelegate");
       if (cls) {
         install_page_dialog_hooks(cls);
@@ -8977,10 +8977,14 @@ static void install_open_handlers() {
   [NSApp setDelegate:delegate];
 }
 
-@interface TinyHeadlessDelegate : NSObject <NSApplicationDelegate>
+// mainWindow: false never runs webview_create, so NSApp would have no
+// delegate — and install_open_handlers needs one to hang openURLs/openFiles
+// on. This stands in for the library's (same explicit NO, so closing the last
+// named window leaves the tray agent running).
+@interface TinyWindowlessDelegate : NSObject <NSApplicationDelegate>
 @end
-static TinyHeadlessDelegate *g_headless_delegate = nil;
-@implementation TinyHeadlessDelegate
+static TinyWindowlessDelegate *g_windowless_delegate = nil;
+@implementation TinyWindowlessDelegate
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
   return NO;
 }
@@ -8995,9 +8999,9 @@ static bool bundle_mode_setup(std::string &target, std::string &title,
   // tinyjs.json "url": the main window starts at a remote URL (site wrappers)
   // — no local frontend required then.
   NSString *remote = [mb objectForInfoDictionaryKey:@"TinyjsUrl"];
-  g_headless = [[mb objectForInfoDictionaryKey:@"TinyjsHeadless"] boolValue];
+  g_windowless = [[mb objectForInfoDictionaryKey:@"TinyjsNoMainWindow"] boolValue];
   if (![bp hasSuffix:@".app"] ||
-      (!g_headless && !remote.length &&
+      (!g_windowless && !remote.length &&
        ![[NSFileManager defaultManager] fileExistsAtPath:frontend]))
     return false;
 
@@ -9060,12 +9064,12 @@ static bool bundle_mode_setup(std::string &target, std::string &title,
 #endif
 
 // Only application initialization differs between windowless and windowed mode.
-static void initialize_headless_application() {
+static void initialize_windowless_application() {
   [NSApplication sharedApplication];
   [NSApp setActivationPolicy:g_accessory ? NSApplicationActivationPolicyAccessory
                                        : NSApplicationActivationPolicyRegular];
-  g_headless_delegate = [[TinyHeadlessDelegate alloc] init];
-  [NSApp setDelegate:g_headless_delegate];
+  g_windowless_delegate = [[TinyWindowlessDelegate alloc] init];
+  [NSApp setDelegate:g_windowless_delegate];
   g_suppress_order_front = false;
 }
 
@@ -9185,8 +9189,8 @@ int main(int argc, char *argv[]) {
 #endif
 
   if (!bundle_mode) {
-    const char *headless = getenv("TINYJS_HEADLESS");
-    g_headless = headless && std::strcmp(headless, "1") == 0;
+    const char *no_main = getenv("TINYJS_NO_MAIN_WINDOW");
+    g_windowless = no_main && std::strcmp(no_main, "1") == 0;
     if (argc < 3) {
       std::fprintf(stderr,
                    "usage: %s <html-file-or-url> <socket-path> [title] [WxH]\n",
@@ -9350,8 +9354,8 @@ int main(int argc, char *argv[]) {
   install_media_scheme_hook();
 #endif
 
-  if (g_headless) {
-    initialize_headless_application();
+  if (g_windowless) {
+    initialize_windowless_application();
   } else if (!initialize_main_window(title, width, height, bundle_mode)) {
     return 1;
   }
@@ -9368,7 +9372,7 @@ int main(int argc, char *argv[]) {
   // (MENUBEGIN@<win>) shows it whenever it is the key window.
   install_key_window_observer();
 
-  if (!g_headless) {
+  if (!g_windowless) {
     if (target.rfind("http://", 0) == 0 || target.rfind("https://", 0) == 0) {
       webview_navigate(g_w, target.c_str());
     } else {
