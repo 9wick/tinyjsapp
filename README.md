@@ -18,6 +18,9 @@ Tiny desktop apps for macOS — and, in beta, Windows and Linux: a
 - Hot reload in dev, signed `.app` bundles out of `build`, **auto-update**
   out of `publish`
 
+Questions, help, or something you built: come say hi on
+[Discord](https://discord.com/invite/NGsFQhEUD).
+
 ## Install
 
 ```sh

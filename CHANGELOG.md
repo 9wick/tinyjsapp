@@ -4,6 +4,25 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.51.0 — 2026-10-12
+
+- **`"mainWindow": false`: tray agents with no window until they need one.**
+  An app with `"activation": "accessory"` only hides its main window; the
+  web engine still runs behind it. With `"mainWindow": false` there is no
+  main window or WebView at all. The backend, tray, menus, hotkeys and
+  clipboard run on their own, and the engine starts when the app opens a
+  named window with `app.openWindow`. Idle memory for a tray agent drops
+  from ~65 to ~17 MiB on macOS, ~111 to ~12 MiB (private bytes) on Windows
+  and ~329 to ~111 MiB (RSS) on Linux. `app.windows()` starts as `[]`, no
+  `index.html` is needed, and closing the last window leaves the app
+  running. `app.hide()` / `app.show()` hide and restore the open windows,
+  and `app.reload()` reloads them. Can't be combined with `"url"`. Combine
+  it with `"activation": "accessory"` for a menu-bar / tray-only app. Thanks
+  to Mikhail Angelov for the macOS implementation (#50).
+- **Linux: named windows open with the current `app.icon()`.** They always
+  took the startup icon, so a window opened after `app.icon()` didn't match
+  the rest.
+
 ## 0.50.1 — 2026-10-07
 
 Security fix.
