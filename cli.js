@@ -417,6 +417,8 @@ async function loadConfig() {
   if (cfg.activation && !['regular', 'accessory'].includes(cfg.activation)) {
     fail('tinyjs.json "activation" must be "regular" or "accessory"');
   }
+  if (cfg.headless !== undefined && typeof cfg.headless !== 'boolean') fail('tinyjs.json "headless" must be a boolean');
+  if (cfg.headless && (IS_WIN || IS_LINUX)) fail('headless is currently supported only on macOS');
   await checkMinVersion(cfg);
   return { title: cfg.name, size: '960x640', id: 'com.example.' + cfg.name, ...cfg };
 }
@@ -561,10 +563,12 @@ async function generateBuild(cfg, dev = false) {
     await run(shellArgv(fe.build));
     frontendSrc = fe.dist ?? 'dist';
   }
-  if (!devUrl && !cfg.url && !(await exists(frontendSrc + '/index.html'))) {
+  if (!cfg.headless && !devUrl && !cfg.url && !(await exists(frontendSrc + '/index.html'))) {
     fail(frontendSrc + '/index.html not found');
   }
-  if (!dev && (await exists(frontendSrc + '/index.html'))) await copyTree(frontendSrc, B + '/frontend');
+  if (!dev && (await exists(cfg.headless ? frontendSrc : frontendSrc + '/index.html'))) {
+    await copyTree(frontendSrc, B + '/frontend');
+  }
 
   // Frontend location at runtime: dev uses the project sources in place;
   // packaged apps resolve relative to entry.js (.app Resources/app/) with a
@@ -620,6 +624,7 @@ const app = await createApp({
   chrome: ${JSON.stringify(cfg.chrome ?? null)},
   update: ${JSON.stringify(cfg.update ?? null)},
   activation: ${JSON.stringify(cfg.activation ?? null)},
+  headless: ${JSON.stringify(cfg.headless ?? false)},
   readAccess: ${JSON.stringify(cfg.readAccess ?? null)},
   userAgent: ${JSON.stringify(cfg.userAgent ?? null)},
   audioTap: ${JSON.stringify(cfg.audioTap ?? null)},
@@ -637,7 +642,7 @@ const app = await createApp({
 if (appMod.init) appMod.init(app);
 `;
 
-  if (dev && !devUrl && !cfg.url) {
+  if (dev && !devUrl && !cfg.url && await exists(frontendSrc)) {
     // Hot-reload: any frontend change re-renders the page from disk in place.
     // "url" apps skip it twice over: the main window is a remote page, and
     // the frontend dir being watched may not even exist.
@@ -1966,6 +1971,9 @@ async function cmdBuild() {
     // plist does, like TinyjsUserAgent above.
     extraKeys += `
   <key>TinyjsDebug</key>         <string>${cfg.debug === 'open' ? 'open' : '1'}</string>`;
+  }
+  if (cfg.headless) {
+    extraKeys += '\n  <key>TinyjsHeadless</key> <true/>';
   }
   if (cfg.activation === 'accessory') {
     // Menu-bar agent: LSUIElement starts the process with no Dock icon at the

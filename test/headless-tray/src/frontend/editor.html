@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Headless editor</title>
+<h1>Editor created on demand</h1>
+<button onclick="tiny.win.close()">Close</button>
+<input type="file">
+<script>
+window.addEventListener('DOMContentLoaded', async () => {
+  await tiny.api.call('report', { bridge: true, url: location.href });
+  await tiny.store.set('headless-page', true);
+  if (await tiny.api.call('testDialogs')) {
+    const confirm = window.confirm('Headless confirm');
+    const prompt = window.prompt('Headless prompt', 'value');
+    await tiny.api.call('report', { confirm, prompt });
+  }
+});
+</script>

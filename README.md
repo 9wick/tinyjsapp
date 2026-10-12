@@ -1116,6 +1116,51 @@ dev mode behaves the same. The window exists but stays hidden until you call
 `tiny.win.show()` / `app.show()`, and `app.presence('normal')` turns the app
 back into a regular one.
 
+### Windowless tray agents (macOS)
+
+`"headless": true` starts the native launcher and backend without constructing
+an initial window or WebView. Unlike `"activation": "accessory"`, which hides
+an existing window, this mode has no `main` window. Combine the two for an
+agent with a menu-bar icon and no Dock icon:
+
+```json
+{ "headless": true, "activation": "accessory" }
+```
+
+```js
+export function init(app) {
+  app.tray.set({ icon: 'sf:camera', menu: [
+    { id: 'settings', label: 'Settings…' },
+    { id: 'quit', label: 'Quit' },
+  ] });
+}
+
+export function onTray(id, app) {
+  if (id === 'settings') {
+    app.openWindow('settings', { page: 'settings.html', size: '600x400' });
+    app.window('settings').show();
+  }
+  if (id === 'quit') app.quit();
+}
+```
+
+The frontend and `index.html` are optional at startup. Supply frontend files
+when opening local pages later. `app.windows()` starts as `[]`; closing the
+last named window leaves the backend and tray running, and it can be opened
+again. Main-window operations do not create a window implicitly — use
+`app.openWindow` and `app.window(id)`. `app.hide()` / `app.show()` control
+application visibility without creating a main window. In headless mode,
+`app.reload()` reloads the currently open named pages; dev watches the
+frontend only when that directory exists.
+
+This is a windowless **GUI agent**, not an SSH/server mode: it still needs a
+logged-in macOS WindowServer session for AppKit and the tray. Windows and
+Linux currently reject `headless: true` rather than silently create a WebView.
+WebKit may cache its worker processes after an on-demand window closes;
+window closure is not a promise that physical memory immediately returns to
+the cold-start footprint. For strict editor-process teardown, launch the
+editor as a separate application from the windowless agent.
+
 ### Apps that place their own windows
 
 If your app moves its own windows — `win.setPosition`, `win.center`, snapping,

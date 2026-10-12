@@ -1157,7 +1157,9 @@ function makeStore(appId) {
   };
 }
 
-export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
+export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, headless = false, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
+  if (typeof headless !== 'boolean') throw new Error('headless must be a boolean');
+  if (headless && (IS_WIN || IS_LINUX)) throw new Error('headless is currently supported only on macOS');
   const exeDir = dirOf(tjs.exePath) + '/';
   const xdgDirs = IS_LINUX ? await linuxUserDirs() : null;
 
@@ -1228,10 +1230,12 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     } else {
       let pageHtml = html;
       if (overridePath) pageHtml = dec.decode(await tjs.readFile(overridePath));
-      if (pageHtml == null) throw new Error('createApp needs `html` (string) or `htmlPath`');
+      if (pageHtml == null && !headless) throw new Error('createApp needs `html` (string) or `htmlPath`');
       pagePath = workDir + '/index.html';
-      await tjs.writeFile(pagePath, enc.encode(pageHtml));
-      ownsPage = true;
+      if (pageHtml != null) {
+        await tjs.writeFile(pagePath, enc.encode(pageHtml));
+        ownsPage = true;
+      }
     }
 
     const server = await tjs.listen('pipe', sockPath);
@@ -1250,6 +1254,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       }
     }
     if (activation === 'accessory') spawnEnv.TINYJS_ACTIVATION = 'accessory';
+    spawnEnv.TINYJS_HEADLESS = headless ? '1' : '0';
     // Windows: a transparent main window must drop its GDI redirection
     // bitmap AT CREATION (stale white shows through a late-cleared webview
     // otherwise) — but a window without one can't draw a Win32 menu bar
