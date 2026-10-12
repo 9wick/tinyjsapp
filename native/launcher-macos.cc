@@ -341,7 +341,14 @@
 
 extern char **environ;
 
+static bool g_windowless = false;
 static webview_t g_w = nullptr;
+
+// Both modes use the same AppKit main queue as the webview Cocoa backend.
+static void launcher_dispatch(webview_t w, void (*fn)(webview_t, void *), void *arg) {
+  dispatch_async(dispatch_get_main_queue(), ^{ fn(w, arg); });
+}
+
 static int g_sock = -1;
 static int g_listen_fd = -1;   // bundle mode: launcher listens, backend attaches
 static std::string g_sock_dir; // bundle mode: private socket dir, cleaned at exit
@@ -513,7 +520,13 @@ static void do_size(webview_t w, void *arg) {
 }
 
 
-static void do_terminate(webview_t w, void *) { webview_terminate(w); }
+static void do_terminate(webview_t, void *) {
+  [NSApp stop:nil];
+  // Like the webview Cocoa backend, wake the loop so socket cleanup can run.
+  [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined
+      location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0
+      context:nil subtype:0 data1:0 data2:0] atStart:YES];
+}
 
 // Load a local HTML file. On macOS this must go through
 // loadFileURL:allowingReadAccessToURL: rather than webview_set_html:
@@ -573,6 +586,11 @@ static bool load_html_file(webview_t w, const std::string &path) {
 
 static void do_reload(webview_t w, void *) {
 #ifdef __APPLE__
+  if (!w) {
+    for (auto &kv : g_windows)
+      [kv.second.wv reloadFromOrigin];
+    return;
+  }
   // reloadFromOrigin bypasses WebKit's caches, so edited subresources
   // (css/js/images) are re-read from disk, not just the main document. It
   // also covers "url" apps (remote main page, g_html_path empty) — reload
@@ -888,7 +906,7 @@ static const NSInteger kTinyItemDisabled = 1;  // NSMenuItem.tag: app said disab
   [NSApp orderFrontStandardAboutPanelWithOptions:about];
 }
 - (void)doQuit:(id)sender {
-  webview_terminate(g_w);
+  do_terminate(g_w, nullptr);
 }
 @end
 
@@ -1470,6 +1488,23 @@ static void do_winop(webview_t w, void *arg) {
   @autoreleasepool {
     NSWindow *win = window_for_id(w, wr->win);
     bool is_main = wr->win == "main";
+    if (is_main && !win && g_windowless) {
+      if (*op == "presence 0")
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+      else if (*op == "presence 1") {
+        g_accessory = false;
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+      }
+      else if (*op == "hide")
+        [NSApp hide:nil];
+      else if (*op == "show" || *op == "show 1") {
+        [NSApp unhide:nil];
+        [NSApp activateIgnoringOtherApps:YES];
+      } else if (*op == "show 0")
+        [NSApp unhideWithoutActivation];
+      delete wr;
+      return;
+    }
     if (!win) {
       delete wr;
       return;
@@ -2504,8 +2539,8 @@ static bool media_trusted(const std::string &kind, const std::string &origin) {
   return false;
 }
 
-static void install_media_capture_hook() {
-  Class cls = objc_lookUpClass("WebviewWKUIDelegate");
+static void install_media_capture_hook(Class cls = Nil) {
+  if (!cls) cls = objc_lookUpClass("WebviewWKUIDelegate");
   if (!cls) return;
   SEL sel = sel_registerName("webView:requestMediaCapturePermissionForOrigin:"
                              "initiatedByFrame:type:decisionHandler:");
@@ -3842,9 +3877,9 @@ static void do_get(webview_t w, void *arg) {
   std::string json = "null";
   @autoreleasepool {
     if (req->what == "windows") {
-      json = "[\"main\"";
+      json = w ? "[\"main\"" : "[";
       for (auto &kv : g_windows)
-        json += "," + json_escape(kv.first);
+        json += (json.size() > 1 ? "," : "") + json_escape(kv.first);
       json += "]";
     } else if (req->what == "win" || req->what.rfind("win:", 0) == 0) {
       std::string wid = req->what == "win" ? "main" : req->what.substr(4);
@@ -6125,7 +6160,7 @@ static void reapply_window_overrides(webview_t) {}
 #ifdef __APPLE__
 static NSWindow *window_for_id(webview_t w, const std::string &id) {
   if (id.empty() || id == "main")
-    return (NSWindow *)webview_get_native_handle(
+    return !w ? nil : (NSWindow *)webview_get_native_handle(
         w, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW);
   auto it = g_windows.find(id);
   return it == g_windows.end() ? nil : it->second.win;
@@ -6133,7 +6168,7 @@ static NSWindow *window_for_id(webview_t w, const std::string &id) {
 
 static WKWebView *webview_for_id(webview_t w, const std::string &id) {
   if (id.empty() || id == "main")
-    return (WKWebView *)webview_get_native_handle(
+    return !w ? nil : (WKWebView *)webview_get_native_handle(
         w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
   auto it = g_windows.find(id);
   return it == g_windows.end() ? nil : it->second.wv;
@@ -7104,6 +7139,24 @@ static bool tiny_nav_error_is_noise(NSError *error) {
 }
 @end
 
+// No webview library engine is constructed in windowless mode, so its dynamic
+// UIDelegate class does not exist. Reuse our dialog hooks on a native delegate.
+@interface TinyWindowUIDelegate : NSObject <WKUIDelegate>
+@end
+@implementation TinyWindowUIDelegate
+- (void)webView:(WKWebView *)webView
+    runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
+    initiatedByFrame:(WKFrameInfo *)frame
+    completionHandler:(void (^)(NSArray<NSURL *> *))completion {
+  NSOpenPanel *panel = [NSOpenPanel openPanel];
+  panel.canChooseFiles = YES;
+  panel.canChooseDirectories = parameters.allowsDirectories;
+  panel.allowsMultipleSelection = parameters.allowsMultipleSelection;
+  completion([panel runModal] == NSModalResponseOK ? panel.URLs : nil);
+}
+@end
+
+static void install_page_dialog_hooks(Class cls = Nil);
 static TinyWebDelegate *g_web_delegate = nil;
 static id g_secondary_ui_delegate = nil; // WebviewWKUIDelegate for non-main windows
 
@@ -7118,9 +7171,13 @@ static void tiny_apply_web_delegates(WKWebView *wv) {
   wv.navigationDelegate = g_web_delegate;
   if (!wv.UIDelegate) {
     if (!g_secondary_ui_delegate) {
-      Class cls = objc_lookUpClass("WebviewWKUIDelegate");
-      if (cls)
+      Class cls = g_windowless ? [TinyWindowUIDelegate class]
+                             : objc_lookUpClass("WebviewWKUIDelegate");
+      if (cls) {
+        install_page_dialog_hooks(cls);
+        install_media_capture_hook(cls);
         g_secondary_ui_delegate = [[cls alloc] init];
+      }
     }
     if (g_secondary_ui_delegate)
       wv.UIDelegate = (id<WKUIDelegate>)g_secondary_ui_delegate;
@@ -7458,8 +7515,8 @@ static void do_popupr(webview_t, void *arg) {
 
 // Bolt the JS-dialog + createWebView handlers onto the vendored UI delegate
 // class at runtime (registered by webview_create — call after).
-static void install_page_dialog_hooks() {
-  Class cls = objc_lookUpClass("WebviewWKUIDelegate");
+static void install_page_dialog_hooks(Class cls) {
+  if (!cls) cls = objc_lookUpClass("WebviewWKUIDelegate");
   if (!cls)
     return;
   struct {
@@ -8094,7 +8151,7 @@ static void sock_read_loop() {
   if (g_listen_fd >= 0) {
     int fd = accept(g_listen_fd, nullptr, nullptr);
     if (fd < 0) {
-      webview_dispatch(g_w, do_terminate, nullptr);
+      launcher_dispatch(g_w, do_terminate, nullptr);
       return;
     }
     sock_set_connected(fd);
@@ -8149,7 +8206,7 @@ static void sock_read_loop() {
         rr->composite = line.substr(4, sp1 - 4);
         rr->status = std::atoi(line.c_str() + sp1 + 1);
         rr->json = line.substr(sp2 + 1);
-        webview_dispatch(g_w, do_reply, rr);
+        launcher_dispatch(g_w, do_reply, rr);
       } else if (line.rfind("EVAL", 0) == 0 &&
                  (line[4] == ' ' || line[4] == '@')) {
         // EVAL <js> (main) | EVAL@* <js> (broadcast) | EVAL@<id> <js>
@@ -8165,25 +8222,25 @@ static void sock_read_loop() {
           er->win = line.substr(5, sp - 5);
           er->js = wire_unescape(line.substr(sp + 1));
         }
-        webview_dispatch(g_w, do_eval_win, er);
+        launcher_dispatch(g_w, do_eval_win, er);
       } else if (line.rfind("TITLE@", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos) continue;
         EvalReq *tr = new EvalReq{line.substr(6, sp - 6), line.substr(sp + 1)};
-        webview_dispatch(g_w, do_title_win, tr);
+        launcher_dispatch(g_w, do_title_win, tr);
       } else if (line.rfind("TITLE ", 0) == 0) {
-        webview_dispatch(g_w, do_title, new std::string(line.substr(6)));
+        launcher_dispatch(g_w, do_title, new std::string(line.substr(6)));
       } else if (line.rfind("SIZE@", 0) == 0) {
         size_t sp = line.find(' ', 5);
         if (sp == std::string::npos) continue;
         SizeReq *sr = new SizeReq{600, 400};
         sr->win = line.substr(5, sp - 5);
         std::sscanf(line.c_str() + sp + 1, "%d %d", &sr->width, &sr->height);
-        webview_dispatch(g_w, do_size, sr);
+        launcher_dispatch(g_w, do_size, sr);
       } else if (line.rfind("SIZE ", 0) == 0) {
         SizeReq *s = new SizeReq{960, 640};
         std::sscanf(line.c_str() + 5, "%d %d", &s->width, &s->height);
-        webview_dispatch(g_w, do_size, s);
+        launcher_dispatch(g_w, do_size, s);
       } else if (line.rfind("WINOPEN ", 0) == 0) {
         // <id>\t<page>\t<title>\t<WxH>[\t<frame>\t<traffic>\t<transp>\t<vib>
         //   \t<square>\t<firstMouse>\t<x>\t<y>\t<menu>\t<wcPos>\t<parent>]
@@ -8208,9 +8265,9 @@ static void sock_read_loop() {
         // p[12] is chrome.menu (ignored on macOS), p[13] windowControlsPos.
         wr->traffic_pos = p.size() > 13 ? p[13] : "";
         wr->parent = p.size() > 14 ? p[14] : "";
-        webview_dispatch(g_w, do_winopen, wr);
+        launcher_dispatch(g_w, do_winopen, wr);
       } else if (line.rfind("WINCLOSE ", 0) == 0) {
-        webview_dispatch(g_w, do_winclose, new std::string(line.substr(9)));
+        launcher_dispatch(g_w, do_winclose, new std::string(line.substr(9)));
       } else if (line.rfind("DLG ", 0) == 0) {
         // DLG <id> <op>[\t<arg>...]
         size_t sp1 = line.find(' ', 4);
@@ -8221,18 +8278,18 @@ static void sock_read_loop() {
         req->id = line.substr(4, sp1 - 4);
         req->op = parts[0];
         req->args.assign(parts.begin() + 1, parts.end());
-        webview_dispatch(g_w, do_dialog, req);
+        launcher_dispatch(g_w, do_dialog, req);
       } else if (line.rfind("NAVR ", 0) == 0) {
         // NAVR <qid> allow|deny|external — answer to a held NAVQ policy ask.
         size_t sp = line.find(' ', 5);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_navr,
+        launcher_dispatch(g_w, do_navr,
                          new NavrReq{line.substr(5, sp - 5), line.substr(sp + 1)});
       } else if (line.rfind("POPUPR ", 0) == 0) {
         // POPUPR <qid> window|external|deny — answer to a POPUPQ ask.
         size_t sp = line.find(' ', 7);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_popupr,
+        launcher_dispatch(g_w, do_popupr,
                          new PopuprReq{line.substr(7, sp - 7), line.substr(sp + 1)});
       } else if (line.rfind("FIND ", 0) == 0) {
         // FIND <id> <term>\t<forward>\t<matchCase> — call-style, RET via id.
@@ -8244,9 +8301,9 @@ static void sock_read_loop() {
         fr->term = p.size() > 0 ? p[0] : "";
         fr->forward = p.size() > 1 ? p[1] != "0" : true;
         fr->matchCase = p.size() > 2 && p[2] == "1";
-        webview_dispatch(g_w, do_find, fr);
+        launcher_dispatch(g_w, do_find, fr);
       } else if (line.rfind("STOPFIND ", 0) == 0) {
-        webview_dispatch(g_w, do_stopfind, new std::string(line.substr(9)));
+        launcher_dispatch(g_w, do_stopfind, new std::string(line.substr(9)));
       } else if (line == "MENUBEGIN" || line.rfind("MENUBEGIN@", 0) == 0) {
         // Bare: the app menu — what every window shows unless it overrode.
         // @<win>: that window's own, up while it holds focus (macOS has one
@@ -8258,7 +8315,7 @@ static void sock_read_loop() {
         in_menu_block = true;
       } else if (line.rfind("MENURESET@", 0) == 0) {
         std::string *win = new std::string(line.substr(10));
-        webview_dispatch(g_w, [](webview_t, void *arg) {
+        launcher_dispatch(g_w, [](webview_t, void *arg) {
           std::string *w = static_cast<std::string *>(arg);
           apply_win_menu(*w, {}, false);
           delete w;
@@ -8320,12 +8377,12 @@ static void sock_read_loop() {
         flush_root();
         in_menu_block = false;
         if (pending_menu_win.empty()) {
-          webview_dispatch(g_w, apply_menus,
+          launcher_dispatch(g_w, apply_menus,
                            new std::vector<MenuSpec>(pending_menus));
         } else {
           auto *req = new std::pair<std::string, std::vector<MenuSpec>>(
               pending_menu_win, pending_menus);
-          webview_dispatch(g_w, [](webview_t, void *arg) {
+          launcher_dispatch(g_w, [](webview_t, void *arg) {
             auto *r = static_cast<std::pair<std::string, std::vector<MenuSpec>> *>(arg);
             apply_win_menu(r->first, r->second, true);
             delete r;
@@ -8346,40 +8403,40 @@ static void sock_read_loop() {
       } else if (line == "TRAYEND") {
         in_tray_block = false;
         pending_tray.items = take_root();
-        webview_dispatch(g_w, apply_tray, new TraySpec(pending_tray));
+        launcher_dispatch(g_w, apply_tray, new TraySpec(pending_tray));
       } else if (line == "TRAYREMOVE") {
         TraySpec *rm = new TraySpec{};
         rm->remove = true;
-        webview_dispatch(g_w, apply_tray, rm);
+        launcher_dispatch(g_w, apply_tray, rm);
       } else if (line.rfind("WINOP@", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_winop,
+        launcher_dispatch(g_w, do_winop,
                          new WinopReq{line.substr(6, sp - 6), line.substr(sp + 1)});
       } else if (line.rfind("WINOP ", 0) == 0) {
-        webview_dispatch(g_w, do_winop, new WinopReq{"main", line.substr(6)});
+        launcher_dispatch(g_w, do_winop, new WinopReq{"main", line.substr(6)});
       } else if (line == "CTXBEGIN") {
         collapse_subs();
         build_stack.assign(1, {});
         in_ctx_block = true;
       } else if (line == "CTXEND") {
         in_ctx_block = false;
-        webview_dispatch(g_w, apply_ctx, new CtxReq{take_root(), true});
+        launcher_dispatch(g_w, apply_ctx, new CtxReq{take_root(), true});
       } else if (line == "CTXCLEAR") {
-        webview_dispatch(g_w, apply_ctx, new CtxReq{{}, false});
+        launcher_dispatch(g_w, apply_ctx, new CtxReq{{}, false});
       } else if (line.rfind("CTXSUPPRESS ", 0) == 0) {
-        webview_dispatch(g_w, apply_ctx_suppress,
+        launcher_dispatch(g_w, apply_ctx_suppress,
                          new CtxSuppressReq{line.substr(12) == "1"});
       } else if (line.rfind("ABOUTHOOK ", 0) == 0) {
         g_about_to_app = line.substr(10) == "1";
       } else if (line.rfind("HKREG ", 0) == 0) {
         std::vector<std::string> p = split_tabs(line.substr(6));
         if (p.size() >= 2)
-          webview_dispatch(g_w, do_hotkey, new HotkeyReq{p[0], p[1]});
+          launcher_dispatch(g_w, do_hotkey, new HotkeyReq{p[0], p[1]});
       } else if (line.rfind("HKUNREG ", 0) == 0) {
-        webview_dispatch(g_w, do_hotkey, new HotkeyReq{line.substr(8), ""});
+        launcher_dispatch(g_w, do_hotkey, new HotkeyReq{line.substr(8), ""});
       } else if (line.rfind("AUDIOTAP STOP", 0) == 0) {
-        webview_dispatch(g_w, do_audiotap, new AudioTapReq{"", "__stop__", false, 0});
+        launcher_dispatch(g_w, do_audiotap, new AudioTapReq{"", "__stop__", false, 0});
       } else if (line.rfind("AUDIOTAP ", 0) == 0) {
         // AUDIOTAP <qid> <scope>\t<excludeSelf>\t<interval>
         std::string rest = line.substr(9);
@@ -8387,23 +8444,23 @@ static void sock_read_loop() {
         std::string qid = sp == std::string::npos ? rest : rest.substr(0, sp);
         std::vector<std::string> p =
             split_tabs(sp == std::string::npos ? "" : rest.substr(sp + 1));
-        webview_dispatch(g_w, do_audiotap,
+        launcher_dispatch(g_w, do_audiotap,
                          new AudioTapReq{qid, p.size() > 0 ? p[0] : "app",
                                          p.size() > 1 && p[1] == "1",
                                          p.size() > 2 ? atoi(p[2].c_str()) : 80});
       } else if (line.rfind("AUDIOFILTERSET ", 0) == 0) {
-        webview_dispatch(g_w, [](webview_t, void *a) {
+        launcher_dispatch(g_w, [](webview_t, void *a) {
           std::unique_ptr<std::string> s((std::string *)a);
           do_audiofilterset(*s);
         }, new std::string(line.substr(15)));
       } else if (line.rfind("AUDIOFILTERS", 0) == 0 &&
                  (line.size() == 12 || line[12] == ' ')) {
-        webview_dispatch(g_w, [](webview_t, void *a) {
+        launcher_dispatch(g_w, [](webview_t, void *a) {
           std::unique_ptr<std::string> s((std::string *)a);
           do_audiofilters(*s);
         }, new std::string(line.size() > 13 ? line.substr(13) : ""));
       } else if (line.rfind("AUDIOBALANCE", 0) == 0) {
-        webview_dispatch(g_w, [](webview_t, void *a) {
+        launcher_dispatch(g_w, [](webview_t, void *a) {
           std::unique_ptr<std::string> s((std::string *)a);
           do_audiobalance(*s);
         }, new std::string(line.size() > 13 ? line.substr(13) : "0"));
@@ -8427,12 +8484,12 @@ static void sock_read_loop() {
         req->label = p.size() > 1 ? p[1] : "";
         req->checked = p.size() > 2 ? p[2] : "";
         req->enabled = p.size() > 3 ? p[3] : "";
-        webview_dispatch(g_w, do_menu_update, req);
+        launcher_dispatch(g_w, do_menu_update, req);
       } else if (line.rfind("GET ", 0) == 0) {
         size_t sp1 = line.find(' ', 4);
         if (sp1 == std::string::npos)
           continue;
-        webview_dispatch(g_w, do_get,
+        launcher_dispatch(g_w, do_get,
                          new GetReq{line.substr(4, sp1 - 4), line.substr(sp1 + 1)});
       } else if (line.rfind("NOTIFY ", 0) == 0) {
         std::vector<std::string> p = split_tabs(line.substr(7));
@@ -8443,7 +8500,7 @@ static void sock_read_loop() {
         req->subtitle = p.size() > 3 ? p[3] : "";
         req->sound = p.size() > 4 && p[4] == "1";
         req->actions_json = p.size() > 5 ? wire_unescape(p[5]) : "";
-        webview_dispatch(g_w, do_notify, req);
+        launcher_dispatch(g_w, do_notify, req);
       } else if (line.rfind("CHROME", 0) == 0 &&
                  (line[6] == ' ' || line[6] == '@')) {
         std::string winid = "main";
@@ -8466,12 +8523,12 @@ static void sock_read_loop() {
         // p[6] is chrome.menu — a Windows/Linux question, no bar per window
         // on macOS. p[7] is windowControlsPos ('x,y' | 'default').
         req->traffic_pos = p.size() > 7 ? p[7] : "";
-        webview_dispatch(g_w, do_chrome, req);
+        launcher_dispatch(g_w, do_chrome, req);
       } else if (line.rfind("DRAGWIN", 0) == 0 &&
                  (line.size() == 7 || line[7] == '@')) {
         // DRAGWIN@<id> for satellites — the bare form was all that matched
         // here, so a second window's own drag region moved nothing.
-        webview_dispatch(g_w, do_dragwin,
+        launcher_dispatch(g_w, do_dragwin,
                          new std::string(line.size() > 8 ? line.substr(8)
                                                          : "main"));
       } else if (line.rfind("RESIZEWIN", 0) == 0 && line.size() > 9 &&
@@ -8485,7 +8542,7 @@ static void sock_read_loop() {
           winid = line.substr(10, sp - 10);
           body = sp + 1;
         }
-        webview_dispatch(g_w, do_resizewin,
+        launcher_dispatch(g_w, do_resizewin,
                          new ResizeReq{winid, line.substr(body)});
       } else if (line.rfind("CLIPWRITE ", 0) == 0) {
         std::vector<std::string> p = split_tabs(line.substr(10));
@@ -8497,9 +8554,9 @@ static void sock_read_loop() {
         for (size_t i = 4; i < p.size(); i++)
           if (!p[i].empty())
             req->paths.push_back(wire_unescape(p[i]));
-        webview_dispatch(g_w, do_clip_write, req);
+        launcher_dispatch(g_w, do_clip_write, req);
       } else if (line.rfind("CLIPWATCH ", 0) == 0) {
-        webview_dispatch(g_w, do_clip_watch,
+        launcher_dispatch(g_w, do_clip_watch,
                          new int(std::atoi(line.c_str() + 10)));
       } else if (line.rfind("DRAGOUT", 0) == 0 &&
                  (line[7] == ' ' || line[7] == '@')) {
@@ -8518,18 +8575,18 @@ static void sock_read_loop() {
         for (size_t i = 1; i < p.size(); i++)
           if (!p[i].empty())
             req->paths.push_back(wire_unescape(p[i]));
-        webview_dispatch(g_w, do_dragout, req);
+        launcher_dispatch(g_w, do_dragout, req);
       } else if (line.rfind("KEYSTROKE ", 0) == 0) {
         size_t sp = line.find(' ', 10);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_keystroke,
+        launcher_dispatch(g_w, do_keystroke,
                          new KeystrokeReq{line.substr(10, sp - 10),
                                           line.substr(sp + 1)});
       } else if (line.rfind("PERMCHK ", 0) == 0 ||
                  line.rfind("PERMREQ ", 0) == 0) {
         size_t sp = line.find(' ', 8);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_perm,
+        launcher_dispatch(g_w, do_perm,
                          new PermReq{line.substr(8, sp - 8), line.substr(sp + 1),
                                      line.rfind("PERMREQ ", 0) == 0});
       } else if (line.rfind("SHELL ", 0) == 0) {
@@ -8540,13 +8597,13 @@ static void sock_read_loop() {
         req->qid = line.substr(6, sp - 6);
         req->op = p.size() > 0 ? p[0] : "";
         req->target = p.size() > 1 ? wire_unescape(p[1]) : "";
-        webview_dispatch(g_w, do_shell, req);
+        launcher_dispatch(g_w, do_shell, req);
       } else if (line.rfind("LOGIN ", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos) continue;
         std::string rest = line.substr(sp + 1); // "get" | "set 0|1"
         int set = rest == "set 1" ? 1 : rest == "set 0" ? 0 : -1;
-        webview_dispatch(g_w, do_login,
+        launcher_dispatch(g_w, do_login,
                          new LoginReq{line.substr(6, sp - 6), set});
       } else if (line.rfind("POWER ", 0) == 0) {
         // POWER <qid> on\t<display01>\t<reason> | POWER <qid> off
@@ -8558,7 +8615,7 @@ static void sock_read_loop() {
         req->on = p.size() > 0 && p[0] == "on";
         req->display = p.size() > 1 && p[1] == "1";
         req->reason = p.size() > 2 ? wire_unescape(p[2]) : "";
-        webview_dispatch(g_w, do_power, req);
+        launcher_dispatch(g_w, do_power, req);
       } else if (line.rfind("SOUND ", 0) == 0) {
         size_t sp = line.find(' ', 6);
         SoundReq *req = new SoundReq;
@@ -8568,7 +8625,7 @@ static void sock_read_loop() {
           req->qid = line.substr(6, sp - 6);
           req->target = wire_unescape(line.substr(sp + 1));
         }
-        webview_dispatch(g_w, do_sound, req);
+        launcher_dispatch(g_w, do_sound, req);
       } else if (line.rfind("SHARE", 0) == 0 &&
                  (line[5] == ' ' || line[5] == '@')) {
         std::string winid = "main";
@@ -8589,11 +8646,11 @@ static void sock_read_loop() {
         for (size_t i = 4; i < p.size(); i++)
           if (!p[i].empty())
             req->paths.push_back(wire_unescape(p[i]));
-        webview_dispatch(g_w, do_share, req);
+        launcher_dispatch(g_w, do_share, req);
       } else if (line == "NOWPLAYING" || line.rfind("NOWPLAYING ", 0) == 0) {
         NowPlayingReq *req = new NowPlayingReq;
         req->json = line.size() > 11 ? wire_unescape(line.substr(11)) : "";
-        webview_dispatch(g_w, do_nowplaying, req);
+        launcher_dispatch(g_w, do_nowplaying, req);
       } else if (line.rfind("SAY ", 0) == 0) {
         size_t sp = line.find(' ', 4);
         if (sp == std::string::npos) continue;
@@ -8603,7 +8660,7 @@ static void sock_read_loop() {
         req->text = p.size() > 0 ? wire_unescape(p[0]) : "";
         req->voice = p.size() > 1 ? wire_unescape(p[1]) : "";
         req->rate = p.size() > 2 ? std::atof(p[2].c_str()) : 0;
-        webview_dispatch(g_w, do_say, req);
+        launcher_dispatch(g_w, do_say, req);
       } else if (line.rfind("RECORD ", 0) == 0) {
         // RECORD <qid> start <display>\t<path> | RECORD <qid> stop
         size_t sp = line.find(' ', 7);
@@ -8618,7 +8675,7 @@ static void sock_read_loop() {
           req->display = p.size() > 0 ? std::atol(p[0].c_str()) : 0;
           req->path = p.size() > 1 ? wire_unescape(p[1]) : "";
         }
-        webview_dispatch(g_w, do_record, req);
+        launcher_dispatch(g_w, do_record, req);
       } else if (line.rfind("WINCTRL ", 0) == 0) {
         // WINCTRL <qid> <pid>\t<x>\t<y>\t<w>\t<h>
         size_t sp = line.find(' ', 8);
@@ -8631,24 +8688,24 @@ static void sock_read_loop() {
         req->y = p.size() > 2 ? std::atoi(p[2].c_str()) : 0;
         req->w = p.size() > 3 ? std::atoi(p[3].c_str()) : 0;
         req->h = p.size() > 4 ? std::atoi(p[4].c_str()) : 0;
-        webview_dispatch(g_w, do_winctrl, req);
+        launcher_dispatch(g_w, do_winctrl, req);
       } else if (line == "SAYSTOP") {
-        webview_dispatch(g_w, do_saystop, nullptr);
+        launcher_dispatch(g_w, do_saystop, nullptr);
       } else if (line.rfind("VOICES ", 0) == 0) {
-        webview_dispatch(g_w, do_voices, new VoicesReq{line.substr(7)});
+        launcher_dispatch(g_w, do_voices, new VoicesReq{line.substr(7)});
       } else if (line.rfind("PICKCOLOR ", 0) == 0) {
-        webview_dispatch(g_w, do_pickcolor, new std::string(line.substr(10)));
+        launcher_dispatch(g_w, do_pickcolor, new std::string(line.substr(10)));
       } else if (line.rfind("OCR ", 0) == 0) {
         size_t sp = line.find(' ', 4);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_ocr,
+        launcher_dispatch(g_w, do_ocr,
                          new OcrReq{line.substr(4, sp - 4),
                                     wire_unescape(line.substr(sp + 1))});
       } else if (line.rfind("THUMB ", 0) == 0) {
         size_t sp = line.find(' ', 6);
         if (sp == std::string::npos) continue;
         std::vector<std::string> p = split_tabs(line.substr(sp + 1));
-        webview_dispatch(
+        launcher_dispatch(
             g_w, do_thumb,
             new ThumbReq{line.substr(6, sp - 6),
                          p.size() > 0 ? wire_unescape(p[0]) : "",
@@ -8663,17 +8720,17 @@ static void sock_read_loop() {
         req->service = p.size() > 1 ? wire_unescape(p[1]) : "";
         req->account = p.size() > 2 ? wire_unescape(p[2]) : "";
         req->value = p.size() > 3 ? wire_unescape(p[3]) : "";
-        webview_dispatch(g_w, do_secret, req);
+        launcher_dispatch(g_w, do_secret, req);
       } else if (line.rfind("AUTH ", 0) == 0) {
         size_t sp = line.find(' ', 5);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_auth,
+        launcher_dispatch(g_w, do_auth,
                          new AuthReq{line.substr(5, sp - 5),
                                      wire_unescape(line.substr(sp + 1))});
       } else if (line.rfind("OSA ", 0) == 0) {
         size_t sp = line.find(' ', 4);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_osa,
+        launcher_dispatch(g_w, do_osa,
                          new OsaReq{line.substr(4, sp - 4),
                                     wire_unescape(line.substr(sp + 1))});
       } else if (line == "QUICKLOOK" || line.rfind("QUICKLOOK ", 0) == 0) {
@@ -8682,7 +8739,7 @@ static void sock_read_loop() {
           for (auto &p : split_tabs(line.substr(10)))
             if (!p.empty())
               req->paths.push_back(wire_unescape(p));
-        webview_dispatch(g_w, do_quicklook, req);
+        launcher_dispatch(g_w, do_quicklook, req);
       } else if (line.rfind("CAPTURE ", 0) == 0) {
         size_t sp = line.find(' ', 8);
         CaptureReq *req = new CaptureReq;
@@ -8693,18 +8750,18 @@ static void sock_read_loop() {
           req->qid = line.substr(8, sp - 8);
           req->display = std::atol(line.c_str() + sp + 1);
         }
-        webview_dispatch(g_w, do_capture, req);
+        launcher_dispatch(g_w, do_capture, req);
       } else if (line == "BADGE" || line.rfind("BADGE ", 0) == 0) {
-        webview_dispatch(g_w, do_badge,
+        launcher_dispatch(g_w, do_badge,
                          new std::string(
                              line.size() > 6 ? wire_unescape(line.substr(6))
                                              : ""));
       } else if (line.rfind("ATTENTION", 0) == 0) {
-        webview_dispatch(g_w, do_attention,
+        launcher_dispatch(g_w, do_attention,
                          new int(line.size() > 10 ? std::atoi(line.c_str() + 10)
                                                   : 0));
       } else if (line.rfind("PROGRESS", 0) == 0) {
-        webview_dispatch(g_w, do_progress,
+        launcher_dispatch(g_w, do_progress,
                          new double(line.size() > 9
                                         ? std::atof(line.c_str() + 9)
                                         : -1.0));
@@ -8720,18 +8777,18 @@ static void sock_read_loop() {
         }
         size_t sp = line.find(' ', head);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_pdf,
+        launcher_dispatch(g_w, do_pdf,
                          new PdfReq{line.substr(head, sp - head),
                                     wire_unescape(line.substr(sp + 1)), win});
       } else if (line == "APPICON" || line.rfind("APPICON ", 0) == 0) {
-        webview_dispatch(g_w, do_appicon,
+        launcher_dispatch(g_w, do_appicon,
                          new std::string(line.size() > 8
                                              ? wire_unescape(line.substr(8))
                                              : ""));
       } else if (line.rfind("SPOTLIGHT ", 0) == 0) {
         size_t sp = line.find(' ', 10);
         if (sp == std::string::npos) continue;
-        webview_dispatch(g_w, do_spotlight,
+        launcher_dispatch(g_w, do_spotlight,
                          new SpotlightReq{line.substr(10, sp - 10),
                                           wire_unescape(line.substr(sp + 1))});
       } else if (line.rfind("AI ", 0) == 0) {
@@ -8751,7 +8808,7 @@ static void sock_read_loop() {
           req->instructions = p.size() > 1 ? wire_unescape(p[1]) : "";
           req->tools = p.size() > 2 ? wire_unescape(p[2]) : "";
         }
-        webview_dispatch(g_w, do_ai, req);
+        launcher_dispatch(g_w, do_ai, req);
       } else if (line.rfind("AITOOLRESULT ", 0) == 0) {
         // The backend answering a tool call. Handled right here on the reader
         // thread rather than dispatched: the thread waiting on it is blocked in
@@ -8766,18 +8823,18 @@ static void sock_read_loop() {
         (void)id;
 #endif
       } else if (line == "PRINT") {
-        webview_dispatch(g_w, do_print, nullptr);
+        launcher_dispatch(g_w, do_print, nullptr);
       } else if (line.rfind("PRINT@", 0) == 0) {
-        webview_dispatch(g_w, do_print, new std::string(line.substr(6)));
+        launcher_dispatch(g_w, do_print, new std::string(line.substr(6)));
       } else if (line == "RELOAD") {
-        webview_dispatch(g_w, do_reload, nullptr);
+        launcher_dispatch(g_w, do_reload, nullptr);
       } else if (line == "QUIT") {
-        webview_dispatch(g_w, do_terminate, nullptr);
+        launcher_dispatch(g_w, do_terminate, nullptr);
       }
     }
   }
   // Backend exited or closed the socket: close the window.
-  webview_dispatch(g_w, do_terminate, nullptr);
+  launcher_dispatch(g_w, do_terminate, nullptr);
 }
 
 // --- bundle mode ---------------------------------------------------------------
@@ -8920,6 +8977,19 @@ static void install_open_handlers() {
   [NSApp setDelegate:delegate];
 }
 
+// mainWindow: false never runs webview_create, so NSApp would have no
+// delegate — and install_open_handlers needs one to hang openURLs/openFiles
+// on. This stands in for the library's (same explicit NO, so closing the last
+// named window leaves the tray agent running).
+@interface TinyWindowlessDelegate : NSObject <NSApplicationDelegate>
+@end
+static TinyWindowlessDelegate *g_windowless_delegate = nil;
+@implementation TinyWindowlessDelegate
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
+  return NO;
+}
+@end
+
 static bool bundle_mode_setup(std::string &target, std::string &title,
                               std::string &size_s, std::string &version) {
   NSBundle *mb = [NSBundle mainBundle];
@@ -8929,8 +8999,9 @@ static bool bundle_mode_setup(std::string &target, std::string &title,
   // tinyjs.json "url": the main window starts at a remote URL (site wrappers)
   // — no local frontend required then.
   NSString *remote = [mb objectForInfoDictionaryKey:@"TinyjsUrl"];
+  g_windowless = [[mb objectForInfoDictionaryKey:@"TinyjsNoMainWindow"] boolValue];
   if (![bp hasSuffix:@".app"] ||
-      (!remote.length &&
+      (!g_windowless && !remote.length &&
        ![[NSFileManager defaultManager] fileExistsAtPath:frontend]))
     return false;
 
@@ -8992,6 +9063,112 @@ static bool bundle_mode_setup(std::string &target, std::string &title,
 }
 #endif
 
+// Only application initialization differs between windowless and windowed mode.
+static void initialize_windowless_application() {
+  [NSApplication sharedApplication];
+  [NSApp setActivationPolicy:g_accessory ? NSApplicationActivationPolicyAccessory
+                                       : NSApplicationActivationPolicyRegular];
+  g_windowless_delegate = [[TinyWindowlessDelegate alloc] init];
+  [NSApp setDelegate:g_windowless_delegate];
+  g_suppress_order_front = false;
+}
+
+static bool initialize_main_window(const std::string &title, int width, int height,
+                                   bool bundle_mode) {
+  g_w = webview_create(g_debug ? 1 : 0, nullptr);
+  if (!g_w) {
+    std::fprintf(stderr, "launcher: failed to create webview\n");
+    return false;
+  }
+
+  apply_dev_icon();   // dev only: TINYJS_ICON -> the Dock tile
+  enable_webgpu(g_w);
+  install_close_hook(g_w);
+  install_drop_hook();
+  install_media_capture_hook();
+  install_page_dialog_hooks(); // JS dialogs + window.open on the UI delegate
+  install_ctx_hook();
+  // Packaged apps can declare chrome in the plist (TinyjsChrome, same
+  // tab-separated fields as the CHROME command) so the window never flashes
+  // its default titlebar.
+  NSString *plist_chrome = nil;
+  if (bundle_mode)
+    plist_chrome = [[NSBundle mainBundle]
+        objectForInfoDictionaryKey:@"TinyjsChrome"];
+  auto plist_chrome_req = [&]() -> ChromeReq * {
+    std::vector<std::string> p = split_tabs([plist_chrome UTF8String]);
+    ChromeReq *req = new ChromeReq;
+    req->frame = p.size() > 0 ? p[0] : "";
+    req->traffic = p.size() > 1 ? p[1] : "";
+    req->transparent = p.size() > 2 ? p[2] : "";
+    req->vibrancy = p.size() > 3 ? p[3] : "";
+    req->square = p.size() > 4 ? p[4] : "";
+    req->first_mouse = p.size() > 5 ? p[5] : "";
+    // The plist chrome has no menu field, so windowControlsPos is p[6]
+    // here (vs p[7] on the socket CHROME, where menu sits between).
+    req->traffic_pos = p.size() > 6 ? p[6] : "";
+    return req;
+  };
+  if (plist_chrome) do_chrome(g_w, plist_chrome_req());
+
+  webview_set_title(g_w, title.c_str());
+  webview_set_size(g_w, width, height, WEBVIEW_HINT_NONE);
+  // …and then say what we actually meant. webview_set_size treats those
+  // numbers as the FRAME, so the page came out title-bar-shorter than the
+  // declared size — the deck asks for 1100x720 and got a 688-tall page on
+  // macOS while Windows and Linux both gave it 720. Correct the frame so the
+  // CONTENT is the declared size, the same as the other two launchers (the
+  // Windows one does this a few lines after its own set_size, for the mirror-
+  // image reason). Left as a correction rather than a replacement because
+  // set_size is also what shows and centers the window at boot.
+  {
+    NSWindow *mw = window_for_id(g_w, "main");
+    if (mw && width > 0 && height > 0) {
+      NSRect f = mw.frame;
+      CGFloat top = NSMaxY(f);
+      f.size =
+          [mw frameRectForContentRect:NSMakeRect(0, 0, width, height)].size;
+      f.origin.y = top - f.size.height;
+      [mw setFrame:f display:YES];
+      [mw center];
+    }
+  }
+  // webview_set_size above rewrites the styleMask WHOLESALE (the reason the
+  // SETSIZE op avoids it) — which just wiped everything TinyjsChrome
+  // applied: a packaged squareCorners app snapped back to titled, traffic
+  // lights and all. Dev never showed it because the bridge re-sends chrome
+  // over the socket after boot; packaged apps have only the plist, so amp
+  // shipped with window buttons twice before this was caught. Re-apply the
+  // same request now, in the same runloop turn, so nothing paints titled.
+  if (plist_chrome) do_chrome(g_w, plist_chrome_req());
+  // Unified page RPC for every window, the main one included (replaces
+  // webview_bind: the shim's __invoke wins because nothing else defines it).
+  {
+    WKWebView *mwv = (WKWebView *)webview_get_native_handle(
+        g_w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
+    if (mwv) {
+      attach_tiny_bridge(mwv.configuration.userContentController, "main");
+      if (!g_user_agent.empty())
+        mwv.customUserAgent = ns(g_user_agent);
+      // Navigation events + downloads for the main window; its UI delegate is
+      // already the library's (with our runtime bolt-ons), left untouched —
+      // BUT WebKit caches which delegate methods exist at setUIDelegate:
+      // time, which was before install_page_dialog_hooks added ours (same
+      // trap install_open_handlers documents for NSApp). Re-set it so the
+      // JS-dialog and createWebView handlers are actually consulted;
+      // measured: without this, confirm() returns false instantly and
+      // window.open never reaches tiny_create_webview.
+      id uid = mwv.UIDelegate;
+      if (uid) {
+        mwv.UIDelegate = nil;
+        mwv.UIDelegate = uid;
+      }
+      tiny_apply_web_delegates(mwv);
+    }
+  }
+  return true;
+}
+
 int main(int argc, char *argv[]) {
   std::string target, sock_path, title = "tinyjs", size_s = "960x640";
   bool bundle_mode = false;
@@ -9012,6 +9189,8 @@ int main(int argc, char *argv[]) {
 #endif
 
   if (!bundle_mode) {
+    const char *no_main = getenv("TINYJS_NO_MAIN_WINDOW");
+    g_windowless = no_main && std::strcmp(no_main, "1") == 0;
     if (argc < 3) {
       std::fprintf(stderr,
                    "usage: %s <html-file-or-url> <socket-path> [title] [WxH]\n",
@@ -9175,108 +9354,17 @@ int main(int argc, char *argv[]) {
   install_media_scheme_hook();
 #endif
 
-  g_w = webview_create(g_debug ? 1 : 0, nullptr);
-  if (!g_w) {
-    std::fprintf(stderr, "launcher: failed to create webview\n");
+  if (g_windowless) {
+    initialize_windowless_application();
+  } else if (!initialize_main_window(title, width, height, bundle_mode)) {
     return 1;
   }
-
-#ifdef __APPLE__
-  apply_dev_icon();   // dev only: TINYJS_ICON -> the Dock tile
-  if (g_debug)
-    install_devtools_key_monitor();
-  install_stock_key_fallback();  // ⌘C/⌘V when an app drops the stock Edit items
-  enable_webgpu(g_w);
-  install_close_hook(g_w);
-  install_drop_hook();
-  install_media_capture_hook();
-  install_page_dialog_hooks(); // JS dialogs + window.open on the UI delegate
+  install_stock_key_fallback();
+  if (g_debug) install_devtools_key_monitor();
   install_first_mouse_hook();
-  install_ctx_hook();
   install_system_observers();
   install_winstate_observers();
   install_open_handlers();
-  // Packaged apps can declare chrome in the plist (TinyjsChrome, same
-  // tab-separated fields as the CHROME command) so the window never flashes
-  // its default titlebar.
-  NSString *plist_chrome = nil;
-  if (bundle_mode)
-    plist_chrome = [[NSBundle mainBundle]
-        objectForInfoDictionaryKey:@"TinyjsChrome"];
-  auto plist_chrome_req = [&]() -> ChromeReq * {
-    std::vector<std::string> p = split_tabs([plist_chrome UTF8String]);
-    ChromeReq *req = new ChromeReq;
-    req->frame = p.size() > 0 ? p[0] : "";
-    req->traffic = p.size() > 1 ? p[1] : "";
-    req->transparent = p.size() > 2 ? p[2] : "";
-    req->vibrancy = p.size() > 3 ? p[3] : "";
-    req->square = p.size() > 4 ? p[4] : "";
-    req->first_mouse = p.size() > 5 ? p[5] : "";
-    // The plist chrome has no menu field, so windowControlsPos is p[6]
-    // here (vs p[7] on the socket CHROME, where menu sits between).
-    req->traffic_pos = p.size() > 6 ? p[6] : "";
-    return req;
-  };
-  if (plist_chrome) do_chrome(g_w, plist_chrome_req());
-#endif
-
-  webview_set_title(g_w, title.c_str());
-  webview_set_size(g_w, width, height, WEBVIEW_HINT_NONE);
-#ifdef __APPLE__
-  // …and then say what we actually meant. webview_set_size treats those
-  // numbers as the FRAME, so the page came out title-bar-shorter than the
-  // declared size — the deck asks for 1100x720 and got a 688-tall page on
-  // macOS while Windows and Linux both gave it 720. Correct the frame so the
-  // CONTENT is the declared size, the same as the other two launchers (the
-  // Windows one does this a few lines after its own set_size, for the mirror-
-  // image reason). Left as a correction rather than a replacement because
-  // set_size is also what shows and centers the window at boot.
-  {
-    NSWindow *mw = window_for_id(g_w, "main");
-    if (mw && width > 0 && height > 0) {
-      NSRect f = mw.frame;
-      CGFloat top = NSMaxY(f);
-      f.size =
-          [mw frameRectForContentRect:NSMakeRect(0, 0, width, height)].size;
-      f.origin.y = top - f.size.height;
-      [mw setFrame:f display:YES];
-      [mw center];
-    }
-  }
-  // webview_set_size above rewrites the styleMask WHOLESALE (the reason the
-  // SETSIZE op avoids it) — which just wiped everything TinyjsChrome
-  // applied: a packaged squareCorners app snapped back to titled, traffic
-  // lights and all. Dev never showed it because the bridge re-sends chrome
-  // over the socket after boot; packaged apps have only the plist, so amp
-  // shipped with window buttons twice before this was caught. Re-apply the
-  // same request now, in the same runloop turn, so nothing paints titled.
-  if (plist_chrome) do_chrome(g_w, plist_chrome_req());
-  // Unified page RPC for every window, the main one included (replaces
-  // webview_bind: the shim's __invoke wins because nothing else defines it).
-  {
-    WKWebView *mwv = (WKWebView *)webview_get_native_handle(
-        g_w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
-    if (mwv) {
-      attach_tiny_bridge(mwv.configuration.userContentController, "main");
-      if (!g_user_agent.empty())
-        mwv.customUserAgent = ns(g_user_agent);
-      // Navigation events + downloads for the main window; its UI delegate is
-      // already the library's (with our runtime bolt-ons), left untouched —
-      // BUT WebKit caches which delegate methods exist at setUIDelegate:
-      // time, which was before install_page_dialog_hooks added ours (same
-      // trap install_open_handlers documents for NSApp). Re-set it so the
-      // JS-dialog and createWebView handlers are actually consulted;
-      // measured: without this, confirm() returns false instantly and
-      // window.open never reaches tiny_create_webview.
-      id uid = mwv.UIDelegate;
-      if (uid) {
-        mwv.UIDelegate = nil;
-        mwv.UIDelegate = uid;
-      }
-      tiny_apply_web_delegates(mwv);
-    }
-  }
-#endif
 
   // Default menu bar (About/Quit + Edit); custom menus replace it via MENUEND.
   apply_menus(g_w, new std::vector<MenuSpec>());
@@ -9284,39 +9372,42 @@ int main(int argc, char *argv[]) {
   // (MENUBEGIN@<win>) shows it whenever it is the key window.
   install_key_window_observer();
 
-  if (target.rfind("http://", 0) == 0 || target.rfind("https://", 0) == 0) {
-    webview_navigate(g_w, target.c_str());
-  } else {
-    // file:// document (secure context; see load_html_file).
-    g_html_path = target;
-    if (!load_html_file(g_w, target)) {
-      std::fprintf(stderr, "launcher: cannot read %s\n", target.c_str());
-      return 1;
+  if (!g_windowless) {
+    if (target.rfind("http://", 0) == 0 || target.rfind("https://", 0) == 0) {
+      webview_navigate(g_w, target.c_str());
+    } else {
+      // file:// document (secure context; see load_html_file).
+      g_html_path = target;
+      if (!load_html_file(g_w, target)) {
+        std::fprintf(stderr, "launcher: cannot read %s\n", target.c_str());
+        return 1;
+      }
     }
-  }
 
 #ifdef __APPLE__
-  // Accessory startup is done: everything up to here ran with order-front
-  // suppressed, so the window was never on screen. Make sure it is genuinely
-  // ordered out, then lift the suppression so WINOP show works normally (the
-  // socket loop hasn't started yet, so no show can have been requested).
-  if (g_suppress_order_front) {
-    NSWindow *win = (NSWindow *)webview_get_native_handle(
-        g_w, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW);
-    [win orderOut:nil];
-    g_suppress_order_front = false;
-  }
-  // debug:"open" — main window's inspector, once the run loop is going.
-  if (g_debug_open)
-    dispatch_async(dispatch_get_main_queue(), ^{
-      open_inspector(webview_for_id(g_w, "main"));
-    });
+    // Accessory startup is done: everything up to here ran with order-front
+    // suppressed, so the window was never on screen. Make sure it is genuinely
+    // ordered out, then lift the suppression so WINOP show works normally (the
+    // socket loop hasn't started yet, so no show can have been requested).
+    if (g_suppress_order_front) {
+      NSWindow *win = (NSWindow *)webview_get_native_handle(
+          g_w, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW);
+      [win orderOut:nil];
+      g_suppress_order_front = false;
+    }
+    // debug:"open" — main window's inspector, once the run loop is going.
+    if (g_debug_open)
+      dispatch_async(dispatch_get_main_queue(), ^{
+        open_inspector(webview_for_id(g_w, "main"));
+      });
 #endif
+
+  }
 
   std::thread(sock_read_loop).detach();
 
-  webview_run(g_w);
-  webview_destroy(g_w);
+  [NSApp run];
+  if (g_w) webview_destroy(g_w);
   if (!g_sock_dir.empty()) {
     unlink((g_sock_dir + "/app.sock").c_str());
     rmdir(g_sock_dir.c_str());

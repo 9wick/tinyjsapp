@@ -1,0 +1,7 @@
+{
+  "name": "windowless-tray-test",
+  "title": "Windowless Tray Test",
+  "id": "com.tinyjs.windowless-tray-test",
+  "mainWindow": false,
+  "activation": "accessory"
+}

@@ -191,6 +191,7 @@ myapp/
                          #   browserAccelerators? (true re-enables the engine's own keys —
                          #   Ctrl+F find, Ctrl+R reload…; default suppressed, Windows only),
                          #   activation? ("accessory" = menu-bar agent: no Dock, starts hidden),
+                         #   mainWindow? (false = no main window/WebView at all — tray agents),
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
   icon.png                # 1024×1024 app icon (template ships a default)
@@ -1115,6 +1116,61 @@ Packaged apps get `LSUIElement` (the system never shows them in the Dock);
 dev mode behaves the same. The window exists but stays hidden until you call
 `tiny.win.show()` / `app.show()`, and `app.presence('normal')` turns the app
 back into a regular one.
+
+### Windowless tray agents
+
+`"mainWindow": false` starts the launcher and backend without a main window
+or WebView. `"activation": "accessory"` only hides the main window, so WebKit
+still runs; with this flag there is no `main` window at all, and WebKit's
+processes don't start until you open a window. On macOS that took a tray
+agent's idle footprint from ~65 MiB to ~17 MiB; on Linux, from ~330 MiB to
+~110 MiB (launcher plus WebKit processes); on Windows, from ~110 MiB private
+(launcher plus six WebView2 processes) to ~12 MiB with none. Combine the
+two flags for an agent with a menu-bar icon and no Dock icon:
+
+```json
+{ "mainWindow": false, "activation": "accessory" }
+```
+
+```js
+export function init(app) {
+  app.tray.set({ icon: 'sf:camera', menu: [
+    { id: 'settings', label: 'Settings…' },
+    { id: 'quit', label: 'Quit' },
+  ] });
+}
+
+export function onTray(id, app) {
+  if (id === 'settings') {
+    app.openWindow('settings', { page: 'settings.html', size: '600x400' });
+    app.window('settings').show();
+  }
+  if (id === 'quit') app.quit();
+}
+```
+
+You don't need a frontend or `index.html` at startup; add pages only for
+the windows you open later. `app.windows()` starts as `[]`. Closing the last
+named window leaves the backend and tray running, and you can open it again.
+Main-window operations don't create a window — use `app.openWindow` and
+`app.window(id)`. `app.hide()` / `app.show()` hide and show the whole app.
+`app.reload()` reloads the named windows that are open. Dev watches the
+frontend only if that directory exists. `"url"` can't be combined with
+`"mainWindow": false`, because there is no main window to load it into.
+
+On Windows and Linux, which have no app-level hide, `app.hide()` hides every visible
+named window and `app.show()` brings exactly those back.
+
+**macOS and Linux so far.** Windows accepts the flag but keeps the main
+window, hidden, as `"activation": "accessory"` does: the same tinyjs.json
+works, `app.windows()` starts as `["main"]`, and you don't get the memory
+saving. The CLI prints a notice there.
+
+This mode still needs a logged-in GUI session for the tray; it isn't a
+server or SSH mode. Closing a window may not free all of WebKit's memory,
+because WebKit can keep its worker processes cached. If the editor must
+release everything when it closes, ship it as a separate app that the agent
+launches.
 
 ### Apps that place their own windows
 

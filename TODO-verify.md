@@ -3176,3 +3176,142 @@ one only when an `"api".origins` key names its origin. Probe:
   the iframe's `store.set` runs, replies still 41. Regressions: smoke.html
   passes on a top-level page; proxy-gate's wrapped-site trio (no `"api"` /
   `media.proxy`+`store.*` / `store.*`) refused / SECRET-PAYLOAD / refused.)*
+
+## PR #50 — `"mainWindow": false` windowless tray agents (`feat/headless-tray`, 2026-10-12)
+
+macOS starts the launcher with no main window or WebView (`g_windowless`;
+`TINYJS_NO_MAIN_WINDOW` in dev, `TinyjsNoMainWindow` plist key when
+packaged). Every macOS app now runs `[NSApp run]` / `[NSApp stop:]` directly
+instead of `webview_run` / `webview_terminate` (same calls the Cocoa backend
+makes), so regular apps need a regression look too. Windows and Linux are
+truly windowless as well (their entries below). Fixture + steps:
+`test/windowless-tray/README.md`.
+
+- [x] **macOS (Apple Silicon)**: timed fixture run in dev and packaged:
+  `BOOT []`, tray rect non-null, `PAGE` ×2, `WINDOW_CLOSED editor`,
+  `CLOSED []` ×2. No WebKit processes before the first open. `dialogs` run:
+  confirm `true` / prompt `"value"`. Manual: tray clicks, `<input type=file>`
+  pick + cancel. Regression: a regular app shows `["main"]` and its page;
+  ⌘Q, menu Quit and closing the main window all exit cleanly; open-file /
+  URL-scheme handoff still reaches a windowless app.
+  *(2026-10-12: timed fixture passes dev + packaged after the rename;
+  `dialogs` run gives confirm `true` / prompt `"value"` on both opens;
+  packaged windowless app receives `open -a` file and `tinyhandoff://` URL
+  handoffs. By hand: tray Open/Close editor, page Close button, tray Quit,
+  file picker pick + cancel all correct, icon survives every close. Regular
+  app: page loads, `["main"]`, and ⌘Q / menu Quit / red close each exit 0.
+  Non-boolean `mainWindow` and `mainWindow: false` + `url` rejected. Not
+  checked: the "no WebKit processes before first open" claim — trusted to
+  the PR's vmmap run. Seen along the way, NOT from this PR: packaged macOS
+  apps get a bogus onOpenFiles([".../entry.js"]) at launch — the argv scan
+  (bridge.js cliPaths) reads the backend's `run entry.js`; f3e64c3 fixed
+  dev only.)*
+- [x] **macOS x86_64 (Rosetta)**: *(2026-10-12: `TINYJS_UNIVERSAL=1
+  ./setup.sh` + `tinyjs build --arch x86_64`, both executables x86_64-only,
+  run translated on Apple Silicon / macOS 27. Timed fixture and `dialogs`
+  run both pass, exit 0. Not a real Intel Mac.)*
+- [ ] **macOS 14** (any CPU; an Apple Silicon VM via UTM/tart would do):
+  the AppKit startup/shutdown change has only been seen on macOS 26/27.
+- [ ] **Real Intel Mac**: nice to have; Rosetta covers the x86_64 code path.
+- [x] **Windows 11 (x64)**: now truly windowless too (`run_windowless` in
+  launcher-win.cc: no webview library instance, no main window; a hidden
+  `TinyjsHost` window carries the tray, hotkeys, clipboard timer, broadcasts
+  and `tiny_dispatch`; the first named window creates the WebView2
+  environment with embed()'s profile and options). Main-window
+  `app.hide()`/`show()` hide and restore the visible named windows, RELOAD
+  reloads them, ATTENTION/BADGE/PROGRESS are no-ops, APPICON goes to the
+  named windows. *(2026-10-12: timed fixture passes dev + packaged (`BOOT
+  []`, `MENU`, `PAGE` ×2, `WINDOW_CLOSED editor` ×2, `CLOSED []` ×2, exit
+  0); no `msedgewebview2.exe` before the first open, six while the editor
+  is up, none after it closes; idle launcher + WebView2 private bytes ~12
+  MiB vs ~111 MiB with a hidden main window (working set 20 vs 383 MiB).
+  Real tray menu (shell callback posted to the host, keys posted to the
+  menu window): Close with nothing open is harmless, Open, Open again via
+  left click doesn't duplicate, Close, a WM_CLOSE to the host is ignored,
+  second Open/Close, Quit exits. Scripted: hide one window, app.hide/show
+  restores only what it hid, reload re-runs both pages, main-window
+  title/size/center/presence/eval leave the host hidden, icon/attention/
+  badge/progress don't crash, clipboard watch + hotkey (via
+  `app.keystroke`) fire, close/reopen, page `tiny.win.close()`. Page
+  `tiny.dialog.confirm` + `window.confirm`/`prompt` (AUTODLG ok),
+  `window.open` with `"popups": "window"`, localStorage shared with the
+  regular profile. App with no frontend dir: `[]`. Non-boolean
+  `mainWindow` and `+ url` rejected. Regression, same build: regular app
+  `["main"]` visible 960x640, hide/show/title/size, named windows
+  open/close/reopen, clipboard, hotkey; `"activation": "accessory"` main
+  starts hidden as a tool window and shows on `app.show()`. By hand, same
+  day, real mouse on the real notification-area icon: Close with nothing
+  open, Open (right-click), Open again (left-click, no duplicate),
+  `<input type=file>` cancel (`cancel` event) and pick (`change:
+  ["pick-me.txt"]`), `tiny.dialog.openFile` cancel (`null`) and pick (a
+  `\\Mac\…` UNC path), page Close button → `WINDOW_CLOSED`, reopen, title-bar
+  X → `WINDOW_CLOSED`, tray Quit exits. Not covered: packaged open-file /
+  URL-scheme handoff.)*
+- [x] **Linux (arm64, GNOME/Wayland VM)**: now truly windowless too
+  (`g_windowless` in launcher-linux.cc: no main GtkWindow/WebView; main-window
+  `app.hide()`/`show()` hide and restore the visible named windows, RELOAD
+  reloads them, ATTENTION is a no-op, APPICON goes to the named windows).
+  *(2026-10-12: timed fixture passes dev + packaged (`BOOT [] null`, `MENU`,
+  `PAGE` ×2, `WINDOW_CLOSED editor`, `CLOSED []` ×2, exit 0); no WebKit
+  children before the first open; idle launcher+children RSS ~111 MiB vs
+  ~329 MiB with a hidden main window. Scripted: hide → editor invisible, show
+  → visible, reload re-runs the page, attention/icon don't crash, main
+  `getWinState()` null. Scratch app with no frontend dir starts, `[]`.
+  Regular app: `["main"]`, visible, page loads. Non-boolean `mainWindow` and
+  `+ url` rejected. `dialogs` run: confirm `true` / prompt `"value"` on both
+  opens.)*
+- [x] **Linux tray clicks, page input, X11, x86_64**: *(2026-10-12, same VM.
+  Tray: sent the real AppIndicator menu's dbusmenu `Event … clicked` (what
+  the shell sends on a click) — Close with nothing open is harmless,
+  Open → `PAGE`, Open again doesn't duplicate, Close → `WINDOW_CLOSED`, a
+  second Open/Close cycle, icon still registered after every close, Quit
+  exits; WebKitWebProcess starts on Open and exits on Close. Page input via
+  real XTest keys (`app.keystroke`) under `GDK_BACKEND=x11`: `<input
+  type=file>` cancel (`cancel` event) and pick (typed path → `change:
+  ["wlpick"]`), then the page's Close button → `WINDOW_CLOSED editor`,
+  `[]`, reopen works. X11 (XWayland, `GDK_BACKEND=x11`): timed fixture +
+  tray clicks pass. x86_64: launcher built in an ubuntu:22.04 amd64
+  container + the v0.50.1 release tjs, run under Rosetta on XWayland with
+  the host session bus (`--security-opt apparmor=unconfined`, else the
+  tray can't reach the bus): timed fixture, tray clicks, `dialogs` run and
+  the keyboard picker/Close test all pass. Not covered: a real X11
+  session (only GTK's X11 backend on XWayland), real Intel hardware, and the
+  file picker on native Wayland (portal, out of process — XTest can't reach
+  it).)*
+- [x] **Windows DPI (review fix, 2026-10-12)**: `run_windowless` now calls
+  `enable_dpi_awareness()`. The webview library did that while building main,
+  so without it windowless named windows were DPI-unaware. At **150%
+  scaling**, open the fixture's editor next to a named window from a regular
+  app: text equally sharp (not soft or stretched); `app.window('editor')
+  .getState()` reports the same size for the same `size` in both modes;
+  `setPosition` / `center` land in the same place. Repeat after dragging the
+  editor to a monitor at a different scale, if there is one.
+  *(2026-10-12, Windows 11 VM at 200% (192 dpi), scratch windowless +
+  regular apps opening the same 400x300 `editor`: in both, the editor's
+  window reports per-monitor awareness (`GetWindowDpiAwarenessContext`) and
+  dpi 192, the page sees `devicePixelRatio` 2 and a 400x300 viewport,
+  `getState()` gives 400x300 at scale 2, `setPosition(100,100)` → 100,100
+  and `center()` → 658,350 in both, 826x671 physical pixels either way.
+  By eye, same day: the two editors side by side, text and an 11px line
+  equally sharp. Not covered: 150%, and a second monitor at another scale —
+  this box has one.)*
+- [x] **Windows `hide({ app: false })` (review fix)**: with `"mainWindow":
+  false` and the editor open, it must do nothing (it used to hide every named
+  window, unlike macOS/Linux). Plain `app.hide()` / `app.show()` still hide
+  and restore the editor.
+  *(2026-10-12, same windowless scratch app: after `hide({ app: false })`
+  the editor's `getState().visible` stays true; `app.hide()` → false;
+  `app.show()` → true.)*
+- [x] **Linux icon for windows opened later (review fix)**: named windows now
+  open with the current `app.icon()` instead of always the startup icon.
+  Windowless fixture: `app.icon('/abs/other.png')`, then open the editor →
+  taskbar/alt-tab shows the new icon; `app.icon('')`, reopen → back to the
+  startup icon. Regular app: same for a named window opened after
+  `app.icon()`.
+  *(2026-10-12, arm64 GNOME VM, `GDK_BACKEND=x11` on XWayland: scratch
+  windowless and regular apps with a red `icon.png`; `app.icon(blue.png)`
+  then open the editor → its `_NET_WM_ICON` (read with xprop off the
+  client window, not mutter's frame) is blue at 32/48/64; close,
+  `app.icon('')`, reopen → red. Regular app's main window follows both
+  times. Not covered: native Wayland (no per-window icon there, the shell
+  uses the .desktop), and the shell's own taskbar/alt-tab render by eye.)*

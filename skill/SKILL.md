@@ -73,6 +73,7 @@ tinyjs.json          { name, title, size, id, version, icon?,
                        urlScheme?: "myapp", fileExtensions?: ["md"],
                        openFolders?: true, readAccess?: true | "/path",
                        userAgent?: "…", activation?: "accessory",
+                       mainWindow?: false,  // no main window/WebView (tray agents)
                        offscreenRescue?: false, windowPlacement?: true,
                        contextMenu?: false, audioTap?: "app" | "system",
                        audioTapReason?: "why", about?: "menu",
