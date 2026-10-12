@@ -1091,7 +1091,7 @@ declare interface TinyWindowHandle {
   setLevel(level: TinyWindowLevel): void;
   setAllSpaces(enabled: boolean): void;
   setChrome(opts: TinyChromeOptions): void;
-  getState(): Promise<TinyWinState>;
+  getState(): Promise<TinyWinState | null>;
   /** This window's OWN menu bar, overriding the app menu for it alone.
    *  Clicks arrive the same way either bar sent them, so a handler doesn't
    *  have to care which. macOS shows it while the window is key. */
@@ -1161,8 +1161,11 @@ declare interface TinyApp {
   startDrag(): void;
   zoom(): void;
   setChrome(opts: TinyChromeOptions): void;
-  getWinState(): Promise<TinyWinState>;
+  /** null when no main window exists (macOS headless mode). */
+  getWinState(): Promise<TinyWinState | null>;
 
+  /** In macOS headless mode no main window exists; create named windows on
+   *  demand. Closing the last named window keeps the backend/tray alive. */
   openWindow(id: string, opts?: TinyOpenWindowOptions): void;
   window(id: string): TinyWindowHandle;
   windows(): Promise<string[]>;
