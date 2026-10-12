@@ -3183,9 +3183,9 @@ macOS starts the launcher with no main window or WebView (`g_windowless`;
 `TINYJS_NO_MAIN_WINDOW` in dev, `TinyjsNoMainWindow` plist key when
 packaged). Every macOS app now runs `[NSApp run]` / `[NSApp stop:]` directly
 instead of `webview_run` / `webview_terminate` (same calls the Cocoa backend
-makes), so regular apps need a regression look too. Windows/Linux fall back
-to a hidden main window (bridge forces accessory activation and supplies a
-blank page). Fixture + steps: `test/windowless-tray/README.md`.
+makes), so regular apps need a regression look too. Windows and Linux are
+truly windowless as well (their entries below). Fixture + steps:
+`test/windowless-tray/README.md`.
 
 - [x] **macOS (Apple Silicon)**: timed fixture run in dev and packaged:
   `BOOT []`, tray rect non-null, `PAGE` ×2, `WINDOW_CLOSED editor`,
@@ -3278,7 +3278,7 @@ blank page). Fixture + steps: `test/windowless-tray/README.md`.
   session (only GTK's X11 backend on XWayland), real Intel hardware, and the
   file picker on native Wayland (portal, out of process — XTest can't reach
   it).)*
-- [ ] **Windows DPI (review fix, 2026-10-12)**: `run_windowless` now calls
+- [x] **Windows DPI (review fix, 2026-10-12)**: `run_windowless` now calls
   `enable_dpi_awareness()`. The webview library did that while building main,
   so without it windowless named windows were DPI-unaware. At **150%
   scaling**, open the fixture's editor next to a named window from a regular
@@ -3286,10 +3286,22 @@ blank page). Fixture + steps: `test/windowless-tray/README.md`.
   .getState()` reports the same size for the same `size` in both modes;
   `setPosition` / `center` land in the same place. Repeat after dragging the
   editor to a monitor at a different scale, if there is one.
-- [ ] **Windows `hide({ app: false })` (review fix)**: with `"mainWindow":
+  *(2026-10-12, Windows 11 VM at 200% (192 dpi), scratch windowless +
+  regular apps opening the same 400x300 `editor`: in both, the editor's
+  window reports per-monitor awareness (`GetWindowDpiAwarenessContext`) and
+  dpi 192, the page sees `devicePixelRatio` 2 and a 400x300 viewport,
+  `getState()` gives 400x300 at scale 2, `setPosition(100,100)` → 100,100
+  and `center()` → 658,350 in both, 826x671 physical pixels either way.
+  By eye, same day: the two editors side by side, text and an 11px line
+  equally sharp. Not covered: 150%, and a second monitor at another scale —
+  this box has one.)*
+- [x] **Windows `hide({ app: false })` (review fix)**: with `"mainWindow":
   false` and the editor open, it must do nothing (it used to hide every named
   window, unlike macOS/Linux). Plain `app.hide()` / `app.show()` still hide
   and restore the editor.
+  *(2026-10-12, same windowless scratch app: after `hide({ app: false })`
+  the editor's `getState().visible` stays true; `app.hide()` → false;
+  `app.show()` → true.)*
 - [ ] **Linux icon for windows opened later (review fix)**: named windows now
   open with the current `app.icon()` instead of always the startup icon.
   Windowless fixture: `app.icon('/abs/other.png')`, then open the editor →
