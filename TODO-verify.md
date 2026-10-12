@@ -3302,9 +3302,16 @@ truly windowless as well (their entries below). Fixture + steps:
   *(2026-10-12, same windowless scratch app: after `hide({ app: false })`
   the editor's `getState().visible` stays true; `app.hide()` → false;
   `app.show()` → true.)*
-- [ ] **Linux icon for windows opened later (review fix)**: named windows now
+- [x] **Linux icon for windows opened later (review fix)**: named windows now
   open with the current `app.icon()` instead of always the startup icon.
   Windowless fixture: `app.icon('/abs/other.png')`, then open the editor →
   taskbar/alt-tab shows the new icon; `app.icon('')`, reopen → back to the
   startup icon. Regular app: same for a named window opened after
   `app.icon()`.
+  *(2026-10-12, arm64 GNOME VM, `GDK_BACKEND=x11` on XWayland: scratch
+  windowless and regular apps with a red `icon.png`; `app.icon(blue.png)`
+  then open the editor → its `_NET_WM_ICON` (read with xprop off the
+  client window, not mutter's frame) is blue at 32/48/64; close,
+  `app.icon('')`, reopen → red. Regular app's main window follows both
+  times. Not covered: native Wayland (no per-window icon there, the shell
+  uses the .desktop), and the shell's own taskbar/alt-tab render by eye.)*
