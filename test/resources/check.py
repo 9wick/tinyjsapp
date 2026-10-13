@@ -11,6 +11,10 @@ import time
 import zipfile
 import tarfile
 
+# Windows' locale codepage can't write the Cyrillic fixture names.
+if os.name == 'nt' and not sys.flags.utf8_mode:
+    sys.exit(subprocess.call([sys.executable, '-X', 'utf8', *sys.argv]))
+
 TOOL = Path(__file__).resolve().parents[2]
 TJS = TOOL / 'bin' / ('tjs.exe' if os.name == 'nt' else 'tjs')
 MAC = sys.platform == 'darwin'
@@ -29,7 +33,16 @@ def cli(project, command, ok=True):
     return run([TJS, 'run', TOOL / 'cli.js', command], project, ok)
 
 
-with tempfile.TemporaryDirectory(prefix='tinyjs-resources-') as tmp:
+def same_path(a, b):
+    # Windows paths mix separators (tjs.exePath + '/resources'), as the other
+    # app.paths entries do there; compare them as Windows does.
+    if a is None or b is None or os.name != 'nt':
+        return a == b
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+# A launcher still exiting holds its .exe; don't let that mask the real error.
+with tempfile.TemporaryDirectory(prefix='tinyjs-resources-', ignore_cleanup_errors=True) as tmp:
     base = Path(tmp).resolve()
     project = base / 'project with spaces ü'
     project.mkdir()
@@ -92,7 +105,8 @@ export const api = {
                 assert report.exists(), log.read_text()
                 result = json.loads(report.read_text())
                 assert 'error' not in result, result
-                assert result['root'] == result['frontendRoot'] == expected, result
+                assert result['root'] == result['frontendRoot'], result
+                assert same_path(result['root'], expected), (result, expected)
                 assert result['bytes'] == (None if expected is None else list(DATA)), result
                 # The dev supervisor and its child are cleaned up together below.
                 if 'dev' not in argv:

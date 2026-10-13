@@ -2648,13 +2648,15 @@ async function cmdPublish() {
   } else if (IS_WIN) {
     // Stage dist/ under a named folder so the zip's one top-level entry is
     // the app folder (what update.js swaps in); bsdtar (Windows 10+) writes
-    // zip when told -a with a .zip name.
+    // zip when told -a with a .zip name. By full path: from Git Bash, PATH
+    // finds GNU tar first, which ignores -a and writes a tar named .zip.
     const stage = '.build/publish-stage';
     await rmTree(stage);
     await tjs.makeDir(stage + '/' + cfg.name, { recursive: true });
     await copyTree('dist', stage + '/' + cfg.name);
     await tjs.makeDir(PUB, { recursive: true });
-    await run(['tar', '-a', '-cf', PUB + '/' + zipName, '-C', stage, cfg.name]);
+    const tar = (tjs.env.SystemRoot || tjs.env.SYSTEMROOT || 'C:\\Windows') + '\\System32\\tar.exe';
+    await run([tar, '-a', '-cf', PUB + '/' + zipName, '-C', stage, cfg.name]);
   } else {
     await tjs.makeDir(PUB, { recursive: true });
     await run(['ditto', '-c', '-k', '--keepParent', 'dist/' + cfg.title + '.app', PUB + '/' + zipName]);

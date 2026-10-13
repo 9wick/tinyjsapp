@@ -22,8 +22,31 @@ were of the old layout; the CLI paths changed, so each OS needs a re-run.
   folder by default, list narrowing + per-OS override, list without folder,
   folder symlink, URL wrapper, null without resources, rebuild cleanup,
   publish archive, signature.
-- [ ] Windows: `check.py` (dev/portable RPC, relocation, binary bytes,
-  path rejection/symlinks, null, rebuild cleanup, publish zip).
+- [~] Windows 11 arm64 (26200), 2026-10-13, Python 3.13: `check.py` PASS
+  with two fixture names swapped — dev and portable backend/frontend RPC,
+  relocated dist in a `moved build ü` folder, binary bytes, path rejection,
+  platform override, rebuild cleanup, publish zip bytes, URL wrapper, whole
+  folder, null. Symlinks SKIP (no Developer Mode); junctions checked by
+  hand instead — `resources/link` and `resources/` itself as `mklink /J`
+  both refused "symlinks are not supported". The swaps, and why the stock
+  script can't pass here yet:
+  - project folder `project with spaces ü` → ASCII: **tjs.exe's argv is
+    ANSI** (upstream txiki `main`), so `tjs run <path with ü>` gets `�` and
+    ENOENTs. `tinyjs dev` passes an absolute entry path, and `tinyjs.cmd`
+    passes `%~dp0cli.js` — so a user whose profile is `C:\Users\Jürgen`
+    can't run the CLI at all. Pre-existing, not resources-specific. Fix
+    candidates: an `activeCodePage` UTF-8 manifest stamped onto tjs.exe at
+    setup (compiled apps inherit it), or upstream `wmain`.
+  - fixture `данные` → `données`: **Windows' bsdtar 3.8.8 segfaults
+    creating any archive holding a name outside the ANSI codepage**
+    (0xC0000005; `ü` is fine), and skips such entries extracting (exit 1).
+    So `publish` crashes and the updater would refuse those files.
+    Pre-existing; resources make non-ASCII file names likelier.
+  Fixed on the way: `publish` and the updater now call
+  `%SystemRoot%\System32\tar.exe` — from Git Bash, PATH found GNU tar,
+  which ignores `-a` and wrote a POSIX tar named `-win.zip`. check.py now
+  re-execs in UTF-8 mode on Windows and compares paths separator-blind
+  (packaged roots are `C:\…\dir/resources`, like the other `app.paths`).
 - [ ] Linux x86_64: `check.py` again (the old layout passed 2026-10-11 in an
   Ubuntu 22.04.5 container under Xvfb — command in `test/resources/README.md`).
 - [ ] Linux arm64 and a Wayland session: not executed.
