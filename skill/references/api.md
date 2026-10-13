@@ -233,7 +233,7 @@ caps.api;                             // { gated, denied: [...] } for THIS origi
 ```
 
 ```js
-// BACKEND side (src/main.js) — export these like any other hook
+// BACKEND side (src/backend/main.js) — export these like any other hook
 export function onNavigate(info, app) {
   // kind: 'policy' | 'start' | 'commit' | 'finish' | 'fail' | 'crash'
   // 'policy' fires for main-frame http(s) BEFORE the navigation runs:
