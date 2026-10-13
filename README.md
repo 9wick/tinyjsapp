@@ -201,10 +201,17 @@ myapp/
                          #   mainWindow? (false = no main window/WebView at all — tray agents),
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
-  icon.png                # 1024×1024 app icon (template ships a default)
+  assets/                 # files the OS reads, by name — see "App assets"
+    icon.png              #   1024×1024 app icon (template ships a default)
+    Credits.html          #   optional: About panel credits (or .rtf / .rtfd)
+    My App Help/          #   optional: macOS help book ("macos": { "helpBook" })
+  resources/              # optional: data your code reads — see "Bundled data resources"
   src/backend/main.js     # backend: export const api = {...}; export function init(app) {}
   src/frontend/           # index.html + any local js/css/images
 ```
+
+Projects made before 0.53 keep `icon.png` (and `Credits.html`) at the
+project root; both are still found there.
 
 Both folders are conventions, not requirements. `"backend": "path/main.js"`
 picks the backend entry (default: the first of `src/backend/main.js|ts`,
@@ -224,7 +231,6 @@ strings `tiny.system.os()` returns:
 ```json
 {
   "name": "myapp",
-  "icon": "icon.png",
   "chrome": { "frame": false },
 
   "macos":   { "signIdentity": "Developer ID Application: …",
@@ -1001,12 +1007,32 @@ tinyjs.json — the click then arrives like any other menu item, with the
 reserved id `'about'`, in `tiny.menu.on` / the backend's `onMenu`. Apps that
 don't opt in keep the free panel; Windows and Linux have no default About
 item, so there the flag changes nothing. Two ways to shape that free panel:
-a `Credits.html` in the project root is bundled to `Resources/` and shown in
-place of the tinyjs credit line (the macOS convention; start it with
-`<meta charset="utf-8">` and give it a font, or AppKit reads it as Latin-1
-and sets it in Times), and
+an `assets/Credits.html` (or `Credits.rtf` / `Credits.rtfd`) is bundled to
+`Resources/` and shown in place of the tinyjs credit line (the macOS
+convention; start the HTML with `<meta charset="utf-8">` and give it a font,
+or AppKit reads it as Latin-1 and sets it in Times), and
 `"attribution": "…"` changes the one-liner itself — precedence:
-`Credits.html` → `attribution` → the tinyjs default.
+Credits file → `attribution` → the tinyjs default. Credits only show in a
+built app; `tinyjs dev` has no bundle to carry them.
+
+`{ role: 'help' }` is the **Help** menu. On macOS it always goes last in the
+bar, and macOS puts its menu-search field at the top. When the built app
+ships a help book (see [App assets](#app-assets)) the menu starts with
+"<App> Help" (⌘?), which opens the book in Help Viewer, and the search field
+searches the book too. A help book gets this menu even if you never declare
+the role; declare it to add your own items below that one, or with
+`standard: false` to leave the stock item out. Windows and Linux draw a plain
+"Help" menu of your items, in the slot where you declared it:
+
+```js
+app.setMenu([
+  { title: 'File', items: [/* … */] },
+  { role: 'help', items: [
+    { id: 'site', label: 'Visit Website' },
+    { id: 'issue', label: 'Report an Issue…' },
+  ] },
+]);
+```
 
 The dialogs and menus are native: the backend hands the work to the launcher,
 which runs panels/menus on the UI thread and answers the page's promise
@@ -1349,7 +1375,7 @@ produces:
 
 The frontend ships as real files (the launcher renders `file://` documents,
 so relative scripts/styles/images just work — no bundling step). The build
-generates `AppIcon.icns` from `icon.png` via `sips` + `iconutil` and
+generates `AppIcon.icns` from the app icon (`assets/icon.png`) via `sips` + `iconutil` and
 codesigns everything (ad-hoc by default; set `signIdentity` in tinyjs.json
 or `TINYJS_SIGN_IDENTITY` for a Developer ID).
 
@@ -1385,11 +1411,15 @@ automatically, since that copy is guaranteed stale.)
 
 ### Bundled data resources
 
-List explicit project-relative files or directories in `tinyjs.json` (platform
-blocks can override the list):
+Data your own code reads at runtime — a dictionary, a database seed, fonts,
+sample files — goes in a `resources/` folder in the project. The whole folder
+ships with the app, and `app.paths.resources` points at it:
 
-```json
-{ "name": "resource-demo", "resources": ["assets/dictionary.json", "assets/fonts/"] }
+```
+my-app/
+  resources/
+    dictionary.json
+    fonts/
 ```
 
 ```js
@@ -1397,7 +1427,7 @@ blocks can override the list):
 export async function init(app) {
   const root = app.paths.resources;
   if (root === null) return;
-  const bytes = await tjs.readFile(root + '/assets/dictionary.json');
+  const bytes = await tjs.readFile(root + '/dictionary.json');
   console.log(new TextDecoder().decode(bytes));
 }
 // Frontend: the existing RPC returns the same root.
@@ -1405,26 +1435,86 @@ const paths = await tiny.app.paths();
 console.log(paths.resources); // string | null
 ```
 
-In dev, `resources` is the absolute project root; files are checked and read
-in place. Builds copy bytes recursively, preserving each project-relative
-path under `Contents/Resources/app/resources/` in a macOS .app, or
-`resources/` beside the executable in bare/Windows/Linux portable builds.
-These are real external files, not TPK modules: distribute the whole folder.
-The root is independent of the launch directory and follows a relocated
-build. Local `tinyjs publish` archives include the resources for updates.
-A rebuild removes resources dropped from the list. Without `resources`, or
-with `[]`, there is no extra copy and both APIs return `null` for the root.
+In dev, the root is the project's `resources/` folder itself, read in place.
+Builds copy it under `Contents/Resources/app/resources/` in a macOS .app, or
+`resources/` beside the executable in bare/Windows/Linux portable builds, so
+the same relative paths work in both. These are real external files, not TPK
+modules: distribute the whole folder. The root is independent of the launch
+directory and follows a relocated build. Local `tinyjs publish` archives
+include the resources for updates. Without a `resources/` folder (or with
+`"resources": []`) nothing is copied and both APIs return `null`.
 
-Paths are normalized (including backslash separators); duplicates and child
-paths already covered by a selected directory are copied once. Invalid
-config, missing files, absolute/drive/UNC paths, `..`, the project root,
-and the root directories `.build`, `dist`, `.git`, `node_modules` fail with
-a CLI error. Symlinks are rejected, including parents and directory contents.
-Windows components ending in a dot or space are also rejected.
-This first version is for data: no globs, destination mappings, sidecar
-execution/signing or macOS Helpbook/Resources-root integration. It does not
-change `readAccess` or page privileges; read data in the backend and expose
-only what your page needs through your API.
+To ship only part of the folder, or something different per OS, list paths
+inside it in tinyjs.json; platform blocks replace the list for that OS:
+
+```json
+{
+  "resources": ["dictionary.json", "fonts/"],
+  "windows": { "resources": ["dictionary.json", "fonts/", "win-only.dat"] }
+}
+```
+
+This follows the same rule as every other key in a platform block: the OS
+block's list replaces the root one for that OS, it doesn't add to it, and an
+OS without its own list uses the root value. So a list in one OS block alone
+narrows only that OS — the others still ship the whole folder. To give one
+OS a file the others don't get, empty the root list:
+
+```json
+{
+  "resources": [],                                  // Windows, Linux: nothing
+  "macos": { "resources": ["mac-only.png"] }        // macOS: just this
+}
+```
+
+A list narrows the build only — in dev the whole folder is still readable, so
+check a narrowed build before you ship it. Listed paths are normalized
+(including backslash separators); duplicates and children of a listed
+directory are copied once. Missing files, absolute/drive/UNC paths and `..`
+fail with a CLI error, and so do symlinks anywhere in what ships, including
+`resources/` itself. Windows components ending in a dot or space are also
+rejected.
+
+Resources are for data. They don't change `readAccess` or what the page may
+read: read the files in the backend and expose only what your page needs
+through your API. Files macOS itself reads (Credits, a help book) go in
+`assets/` instead, below; executables your app launches aren't supported yet.
+
+### App assets
+
+`assets/` holds the files the OS and the build read, each by its name. None
+of them ship as data, and the build notes anything else it finds there,
+since that's usually a page or data file in the wrong folder.
+
+| File | Used for |
+|---|---|
+| `icon.png` | The app icon on every OS (1024×1024; `tinyjs new` puts the default here). `"icon"` in tinyjs.json overrides the path. |
+| `Credits.html`, `Credits.rtf` or `Credits.rtfd` | macOS About panel credits, in place of the tinyjs line (see [Menus](#menus)). |
+| a help book folder | macOS Help menu, named by `"macos": { "helpBook": "<folder>" }`. |
+
+Projects from before `assets/` keep working: `icon.png` and `Credits.html`
+are still found at the project root.
+
+**Help books (macOS).** A help book is a folder of HTML pages that Help
+Viewer shows, with its own `Contents/Info.plist` (Apple's [help book
+guide](https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/ProvidingUserAssitAppleHelp/authoring_help/authoring_help_book.html)
+covers the layout). Put the folder in `assets/` and name it:
+
+```json
+{ "macos": { "helpBook": "My App Help" } }
+```
+
+The build copies it to the .app's `Contents/Resources/`, writes
+`CFBundleHelpBookFolder` and `CFBundleHelpBookName` (the book's own
+`CFBundleIdentifier`) into the app's Info.plist, and rebuilds the book's
+search index with `hiutil` for each `.lproj` when the book names one
+(`HPDBookIndexPath`). The app then gets a Help menu with "<App> Help" (⌘?)
+and a working search field, with no code; add items with
+`{ role: 'help' }` (see [Menus](#menus)). Help Viewer only knows a built app,
+so `tinyjs dev` shows the Help menu without the book. Help Viewer caches
+books by version: rebuild with an edited book at the same `version` and it
+keeps showing the old copy (even from a fresh build in another folder).
+Bump `version` to see your changes.
 
 ### Distributing to other people (Developer ID + notarization)
 

@@ -8,25 +8,63 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
-## Bundled data resources
+## Bundled data resources (`resources/`)
 
 Reproducible checks: `python3 -u test/resources/check.py` and
 `tsc --noEmit --strict --skipLibCheck --lib ES2022,DOM test/resources/types.ts`.
 
-macOS 27.0 arm64 verified again 2026-10-11: real dev, bare executable and relocated
-.app backend/frontend reads, URL wrapper, binary bytes, null without resources,
-rebuild cleanup, local publish archive and ad-hoc signature verification.
+Reworked 2026-10-13 from #49's project-relative list to the `resources/`
+folder (whole folder by default, list narrows it). The 2026-10-11 runs below
+were of the old layout; the CLI paths changed, so each OS needs a re-run.
 
-- [ ] Windows: actual dev/portable backend + frontend RPC, relocation,
-  binary bytes, path rejection/symlinks, null without resources, rebuild
-  cleanup and local publish archive. See `test/resources/README.md`.
-- [x] Linux x86_64 verified 2026-10-11: Ubuntu 22.04.5 container,
-  txiki.js v26.6.0, GTK 3.24.33 / WebKitGTK 2.50.4, non-root Xvfb X11
-  session. Real dev and portable builds with backend/frontend RPC, relocation,
-  binary bytes, path/symlink rejection, null without resources, repeated-build
-  cleanup, URL wrapper without a local frontend and local publish tar.gz
-  all passed. See the exact command in `test/resources/README.md`.
+- [x] macOS 27.0 arm64, 2026-10-13: `check.py` PASS on the folder layout —
+  dev, bare executable and relocated .app backend/frontend reads, whole
+  folder by default, list narrowing + per-OS override, list without folder,
+  folder symlink, URL wrapper, null without resources, rebuild cleanup,
+  publish archive, signature.
+- [ ] Windows: `check.py` (dev/portable RPC, relocation, binary bytes,
+  path rejection/symlinks, null, rebuild cleanup, publish zip).
+- [ ] Linux x86_64: `check.py` again (the old layout passed 2026-10-11 in an
+  Ubuntu 22.04.5 container under Xvfb — command in `test/resources/README.md`).
 - [ ] Linux arm64 and a Wayland session: not executed.
+
+## App assets (`assets/`), help book, Help menu
+
+- [x] macOS 27.0 arm64, 2026-10-13, Developer ID build of a `tinyjs new`
+  app with #47's sample book: `assets/icon.png` → AppIcon.icns; Credits.rtf
+  in Resources; book copied to Resources, `CFBundleHelpBookFolder` /
+  `CFBundleHelpBookName` (= the book's `CFBundleIdentifier`) and
+  `CFBundleShortVersionString` in Info.plist; `hiutil` rebuilt the index;
+  `codesign --verify --deep --strict` OK; Help menu appears last in the bar
+  (screenshot). Unused `assets/logo.svg` noted by the build.
+- [x] macOS 27.0, 2026-10-13, hand-tested in the built app: "<App> Help" and
+  ⌘? open the book in Help Viewer; the Help search field finds the book's
+  pages; About shows the Credits.rtf text; a `{ role: 'help', items }` item
+  sits below "<App> Help".
+- [x] macOS 2026-10-13: in `tinyjs dev` (no book) a `{ role: 'help' }`
+  declared FIRST still lands last in the bar, after Develop (screenshot).
+- [x] macOS 2026-10-13, hand-tested: a `{ role: 'help' }` item's click
+  reaches `tiny.menu.on`; `standard: false` leaves just the search field and
+  the app's items (no "<App> Help"); About shows `assets/Credits.html` with a
+  working link and "Version x.y.z" from `CFBundleShortVersionString`;
+  `resources/hello.txt` read from the .app (backend and page agree on the
+  root, which followed the .app to a new folder).
+- [x] macOS 2026-10-13: `tinyjs notarize` of a Developer ID app carrying a
+  help book AND `resources/` — Accepted, stapled, `spctl` accepts it
+  (Notarized Developer ID).
+- [x] macOS 2026-10-13: Help Viewer caches the book — an edited page in a
+  rebuild at the SAME version (even from a different .app path) showed the
+  old copy; bumping `version` showed the edit.
+- [ ] Windows: `{ role: 'help', items }` draws a "Help" menu in its slot and
+  clicks reach onMenu; `assets/icon.png` is the window/taskbar/exe icon in
+  dev and build; a project with root `icon.png` still builds with its icon.
+- [ ] Linux: same as Windows (menu, `assets/icon.png` in dev, build and
+  .desktop, root `icon.png` fallback).
+- [x] macOS 2026-10-13: vanilla `tinyjs new` and `tinyjs wrap` scaffold
+  `assets/icon.png` and build from it; a project with `icon.png` and
+  `Credits.html` at the root (no `assets/`) still builds with both.
+- [ ] `tinyjs new --template …` (vite) scaffolds `assets/icon.png`; `wrap
+  --force` on a pre-assets wrap keeps its root icon; both on Windows/Linux.
 
 ## How to run the app-surface checks
 

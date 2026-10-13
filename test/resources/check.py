@@ -15,7 +15,7 @@ TOOL = Path(__file__).resolve().parents[2]
 TJS = TOOL / 'bin' / ('tjs.exe' if os.name == 'nt' else 'tjs')
 MAC = sys.platform == 'darwin'
 DATA = bytes([0, 1, 127, 128, 255, 10])
-REL = 'assets/данные with spaces/nested/bytes.bin'
+REL = 'data/данные with spaces/nested/bytes.bin'
 
 
 def run(argv, cwd, ok=True):
@@ -34,11 +34,12 @@ with tempfile.TemporaryDirectory(prefix='tinyjs-resources-') as tmp:
     project = base / 'project with spaces ü'
     project.mkdir()
     (project / 'src/frontend').mkdir(parents=True)
-    data = project / REL
+    res = project / 'resources'
+    data = res / REL
     data.parent.mkdir(parents=True)
     data.write_bytes(DATA)
-    (project / 'assets/empty directory').mkdir()
-    (project / 'assets/dictionary.json').write_text('{"hello":"world"}')
+    (res / 'data/empty directory').mkdir()
+    (res / 'data/dictionary.json').write_text('{"hello":"world"}')
     report = base / 'report.json'
     config = {'name': 'resource-check', 'title': 'Resource Check', 'version': '1.0.0',
               'id': 'org.tinyjs.resourcecheck.' + str(os.getpid())}
@@ -110,41 +111,56 @@ export const api = {
     assert p.returncode and 'no tinyjs.json' in p.stdout, p.stdout
 
     # Invalid config/path cases fail BEFORE staging and name the bad resource.
-    invalid = [None, 'assets', {}, [42], [''], ['.'], ['./'], ['/etc/passwd'],
+    invalid = [None, 'data', {}, [42], [''], ['.'], ['./'], ['/etc/passwd'],
                ['C:/Windows/file'], ['C:relative'], [r'\\server\share\file'],
-               [r'\Windows\file'], ['../outside'], ['assets/../../outside'],
-               ['.build'], ['dist/x'], ['.git'], ['node_modules/x'], ['missing'],
-               ['assets/dictionary.json/child', 'assets/dictionary.json']]
+               [r'\Windows\file'], ['../outside'], ['data/../../outside'],
+               ['missing'], ['data/dictionary.json/child', 'data/dictionary.json']]
     for value in invalid:
         write_config(value)
         for command in ['build', 'dev']:
             p = cli(project, command, ok=False)
             assert p.returncode != 0 and 'tinyjs.json' in p.stdout and 'resource' in p.stdout, (value, p.stdout, p.stderr)
-    print('PASS invalid config, missing paths, traversal, reserved roots, drive/UNC paths (dev + build)')
+    # A list needs the folder it lists from.
+    shutil.move(str(res), base / 'parked')
+    write_config(['data'])
+    for command in ['build', 'dev']:
+        p = cli(project, command, ok=False)
+        assert p.returncode and 'no resources/ folder' in p.stdout, p.stdout
+    shutil.move(str(base / 'parked'), res)
+    print('PASS invalid config, missing paths, traversal, drive/UNC paths, no folder (dev + build)')
     try:
-        (project / 'link').symlink_to(project / 'assets', target_is_directory=True)
-        (project / 'assets/link').symlink_to(data)
-        for value in [['link'], ['link/dictionary.json'], ['assets/']]:
+        (res / 'link').symlink_to(res / 'data', target_is_directory=True)
+        (res / 'data/link').symlink_to(data)
+        for value in [['link'], ['link/dictionary.json'], ['data/'], 'absent']:
             write_config(value)
             for command in ['dev', 'build']:
                 p = cli(project, command, ok=False)
                 assert p.returncode and 'symlinks are not supported' in p.stdout, p.stdout
-        (project / 'assets/link').unlink()
-        print('PASS direct, parent and nested symlink rejection')
+        (res / 'data/link').unlink()
+        (res / 'link').unlink()
+        # resources/ itself as a symlink
+        shutil.move(str(res), base / 'real-resources')
+        res.symlink_to(base / 'real-resources', target_is_directory=True)
+        write_config('absent')
+        p = cli(project, 'build', ok=False)
+        assert p.returncode and 'symlinks are not supported' in p.stdout, p.stdout
+        res.unlink()
+        shutil.move(str(base / 'real-resources'), res)
+        print('PASS direct, parent, nested and folder symlink rejection')
     except OSError as e:
         print('SKIP symlinks:', e)
 
     oskey = 'macos' if MAC else 'windows' if os.name == 'nt' else 'linux'
     # Platform overrides replace the invalid common list using the existing merger.
-    selected = ['./assets//', REL.replace('/', chr(92)), 'assets/', './assets/dictionary.json']
+    selected = ['./data//', REL.replace('/', chr(92)), 'data/', './data/dictionary.json']
     write_config(['missing'], **{oskey: {'resources': selected}})
-    launch([TJS, 'run', TOOL / 'cli.js', 'dev'], project, str(project.resolve()))
+    launch([TJS, 'run', TOOL / 'cli.js', 'dev'], project, str(res.resolve()))
     assert not (project / '.build/resources').exists()
     cli(project, 'build')
-    assert (project / 'dist/resources/assets/empty directory').is_dir()
+    assert (project / 'dist/resources/data/empty directory').is_dir()
     assert (project / 'dist/resources' / REL).read_bytes() == DATA
     assert sorted(p.relative_to(project / 'dist/resources').as_posix()
-                  for p in (project / 'dist/resources').rglob('*') if p.is_file()) == sorted([REL, 'assets/dictionary.json'])
+                  for p in (project / 'dist/resources').rglob('*') if p.is_file()) == sorted([REL, 'data/dictionary.json'])
 
     # Move the WHOLE distribution and launch it with a different cwd.
     moved = base / 'moved build ü'
@@ -163,10 +179,10 @@ export const api = {
     cli(project, 'build')
     write_config([REL])
     cli(project, 'build')
-    assert not (project / 'dist/resources/assets/dictionary.json').exists()
+    assert not (project / 'dist/resources/data/dictionary.json').exists()
     assert (project / 'dist/resources' / REL).read_bytes() == DATA
     if MAC:
-        assert not (project / 'dist/Resource Check.app/Contents/Resources/app/resources/assets/dictionary.json').exists()
+        assert not (project / 'dist/Resource Check.app/Contents/Resources/app/resources/data/dictionary.json').exists()
     cli(project, 'publish')
     archives = list((project / 'dist/publish').glob('*.zip' if MAC or os.name == 'nt' else '*.tar.gz'))
     assert len(archives) == 1, archives
@@ -207,7 +223,7 @@ export const api = {
         try:
             write_config([REL], url='http://127.0.0.1:' + str(server.server_port),
                          frontend={'dir': 'no-local-frontend'})
-            launch([TJS, 'run', TOOL / 'cli.js', 'dev'], project, str(project))
+            launch([TJS, 'run', TOOL / 'cli.js', 'dev'], project, str(res.resolve()))
             cli(project, 'build')
             binary = project / 'dist' / ('resource-check.exe' if os.name == 'nt' else 'resource-check')
             launch([binary], base, str(project / 'dist/resources'))
@@ -220,7 +236,26 @@ export const api = {
             thread.join()
     print('PASS URL wrapper without a local frontend (dev + packaged backend/frontend RPC)')
 
-    for resources in ['absent', []]:
+    # No list: the whole folder ships, extra top-level entries included.
+    (res / 'top.txt').write_text('top')
+    write_config('absent')
+    launch([TJS, 'run', TOOL / 'cli.js', 'dev'], project, str(res.resolve()))
+    cli(project, 'build')
+    assert (project / 'dist/resources/top.txt').read_text() == 'top'
+    assert (project / 'dist/resources/data/empty directory').is_dir()
+    binary = project / 'dist' / ('resource-check.exe' if os.name == 'nt' else 'resource-check')
+    launch([binary], base, str(project / 'dist/resources'))
+    if MAC:
+        bundle = project / 'dist/Resource Check.app'
+        assert (bundle / 'Contents/Resources/app/resources/top.txt').read_text() == 'top'
+        launch([bundle / 'Contents/MacOS/resource-check'], base,
+               str(bundle / 'Contents/Resources/app/resources'))
+    print('PASS no list ships the whole resources/ folder')
+
+    # [] ships nothing; no list and no folder is the same.
+    for resources in [[], 'absent']:
+        if resources == 'absent':
+            shutil.move(str(res), base / 'parked')
         write_config(resources)
         launch([TJS, 'run', TOOL / 'cli.js', 'dev'], project, None)
         cli(project, 'build')

@@ -1557,6 +1557,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // and the one place setMenu could not previously reach. Elsewhere the
       // role is unknown and its items are dropped, which is why an app
       // declares Settings here AND in a menu of its own off-macOS.
+      // 'help' is the macOS Help menu: always last, with "<App> Help" on top
+      // when the app ships a help book (standard: false drops that item), and
+      // the menu-search field. Windows and Linux have no such menu, so there
+      // it is sent as a plain "Help" menu of your items, in its slot.
+      if (m?.role === 'help' && (IS_WIN || IS_LINUX)) {
+        if (m.items?.length) { send('MENU Help'); sendItems(m.items); }
+        continue;
+      }
       if (m?.role) {
         const nostd = m.standard === false && !IS_WIN && !IS_LINUX;   // a macOS-only switch
         send('MENUROLE ' + one(m.role) + (nostd ? '\tnostd' : ''));

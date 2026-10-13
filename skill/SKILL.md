@@ -78,7 +78,8 @@ tinyjs.json          { name, title, size, id, version, icon?,
                        contextMenu?: false, audioTap?: "app" | "system",
                        audioTapReason?: "why", about?: "menu",
                        attribution?: "…",  // About panel credit line (macOS);
-                                           // a project-root Credits.html wins
+                                           // assets/Credits.html|rtf wins
+                       resources?: ["a.json", "dir/"],  // narrow resources/ (default: all)
                        debug?: true | "open", browserAccelerators?: true,
                        permissions?: { microphone?: "why", camera?: "why",
                                        speechRecognition?: "why" },
@@ -101,8 +102,14 @@ tinyjs.json          { name, title, size, id, version, icon?,
                        downloads?: "auto" | "ask" | "deny",
                        popups?: "external" | "window" | "deny",
                        api?: "wrapper" | { disable?, enable?, origins? },
-                       macos?/windows?/linux?: { …merged on top per OS } }
-icon.png             1024×1024 app icon
+                       macos?/windows?/linux?: { …merged on top per OS }
+                                      // macos.helpBook: "My Help" = folder in assets/ }
+assets/              files the OS reads, by name: icon.png (1024×1024 app
+                     icon), Credits.html|rtf|rtfd (macOS About), help book
+                     folder (macOS Help menu). Older projects: icon.png and
+                     Credits.html at the root still work
+resources/           data the backend reads at runtime → app.paths.resources
+                     (the folder in dev, bundled copy in builds; null if none)
 src/backend/main.js  backend
 src/frontend/        index.html + assets — served as real files (file://),
                      so relative paths just work

@@ -6,12 +6,32 @@ https://tinyjs.app/changelog.
 
 ## Unreleased
 
-- **Bundled data resources:** explicit project-relative files/directories in
-  `tinyjs.json` `resources`, with the absolute root available as backend
-  `app.paths.resources` and frontend `(await tiny.app.paths()).resources`.
-  Dev reads in place; builds preserve paths beside the executable or inside
-  the .app, and local publish archives carry them. No resources returns null.
-  Unsafe paths and symlinks are rejected; no sidecar signing/execution.
+- **`resources/`: data files that ship with the app.** Put files your code
+  reads at runtime (a dictionary, a database seed, fonts) in a `resources/`
+  folder and the whole folder ships with the app. `app.paths.resources` in
+  the backend, and `(await tiny.app.paths()).resources` in the page, point at
+  it: the folder itself in dev, the bundled copy in builds, `null` when there
+  is none. `"resources": [...]` in tinyjs.json ships only the listed paths,
+  and the `macos` / `windows` / `linux` blocks can list different ones per
+  OS. Thanks to Manacost Dev for the implementation (#49) and Luiz Américo
+  and Sam LABBE for the design discussion (#8).
+- **`assets/`: the icon, About credits and help book in one place.** New
+  projects keep `icon.png` in `assets/`, next to the other files the OS
+  reads. Existing projects with `icon.png` and `Credits.html` at the project
+  root keep working unchanged. The build notes any file in `assets/` it
+  doesn't use, since nothing else there ships.
+- **macOS: help books.** Put an Apple help book folder in `assets/` and name
+  it with `"macos": { "helpBook": "My App Help" }`. The build bundles it,
+  registers it in Info.plist and rebuilds its search index, and the app gets
+  a Help menu with "<App> Help" (⌘?) and a search field that searches the
+  book. Thanks to Blatman for the request and a sample book (#47).
+- **`{ role: 'help' }` in `setMenu`.** Your own Help menu items: on macOS the
+  menu always goes last and gets the system search field (plus "<App> Help"
+  when there's a help book); on Windows and Linux it's a plain "Help" menu.
+- **macOS: `Credits.rtf` and `Credits.rtfd` work as About panel credits,** as
+  well as `Credits.html`.
+- **macOS: built apps carry `CFBundleShortVersionString`,** set from
+  `version`, the key Finder and the rest of macOS read the version from.
 
 ## 0.52.0 — 2026-10-13
 

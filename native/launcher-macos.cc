@@ -57,7 +57,12 @@
 //                                                    them in the APPLICATION
 //                                                    menu, between About and
 //                                                    Quit — where Settings…
-//                                                    goes)
+//                                                    goes; MENUROLE help +
+//                                                    ITEMs fill the Help
+//                                                    menu, last in the bar,
+//                                                    below "<App> Help" when
+//                                                    the bundle has a help
+//                                                    book — nostd drops it)
 //                         MENUUPD[@<win>] <id>\t<label>\t<checked>\t<enabled>
 //                                                    patch a live item ('' =
 //                                                    leave unchanged); @<win>
@@ -880,9 +885,9 @@ static const NSInteger kTinyItemDisabled = 1;  // NSMenuItem.tag: app said disab
     sock_write_line("MENU about");
     return;
   }
-  // AppKit shows Resources/Credits.html only when no Credits key is passed
-  // (#8) — defer to a bundled one. Otherwise the manifest "attribution"
-  // string (dev via TINYJS_ATTRIBUTION env, packaged via the
+  // AppKit shows Resources/Credits.{html,rtf,rtfd} only when no Credits key
+  // is passed (#8) — defer to a bundled one. Otherwise the manifest
+  // "attribution" string (dev via TINYJS_ATTRIBUTION env, packaged via the
   // TinyjsAttribution plist key, like TinyjsUserAgent) replaces the tinyjs
   // credit line for white-labeled apps.
   NSString *attribution = nil;
@@ -895,8 +900,11 @@ static const NSInteger kTinyItemDisabled = 1;  // NSMenuItem.tag: app said disab
     @"ApplicationVersion" : ns("Version " + g_app_version),
     @"Version" : @"",
   }];
-  if ([[NSBundle mainBundle] pathForResource:@"Credits" ofType:@"html"]) {
-    // no Credits key → AppKit shows the bundled Credits.html
+  NSBundle *mainB = [NSBundle mainBundle];
+  if ([mainB pathForResource:@"Credits" ofType:@"html"] ||
+      [mainB pathForResource:@"Credits" ofType:@"rtf"] ||
+      [mainB pathForResource:@"Credits" ofType:@"rtfd"]) {
+    // no Credits key → AppKit shows the bundled Credits file
   } else if (attribution.length) {
     about[@"Credits"] = [[NSAttributedString alloc] initWithString:attribution];
   } else {
@@ -1012,6 +1020,7 @@ static void build_menu_into(NSMenu *menu, const std::vector<MenuItemSpec> &items
 struct MacBar {
   std::vector<MenuSpec> spec;
   NSMenu *bar = nil;               // built from spec, lazily
+  NSMenu *help = nil;              // its Help menu (owned by bar), or nil
   NSMutableDictionary *reg = nil;  // live NSMenuItems by id
   bool built = false;
 };
@@ -1131,6 +1140,7 @@ static void build_bar(MacBar &mb) {
           if (m.role == "edit") add_edit_menu();
           // "app" was placed inside the application menu above, before this
           // loop ran — it claims a slot in the SPEC, never one in the bar.
+          // "help" goes last in the bar, below.
           continue;                          // unknown roles are ignored
         }
         NSMenuItem *holder = [[NSMenuItem alloc] init];
@@ -1159,6 +1169,43 @@ static void build_bar(MacBar &mb) {
       devHolder.submenu = devMenu;
     }
 
+    // The Help menu, last in the bar as macOS always puts it. It appears when
+    // the bundle carries a help book (tinyjs.json "macos.helpBook" writes
+    // CFBundleHelpBookName) — with "<App> Help" (⌘?) opening it in Help
+    // Viewer — or when the app declares `MENUROLE help` with items of its
+    // own, which go below that item (`nostd` drops it). Handing it to
+    // NSApp.helpMenu is what gets the menu-search field put at its top, the
+    // one that also searches the help book. Dev has no bundle, so no book:
+    // there it is just the app's items.
+    mb.help = nil;
+    {
+      const MenuSpec *spec = nullptr;
+      for (const MenuSpec &m : *menus)
+        if (m.role == "help") { spec = &m; break; }
+      std::vector<MenuItemSpec> items;
+      bool book = [[NSBundle mainBundle]
+                      objectForInfoDictionaryKey:@"CFBundleHelpBookName"] != nil;
+      bool stock = book && !(spec && spec->no_standard);
+      if (spec) items = spec->items;
+      if (stock || !items.empty()) {
+        NSMenuItem *helpHolder = [[[NSMenuItem alloc] init] autorelease];
+        [bar addItem:helpHolder];
+        NSMenu *helpMenu = [[[NSMenu alloc] initWithTitle:@"Help"] autorelease];
+        if (stock) {
+          // nil target: the responder chain ends at NSApp, whose showHelp:
+          // opens the book named in Info.plist.
+          [helpMenu addItem:[[[NSMenuItem alloc]
+                                initWithTitle:ns(g_app_name + " Help")
+                                       action:@selector(showHelp:)
+                                keyEquivalent:@"?"] autorelease]];
+          if (!items.empty()) [helpMenu addItem:[NSMenuItem separatorItem]];
+        }
+        build_menu_into(helpMenu, items, @selector(itemClicked:), mb.reg);
+        helpHolder.submenu = helpMenu;
+        mb.help = helpMenu;
+      }
+    }
+
     [mb.bar release];
     mb.bar = bar;
     mb.built = true;
@@ -1183,6 +1230,7 @@ static void install_bar_for(const std::string &winid, bool force = false) {
     build_bar(mb);
   g_bar_showing = src;
   [NSApp setMainMenu:mb.bar];
+  NSApp.helpMenu = mb.help;
 }
 
 // Which tinyjs window is this NSWindow? "" when it isn't one of ours — a
@@ -1227,8 +1275,10 @@ static void apply_menus(webview_t, void *arg) {
   // get asked about windows that don't have focus.
   build_bar(g_app_bar);
   // Windows showing a menu of their own are unaffected.
-  if (g_bar_showing.empty())
+  if (g_bar_showing.empty()) {
     [NSApp setMainMenu:g_app_bar.bar];
+    NSApp.helpMenu = g_app_bar.help;
+  }
   delete menus;
 }
 
@@ -8325,8 +8375,8 @@ static void sock_read_loop() {
         pending_menus.push_back(MenuSpec{line.substr(5), {}, ""});
         build_stack.assign(1, {});
       } else if (in_menu_block && line.rfind("MENUROLE ", 0) == 0) {
-        // a standard menu ("edit", "app"), claiming this slot in the spec;
-        // a `nostd` flag field turns off edit's implicit stock group
+        // a standard menu ("edit", "app", "help"), claiming this slot in
+        // the spec; a `nostd` flag field turns off its implicit stock items
         flush_root();
         std::vector<std::string> p = split_tabs(line.substr(9));
         MenuSpec role_spec{"", {}, p.empty() ? "" : p[0]};

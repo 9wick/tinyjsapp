@@ -16,10 +16,12 @@ avoids unrelated declaration checks; the resource type assertions are checked.
 The first command creates a temporary project and small binary/text fixtures,
 then removes only its own temporary files and processes. It checks:
 
-- invalid config, absent tinyjs.json, missing paths, traversal, reserved roots,
-  POSIX/drive/UNC paths; rejection in dev and build before staging;
-- direct, parent and nested symlinks (skipped with a reported reason if the OS
-  denies symlink creation);
+- invalid config, absent tinyjs.json, missing paths, traversal, POSIX/drive/UNC
+  paths, a list with no `resources/` folder; rejection in dev and build before
+  staging;
+- direct, parent and nested symlinks, and `resources/` itself as a symlink
+  (skipped with a reported reason if the OS denies symlink creation);
+- no list ships the whole `resources/` folder;
 - files, nested/empty directories, binary bytes, spaces/Unicode, normalized
   backslashes, duplicate and overlapping entries, platform config overrides;
 - dev reads in place; real builds and backend reads plus real frontend
@@ -35,7 +37,12 @@ Windows/Linux portable builds and archives use the same script, but must be
 run on those OSes to claim verification. The test doesn't notarize, sign
 third-party executables, install an update, or build other CPU architectures.
 
-## Verified runs — 2026-10-11
+## Verified runs
+
+2026-10-13, after the switch to the `resources/` folder: macOS 27.0 arm64
+`check.py` PASS. Windows and Linux need re-running (TODO-verify.md).
+
+The runs below were of #49's original project-relative layout — 2026-10-11:
 
 - macOS 27.0 arm64: `python3 -u test/resources/check.py` — PASS, including
   actual webview RPC in dev, compiled bare executables and relocated .app

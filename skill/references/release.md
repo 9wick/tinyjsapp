@@ -5,48 +5,37 @@ Versions live in tinyjs.json `"version"`; bump before building.
 `minTinyjsVersion` refuses to run an app on an older tinyjs with a real
 message instead of a mystery TypeError (`tinyjs new` stamps it).
 
-## Bundled data resources
+## Bundled data resources and app assets
 
-List explicit project-relative files or directories in `tinyjs.json` (platform
-blocks can override the list):
+Two project folders ship beside the code, for different readers:
 
-```json
-{ "name": "resource-demo", "resources": ["assets/dictionary.json", "assets/fonts/"] }
-```
+- `resources/` — data the app's own code reads. Ships whole by default;
+  `app.paths.resources` (backend) / `(await tiny.app.paths()).resources`
+  (frontend) is the folder itself in dev and the bundled copy in builds
+  (`Contents/Resources/app/resources/` in a .app, `resources/` beside the
+  executable elsewhere), `null` without one. `"resources": [...]` lists paths
+  inside it to ship only those. An OS block's list REPLACES the root one for
+  that OS (like every config key); an OS without one uses the root value,
+  else the whole folder — so `"macos": { "resources": ["x"] }` alone narrows
+  only macOS. Mac-only file: root `"resources": []` + the macos list. Dev
+  still reads the whole folder. Symlinks, `..`, absolute paths fail the build.
+- `assets/` — files the OS reads, by name: `icon.png` (every OS),
+  `Credits.html|rtf|rtfd` (macOS About panel), and a help book folder named by
+  `"macos": { "helpBook": "<folder>" }`. The build copies the book into the
+  .app's Resources, names it in Info.plist by its own `CFBundleIdentifier`,
+  re-runs `hiutil` for its search index, and the launcher adds a Help menu
+  ("<App> Help" ⌘? + search field). Built apps only — dev has no bundle.
+  Help Viewer caches books by version: bump `version` to see an edit.
+  Anything else in `assets/` gets a build note: it doesn't ship.
 
 ```js
-// Backend: app.paths is a plain object.
 export async function init(app) {
-  const root = app.paths.resources;
-  if (root === null) return;
-  const bytes = await tjs.readFile(root + '/assets/dictionary.json');
-  console.log(new TextDecoder().decode(bytes));
+  const root = app.paths.resources;           // string | null
+  if (root) console.log(new TextDecoder().decode(await tjs.readFile(root + '/dictionary.json')));
 }
-// Frontend: the existing RPC returns the same root.
-const paths = await tiny.app.paths();
-console.log(paths.resources); // string | null
 ```
 
-In dev, `resources` is the absolute project root; files are checked and read
-in place. Builds copy bytes recursively, preserving each project-relative
-path under `Contents/Resources/app/resources/` in a macOS .app, or
-`resources/` beside the executable in bare/Windows/Linux portable builds.
-These are real external files, not TPK modules: distribute the whole folder.
-The root is independent of the launch directory and follows a relocated
-build. Local `tinyjs publish` archives include the resources for updates.
-A rebuild removes resources dropped from the list. Without `resources`, or
-with `[]`, there is no extra copy and both APIs return `null` for the root.
-
-Paths are normalized (including backslash separators); duplicates and child
-paths already covered by a selected directory are copied once. Invalid
-config, missing files, absolute/drive/UNC paths, `..`, the project root,
-and the root directories `.build`, `dist`, `.git`, `node_modules` fail with
-a CLI error. Symlinks are rejected, including parents and directory contents.
-Windows components ending in a dot or space are also rejected.
-This first version is for data: no globs, destination mappings, sidecar
-execution/signing or macOS Helpbook/Resources-root integration. It does not
-change `readAccess` or page privileges; read data in the backend and expose
-only what your page needs through your API.
+Executables the app launches (sidecars) aren't supported yet.
 
 ## macOS
 

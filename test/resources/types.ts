@@ -17,3 +17,6 @@ async function frontend() {
     const root: string = paths.resources;
   }
 }
+
+// The Help menu role and the stock-items switch type-check.
+const helpMenu: TinyMenu = { role: 'help', standard: false, items: [{ id: 'site', label: 'Website' }] };

@@ -286,6 +286,8 @@
     <span class="toc-group">start</span>
     <a href="#install">install</a>
     <a href="#cli">cli</a>
+    <a href="#resources">resources</a>
+    <a href="#assets">assets</a>
     <a href="#config">tinyjs.json</a>
     <span class="toc-group">api</span>
     <a href="#backend">backend</a>
@@ -416,34 +418,69 @@
 
   <section id="resources">
     <h2>Bundled data resources</h2>
-    <pre>{ "name": "resource-demo", "resources": ["assets/dictionary.json", "assets/fonts/"] }</pre>
+    <p>Data your own code reads at runtime goes in a <code>resources/</code>
+    folder. The whole folder ships, and <code>app.paths.resources</code> points
+    at it — the folder itself in dev, the bundled copy in builds, so the same
+    relative paths work in both.</p>
+    <pre>my-app/
+  resources/
+    dictionary.json
+    fonts/</pre>
     <pre><i>// Backend: app.paths is an object.</i>
 export async function init(app) {
   const root = app.paths.resources;
   if (root === null) return;
-  const bytes = await tjs.readFile(root + '/assets/dictionary.json');
+  const bytes = await tjs.readFile(root + '/dictionary.json');
   console.log(new TextDecoder().decode(bytes));
 }
 <i>// Frontend: the existing RPC returns the same root.</i>
 const paths = await tiny.app.paths();
 console.log(paths.resources); <i>// string | null</i></pre>
-    <p>Explicit files and directories are relative to the project root, including
-    in platform overrides. Dev validates and reads them in place: the root is the
-    absolute project directory. Builds preserve paths and binary bytes recursively
-    under <code>Contents/Resources/app/resources/</code> in a macOS .app, or
-    <code>resources/</code> beside a bare/Windows/Linux executable. Ship the whole
-    folder; these files stay outside TPK. Paths work after moving the build or
-    launching from another directory. Local publish archives include them.</p>
-    <p>Absent <code>resources</code> or <code>[]</code> means no extra copy and a
-    <code>null</code> root. Rebuilds remove excluded resources. Duplicate and
-    overlapping paths are normalized and copied once. Invalid config, missing
-    paths, absolute/drive/UNC paths, parent traversal, the project root, reserved
-    root directories (<code>.build</code>, <code>dist</code>, <code>.git</code>,
-    <code>node_modules</code>), and symlinks (also parents/nested entries) fail.
-    Windows components ending in a dot or space are also rejected.</p>
-    <p>Data only: no globs, destination mappings, sidecar execution/signing or
-    macOS Resources-root/Helpbook integration. <code>readAccess</code> and page
-    privileges stay as configured; expose data through your backend API.</p>
+    <p>Builds put it under <code>Contents/Resources/app/resources/</code> in a
+    macOS .app, or <code>resources/</code> beside a bare/Windows/Linux
+    executable. Ship the whole folder; these files stay outside TPK. Paths work
+    after moving the build or launching from another directory, and local
+    publish archives include them. No <code>resources/</code> folder (or
+    <code>"resources": []</code>) means no copy and a <code>null</code> root.</p>
+    <p>To ship part of the folder, or something different per OS, list paths
+    inside it; platform blocks replace the list. A list narrows the build only —
+    dev still reads the whole folder.</p>
+    <pre>{ "resources": ["dictionary.json", "fonts/"],
+  "windows": { "resources": ["dictionary.json", "fonts/", "win-only.dat"] } }</pre>
+    <p>As with every key in a platform block, the OS list replaces the root one
+    for that OS rather than adding to it, and an OS without its own list uses
+    the root value — so a list in one OS block alone narrows only that OS, and
+    the others still ship the whole folder. For a file only one OS gets, empty
+    the root list:</p>
+    <pre>{ "resources": [],                              <i>// Windows, Linux: nothing</i>
+  "macos": { "resources": ["mac-only.png"] } }    <i>// macOS: just this</i></pre>
+    <p>Missing paths, absolute/drive/UNC paths, <code>..</code> and symlinks
+    (including <code>resources/</code> itself) fail the build. Resources don't
+    change <code>readAccess</code> or page privileges; expose data through your
+    backend API.</p>
+  </section>
+
+  <section id="assets">
+    <h2>App assets</h2>
+    <p><code>assets/</code> holds the files the OS reads, each by name. Nothing
+    else in it ships, and the build notes any file it doesn't use.</p>
+    <pre>my-app/
+  assets/
+    icon.png        <i>// the app icon, every OS (1024×1024; "icon" overrides)</i>
+    Credits.html    <i>// macOS About panel credits (or Credits.rtf / .rtfd)</i>
+    My App Help/    <i>// macOS help book — "macos": { "helpBook": "My App Help" }</i></pre>
+    <p>Older projects keep <code>icon.png</code> and <code>Credits.html</code> at
+    the project root; both are still found there.</p>
+    <p><b>Help books (macOS).</b> A folder of HTML pages with its own
+    <code>Contents/Info.plist</code>, shown by Help Viewer (<a
+    href="https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/ProvidingUserAssitAppleHelp/authoring_help/authoring_help_book.html">Apple's
+    guide</a>). The build copies it into the .app's <code>Resources/</code>,
+    names it in Info.plist by its own <code>CFBundleIdentifier</code>, and
+    rebuilds its search index with <code>hiutil</code>. The app gets a Help menu
+    with "&lt;App&gt; Help" (⌘?) and a search field that searches the book, with
+    no code — <code>{ role: 'help' }</code> adds your own items. Built apps
+    only: dev has no bundle for Help Viewer to find. Help Viewer caches books
+    by version, so bump <code>version</code> to see an edited book.</p>
   </section>
 
   <section id="config">
@@ -466,8 +503,8 @@ console.log(paths.resources); <i>// string | null</i></pre>
   <i>// oldest tinyjs this app works with — optional, but it turns "some calls</i>
   <i>// mysteriously do nothing" into a message naming the real problem</i>
   "minTinyjsVersion": "0.30.0",
-  <i>// 1024×1024 → AppIcon.icns</i>
-  "icon": "icon.png",
+  <i>// 1024×1024 → AppIcon.icns (default: assets/icon.png, then icon.png)</i>
+  "icon": "assets/icon.png",
   <i>// codesigning identity (default: ad-hoc)</i>
   "signIdentity": "Developer ID Application: …",
   <i>// deep links: myapp://…</i>
@@ -496,7 +533,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
   <i>// showing the standard panel ('about' becomes a reserved menu-item id)</i>
   "about": "menu",
   <i>// the standard About panel's credit line, in place of "Made with tinyjs".</i>
-  <i>// A Credits.html in the project root wins over it: `tinyjs build` bundles</i>
+  <i>// An assets/Credits.html (or .rtf) wins over it: `tinyjs build` bundles</i>
   <i>// it into Resources/ and the panel shows it (links work). Start it with</i>
   <i>// &lt;meta charset="utf-8"&gt; and set a font, or AppKit reads it as</i>
   <i>// Latin-1 and sets it in Times. macOS only</i>
@@ -553,7 +590,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
   "id": "com.example.myapp",
   "version": "1.0.0",
   "minTinyjsVersion": "0.30.0",
-  "icon": "icon.png",
+  "icon": "assets/icon.png",
   "signIdentity": "Developer ID Application: …",
   "urlScheme": "myapp",
   "fileExtensions": ["md"],
@@ -620,7 +657,6 @@ console.log(paths.resources); <i>// string | null</i></pre>
     names are the strings <code>tiny.system.os()</code> returns.</p>
     <pre>{
   "name": "myapp",
-  "icon": "icon.png",
   "chrome": { "frame": false },
 
   <i>// merged on top when building on that OS</i>
@@ -958,6 +994,11 @@ await <b>tiny.dialog.prompt</b>(message, { default, ok, cancel });   <i>// strin
 <i>// belongs. Windows/Linux have no such menu and drop these items, so put the</i>
 <i>// same item in a menu of your own there</i>
 { role: 'app', items: [{ id: 'settings', label: 'Settings…', key: ',' }] }
+
+<i>// the Help menu — last in the bar on macOS, with the menu-search field and,</i>
+<i>// when the app ships a help book, "&lt;App&gt; Help" (⌘?) above your items</i>
+<i>// (standard: false drops it). win/linux: a plain "Help" menu of your items</i>
+{ role: 'help', items: [{ id: 'site', label: 'Visit Website' }] }
 
 <i>// the Edit menu's slot — File before Edit, the Mac way. Your items go</i>
 <i>// below Select All (macOS); win/linux add nothing, so there the menu is</i>
