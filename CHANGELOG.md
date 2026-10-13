@@ -4,6 +4,18 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.51.1 — 2026-10-12
+
+- **The installers no longer get rate limited on CI.** `install`,
+  `install.ps1`, `tinyjs update` and the daily update notice looked up the
+  latest release through GitHub's REST API. Without a token, GitHub allows
+  60 of those calls an hour per IP, and shared CI runners use that up, so
+  installs failed with a 403 ("could not determine latest release") or
+  "API rate limit exceeded". They now read the tag from the
+  `github.com/tarwin/tinyjsapp/releases/latest` redirect, which isn't
+  limited this way and needs no token. Pinning with `TINYJS_VERSION` works
+  as before. Thanks to Tulio Calil for the report (#51).
+
 ## 0.51.0 — 2026-10-12
 
 - **`"mainWindow": false`: tray agents with no window until they need one.**

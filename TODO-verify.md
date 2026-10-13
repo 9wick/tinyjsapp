@@ -3315,3 +3315,22 @@ truly windowless as well (their entries below). Fixture + steps:
   `app.icon('')`, reopen → red. Regular app's main window follows both
   times. Not covered: native Wayland (no per-window icon there, the shell
   uses the .desktop), and the shell's own taskbar/alt-tab render by eye.)*
+
+## #51 — "latest" from the releases redirect, not the REST API (2026-10-12)
+
+`docs/install`, `docs/install.ps1` and `cli.js` `fetchLatestVersion` now
+read the tag off `github.com/<repo>/releases/latest` → `/releases/tag/vX.Y.Z`
+instead of the rate-limited `api.github.com` call.
+
+- [x] **macOS `install` lookup** under sh, dash and bash: resolves v0.51.0;
+  `TINYJS_VERSION` still pins; a missing repo exits 1 with "could not
+  determine latest release". *(2026-10-12, lookup block run on its own.)*
+- [x] **`fetchLatestVersion` in tjs** returns v0.51.0 via `res.url` after a
+  followed HEAD. *(2026-10-12, macOS, function extracted and run.)*
+- [ ] **Windows `install.ps1` on PS 5.1 AND PS 7**: `irm
+  https://tinyjs.app/install.ps1 | iex` resolves and installs the latest
+  tag. The final URL comes from `BaseResponse.ResponseUri` on 5.1 and
+  `BaseResponse.RequestMessage.RequestUri` on 7, so both shells need running.
+  Never run: no PowerShell on the Mac this was written on.
+- [ ] **`tinyjs update --check` on Windows and Linux** from an installed
+  release (not a checkout, which reports `dev`).

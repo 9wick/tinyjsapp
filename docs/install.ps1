@@ -25,9 +25,16 @@ try {
         Write-Host "==> installing from local zip: $zip"
     } else {
         if ($Version -eq 'latest') {
-            $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'tinyjs-installer' }
-            $Version = $rel.tag_name
-            if (-not $Version) { throw 'could not determine the latest release' }
+            # Read the tag off github.com's /releases/latest redirect
+            # (-> /releases/tag/vX.Y.Z), not the REST API: unauthenticated
+            # API calls are capped at 60 an hour per IP, and shared CI
+            # runners hit that constantly (#51). The final URL lives in a
+            # different place on PS 5.1 (HttpWebResponse) and 7
+            # (HttpResponseMessage).
+            $r = Invoke-WebRequest "https://github.com/$Repo/releases/latest" -Method Head -UseBasicParsing
+            $final = if ($r.BaseResponse.ResponseUri) { $r.BaseResponse.ResponseUri } else { $r.BaseResponse.RequestMessage.RequestUri }
+            $Version = ([string]$final).TrimEnd('/').Split('/')[-1]
+            if ($Version -notmatch '^v\d') { throw 'could not determine the latest release' }
         }
         $base = "https://github.com/$Repo/releases/download/$Version"
 

@@ -171,13 +171,16 @@ function withTimeout(promise, ms) {
   });
 }
 
+// The tag comes off github.com's /releases/latest redirect (→ /releases/tag/
+// vX.Y.Z), not the REST API: unauthenticated API calls are capped at 60 an
+// hour per IP, which shared CI runners hit constantly (#51).
 async function fetchLatestVersion() {
   try {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { 'user-agent': 'tinyjs-cli', accept: 'application/vnd.github+json' },
+    const res = await fetch(`https://github.com/${REPO}/releases/latest`, {
+      method: 'HEAD', headers: { 'user-agent': 'tinyjs-cli' },
     });
     if (!res.ok) return null;
-    const tag = (await res.json()).tag_name;
+    const tag = res.url.replace(/\/+$/, '').split('/').pop();
     return typeof tag === 'string' && parseVer(tag) ? tag : null;
   } catch {
     return null;
