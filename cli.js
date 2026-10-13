@@ -1609,16 +1609,28 @@ async function cmdDev() {
     }
   }
 
-  // Frontend changes hot-reload inside the app process (see the dev entry);
-  // backend changes need a fresh process, so we watch and restart.
+  // Backend changes need a fresh process, so we watch the backend's OWN
+  // folder. Vanilla keeps backend and frontend together under src/ (the
+  // frontend subtree is skipped below); the Vite templates put the backend
+  // in backend/ with the frontend under src/ — watching src there restarted
+  // the whole app on every frontend edit (#53) and never saw backend edits.
+  const backendEntry = cfg.backend ?? await resolveBackendEntry(cfg);
+  const backendDir = backendEntry.includes('/') ? backendEntry.replace(/[\\/][^\\/]*$/, '') : '.';
+  const frontendDir = (fe.dir ?? 'src/frontend').replace(/\\/g, '/');
+  const feRel = backendDir === '.'
+    ? frontendDir.replace(/^\.\//, '')
+    : (frontendDir.startsWith(backendDir + '/') ? frontendDir.slice(backendDir.length + 1) : null);
+  const feSkip = feRel ? feRel.replace(/\/+$/, '') + '/' : null;
   let child = null;
   let restarting = false;
   let restartTimer = null;
-  tjs.watch('src', (file) => {
-    if (!file || String(file).startsWith('frontend')) return;
+  tjs.watch(backendDir, (file) => {
+    if (!file) return;
+    const rel = String(file).replace(/\\/g, '/');
+    if (feSkip && (rel === feSkip.slice(0, -1) || rel.startsWith(feSkip))) return;
     clearTimeout(restartTimer);
     restartTimer = setTimeout(() => {
-      console.log(`tinyjs: ${file} changed, restarting backend`);
+      console.log(`tinyjs: ${rel} changed, restarting backend`);
       restarting = true;
       child?.kill();
     }, 150);
