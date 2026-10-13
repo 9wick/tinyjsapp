@@ -4,6 +4,27 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`tinyjs dev` no longer restarts the app on frontend edits in the Vite
+  templates.** The dev watcher watched `src/`, which in the Vite templates
+  is the frontend, so every save restarted the whole app after Vite's HMR
+  had already applied it. Backend edits in `backend/` were never watched,
+  so they didn't restart at all. The watcher now follows the backend
+  entry's own folder: frontend edits are left to HMR and backend edits
+  restart. A backend at the project root (`"backend": "main.js"`) skips
+  `.build/`, `node_modules/`, `.git/` and the build output. Thanks to
+  Anton Tsvilikhovskiy for the report (#53) and Sam LABBE for the fix (#54).
+- **New vanilla apps put the backend in `src/backend/`,** next to
+  `src/frontend/` instead of above it. `tinyjs new` scaffolds
+  `src/backend/main.js`, and it is the first place the backend is looked
+  for. Existing apps with `src/main.js` keep working unchanged.
+- **`"frontend": { "reload": false }`** stops `tinyjs dev` from reloading
+  the page on frontend changes. Use it when your own tool already does (a
+  watch-mode bundler writing into the frontend folder plus a livereload
+  script), so the page doesn't reload twice per save. Dev servers set with
+  `devUrl` never had tinyjs reloads.
+
 ## 0.51.1 — 2026-10-12
 
 - **The installers no longer get rate limited on CI.** `install`,

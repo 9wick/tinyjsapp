@@ -494,10 +494,11 @@
   <i>// frameless / translucent window</i>
   "chrome": { "frame": false, "vibrancy": "hud" },
   <i>// backend entry; a .ts path is bundled with esbuild. Default: the first</i>
-  <i>// of src/main.js, src/main.ts, backend/main.js, backend/main.ts</i>
+  <i>// of src/backend/main.js|ts, src/main.js|ts, backend/main.js|ts</i>
   "backend": "backend/main.ts",
-  <i>// plain (unbundled) frontend folder, served as-is. Default: src/frontend</i>
-  "frontend": { "dir": "web" },
+  <i>// plain (unbundled) frontend folder, served as-is. Default: src/frontend.</i>
+  <i>// reload: false = `tinyjs dev` leaves page reloads to your own watcher</i>
+  "frontend": { "dir": "web", "reload": false },
   <i>// …or bundler hooks (Vite etc.): build runs, dist ships; dev/devUrl are</i>
   <i>// used by `tinyjs dev`. Both need the project's packages installed</i>
   <i>// (--template scaffolds install them; else the build says so)</i>
@@ -603,7 +604,7 @@
   </section>
 
   <section id="backend">
-    <h2>backend <span class="tag">src/main.js — full system access via <a href="https://txikijs.org/" target="_blank" rel="noopener">txiki.js</a></span></h2>
+    <h2>backend <span class="tag">src/backend/main.js — full system access via <a href="https://txikijs.org/" target="_blank" rel="noopener">txiki.js</a></span></h2>
     <pre><b>export const api</b> = {
   <i>// callable from the page: await tiny.api.call('readNotes', { dir })</i>
   <i>// return value resolves the page's promise; throwing rejects it</i>
@@ -1479,7 +1480,7 @@ const { api } = await <b>tiny.system.capabilities</b>();  <i>// { gated, denied:
 await <b>tiny.win.find</b>('needle', { forward: true, matchCase: false });
 <i>// -&gt; { found, matches, activeMatch } — call again to step</i>
 await <b>tiny.win.stopFind</b>();</pre>
-    <pre><i>// backend (src/main.js) — route links, watch loads, veto navigations</i>
+    <pre><i>// backend (src/backend/main.js) — route links, watch loads, veto navigations</i>
 export function <b>onNavigate</b>(info, app) {
   <i>// kind: 'policy' | 'start' | 'commit' | 'finish' | 'fail' | 'crash'</i>
   if (info.kind === 'policy' &amp;&amp; new URL(info.url).origin !== 'https://app.example.com')

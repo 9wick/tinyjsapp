@@ -157,7 +157,11 @@ tinyjs dev
 
 A window opens. `dev` hot-reloads: edit anything in `src/frontend/` and the
 page re-renders in place, caches bypassed (no restart, backend state
-survives); edit backend sources and the process restarts automatically.
+survives); edit backend sources (the backend entry's folder) and the
+process restarts automatically. With a dev server (`devUrl`) the server's
+own HMR does the frontend instead; a watch-mode tool that writes into the
+frontend folder and reloads the page itself sets `"frontend": { "reload":
+false }` so the page doesn't reload twice.
 `TINYJS_DEBUG=1 tinyjs dev` traces every message crossing the bridge.
 
 **Frameworks welcome:** `tinyjs new myapp --template react-ts` (or vue-ts,
@@ -198,13 +202,14 @@ myapp/
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
   icon.png                # 1024×1024 app icon (template ships a default)
-  src/main.js             # backend: export const api = {...}; export function init(app) {}
+  src/backend/main.js     # backend: export const api = {...}; export function init(app) {}
   src/frontend/           # index.html + any local js/css/images
 ```
 
 Both folders are conventions, not requirements. `"backend": "path/main.js"`
-picks the backend entry (default: the first of `src/main.js`, `src/main.ts`,
-`backend/main.js`, `backend/main.ts`), and the folder it sits in is the
+picks the backend entry (default: the first of `src/backend/main.js|ts`,
+`src/main.js|ts` — the layout before 0.52, still supported —
+`backend/main.js|ts`), and the folder it sits in is the
 backend's root: a plain-JS backend ships that whole folder, and a `.ts`
 entry is bundled from it. Separately, `"frontend": { "dir": "web" }`
 picks the plain page folder. A bundler project uses `"frontend": { "build",
@@ -236,7 +241,7 @@ value that was really there. Resolution order: **root → OS block → env**.
 
 ### Writing the app
 
-Backend (`src/main.js`) — every `api` function is callable from the page;
+Backend (`src/backend/main.js`) — every `api` function is callable from the page;
 handlers receive `(params, app)`:
 
 ```js

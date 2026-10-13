@@ -426,18 +426,22 @@ async function loadConfig() {
   return { title: cfg.name, size: '960x640', id: 'com.example.' + cfg.name, ...cfg };
 }
 
-// Backend entry: cfg.backend, or the first of src/main.js|ts, backend/main.js|ts.
-// .ts entries (or any entry with cfg.backendBundle) are bundled with esbuild —
-// which also makes npm packages usable in the backend.
+// Backend entry: cfg.backend, or the first of src/backend/main.js|ts (the
+// vanilla layout: backend and frontend side by side under src/), src/main.js|ts
+// (the vanilla layout before 0.52, frontend nested in the backend's folder),
+// backend/main.js|ts (the Vite templates). .ts entries (or any entry with
+// cfg.backendBundle) are bundled with esbuild — which also makes npm packages
+// usable in the backend.
 async function resolveBackendEntry(cfg) {
   if (cfg.backend) {
     if (!(await exists(cfg.backend))) fail('backend entry not found: ' + cfg.backend);
     return cfg.backend;
   }
-  for (const p of ['src/main.js', 'src/main.ts', 'backend/main.js', 'backend/main.ts']) {
+  for (const p of ['src/backend/main.js', 'src/backend/main.ts', 'src/main.js', 'src/main.ts',
+                   'backend/main.js', 'backend/main.ts']) {
     if (await exists(p)) return p;
   }
-  fail('no backend entry found (src/main.js|ts, backend/main.js|ts, or "backend" in tinyjs.json)');
+  fail('no backend entry found (src/backend/main.js|ts, src/main.js|ts, backend/main.js|ts, or "backend" in tinyjs.json)');
 }
 
 // A frontend with its own build tooling needs its packages installed first.
@@ -646,10 +650,13 @@ const app = await createApp({
 if (appMod.init) appMod.init(app);
 `;
 
-  if (dev && !devUrl && !cfg.url && await exists(frontendSrc)) {
+  if (dev && !devUrl && !cfg.url && fe.reload !== false && await exists(frontendSrc)) {
     // Hot-reload: any frontend change re-renders the page from disk in place.
     // "url" apps skip it twice over: the main window is a remote page, and
-    // the frontend dir being watched may not even exist.
+    // the frontend dir being watched may not even exist. "frontend.reload":
+    // false hands reloading to a tool that already does its own (a watch-
+    // mode bundler writing into the frontend dir plus a livereload script),
+    // which would otherwise reload the page twice per save.
     entry += `
 let reloadTimer = null;
 tjs.watch(FRONTEND, () => {
@@ -1610,24 +1617,28 @@ async function cmdDev() {
   }
 
   // Backend changes need a fresh process, so we watch the backend's OWN
-  // folder. Vanilla keeps backend and frontend together under src/ (the
-  // frontend subtree is skipped below); the Vite templates put the backend
-  // in backend/ with the frontend under src/ — watching src there restarted
-  // the whole app on every frontend edit (#53) and never saw backend edits.
-  const backendEntry = cfg.backend ?? await resolveBackendEntry(cfg);
-  const backendDir = backendEntry.includes('/') ? backendEntry.replace(/[\\/][^\\/]*$/, '') : '.';
-  const frontendDir = (fe.dir ?? 'src/frontend').replace(/\\/g, '/');
-  const feRel = backendDir === '.'
-    ? frontendDir.replace(/^\.\//, '')
-    : (frontendDir.startsWith(backendDir + '/') ? frontendDir.slice(backendDir.length + 1) : null);
-  const feSkip = feRel ? feRel.replace(/\/+$/, '') + '/' : null;
+  // folder. The vanilla layout keeps backend and frontend side by side
+  // (src/backend, src/frontend); the Vite templates put the backend in
+  // backend/ with the frontend under src/ — watching src there restarted the
+  // whole app on every frontend edit (#53) and never saw backend edits. A
+  // pre-0.52 vanilla app (src/main.js) still nests its frontend inside the
+  // watched folder, so that subtree is skipped. A backend at the project root
+  // watches everything, including .build/ — which every restart rewrites, so
+  // without skipping it the app would restart forever.
+  const norm = (p) => String(p).replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+  const backendEntry = norm(cfg.backend ?? await resolveBackendEntry(cfg));
+  const backendDir = backendEntry.includes('/') ? backendEntry.replace(/\/[^/]*$/, '') : '.';
+  const under = (d) => backendDir === '.' ? d : d.startsWith(backendDir + '/') ? d.slice(backendDir.length + 1) : null;
+  const skipDirs = [under(norm(fe.dir ?? 'src/frontend'))];
+  if (backendDir === '.') skipDirs.push('.build', 'node_modules', '.git', 'dist', fe.dist && norm(fe.dist));
+  const skips = skipDirs.filter(Boolean);
   let child = null;
   let restarting = false;
   let restartTimer = null;
   tjs.watch(backendDir, (file) => {
     if (!file) return;
-    const rel = String(file).replace(/\\/g, '/');
-    if (feSkip && (rel === feSkip.slice(0, -1) || rel.startsWith(feSkip))) return;
+    const rel = norm(file);
+    if (skips.some((d) => rel === d || rel.startsWith(d + '/'))) return;
     clearTimeout(restartTimer);
     restartTimer = setTimeout(() => {
       console.log(`tinyjs: ${rel} changed, restarting backend`);

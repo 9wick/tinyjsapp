@@ -87,9 +87,11 @@ tinyjs.json          { name, title, size, id, version, icon?,
                                   acceptsFirstMouse, menu },
                        signIdentity?, notarize?: { profile },
                        backend?: "backend/main.ts",   // .ts → esbuild bundle;
-                                      // default src/main.{js,ts} or backend/main.{js,ts}
-                       frontend?: { dir?, build, dist, dev, devUrl },
+                                      // default src/backend/main.{js,ts}, then
+                                      // src/main.{js,ts} (pre-0.52), backend/main.{js,ts}
+                       frontend?: { dir?, build, dist, dev, devUrl, reload? },
                                       // dir: plain page folder (default src/frontend);
+                                      // reload: false = dev leaves reloads to your tool;
                                       // build/dev need the packages installed first
                        // wrapping a hosted site (recipes.md) — "url" replaces
                        // the local frontend, "api" gates what that origin may
@@ -101,12 +103,12 @@ tinyjs.json          { name, title, size, id, version, icon?,
                        api?: "wrapper" | { disable?, enable?, origins? },
                        macos?/windows?/linux?: { …merged on top per OS } }
 icon.png             1024×1024 app icon
-src/main.js          backend
+src/backend/main.js  backend
 src/frontend/        index.html + assets — served as real files (file://),
                      so relative paths just work
 ```
 
-## Backend (src/main.js)
+## Backend (src/backend/main.js)
 
 ```js
 export const api = {
