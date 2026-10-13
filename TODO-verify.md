@@ -8,6 +8,26 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Bundled data resources
+
+Reproducible checks: `python3 -u test/resources/check.py` and
+`tsc --noEmit --strict --skipLibCheck --lib ES2022,DOM test/resources/types.ts`.
+
+macOS 27.0 arm64 verified again 2026-10-11: real dev, bare executable and relocated
+.app backend/frontend reads, URL wrapper, binary bytes, null without resources,
+rebuild cleanup, local publish archive and ad-hoc signature verification.
+
+- [ ] Windows: actual dev/portable backend + frontend RPC, relocation,
+  binary bytes, path rejection/symlinks, null without resources, rebuild
+  cleanup and local publish archive. See `test/resources/README.md`.
+- [x] Linux x86_64 verified 2026-10-11: Ubuntu 22.04.5 container,
+  txiki.js v26.6.0, GTK 3.24.33 / WebKitGTK 2.50.4, non-root Xvfb X11
+  session. Real dev and portable builds with backend/frontend RPC, relocation,
+  binary bytes, path/symlink rejection, null without resources, repeated-build
+  cleanup, URL wrapper without a local frontend and local publish tar.gz
+  all passed. See the exact command in `test/resources/README.md`.
+- [ ] Linux arm64 and a Wayland session: not executed.
+
 ## How to run the app-surface checks
 
 ```sh

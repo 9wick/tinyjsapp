@@ -1383,6 +1383,49 @@ holds the pre-staple bundle, so its ticket is missing and offline Gatekeeper
 rejects it. (If a dmg already exists on disk, `notarize` refreshes it
 automatically, since that copy is guaranteed stale.)
 
+### Bundled data resources
+
+List explicit project-relative files or directories in `tinyjs.json` (platform
+blocks can override the list):
+
+```json
+{ "name": "resource-demo", "resources": ["assets/dictionary.json", "assets/fonts/"] }
+```
+
+```js
+// Backend: app.paths is a plain object.
+export async function init(app) {
+  const root = app.paths.resources;
+  if (root === null) return;
+  const bytes = await tjs.readFile(root + '/assets/dictionary.json');
+  console.log(new TextDecoder().decode(bytes));
+}
+// Frontend: the existing RPC returns the same root.
+const paths = await tiny.app.paths();
+console.log(paths.resources); // string | null
+```
+
+In dev, `resources` is the absolute project root; files are checked and read
+in place. Builds copy bytes recursively, preserving each project-relative
+path under `Contents/Resources/app/resources/` in a macOS .app, or
+`resources/` beside the executable in bare/Windows/Linux portable builds.
+These are real external files, not TPK modules: distribute the whole folder.
+The root is independent of the launch directory and follows a relocated
+build. Local `tinyjs publish` archives include the resources for updates.
+A rebuild removes resources dropped from the list. Without `resources`, or
+with `[]`, there is no extra copy and both APIs return `null` for the root.
+
+Paths are normalized (including backslash separators); duplicates and child
+paths already covered by a selected directory are copied once. Invalid
+config, missing files, absolute/drive/UNC paths, `..`, the project root,
+and the root directories `.build`, `dist`, `.git`, `node_modules` fail with
+a CLI error. Symlinks are rejected, including parents and directory contents.
+Windows components ending in a dot or space are also rejected.
+This first version is for data: no globs, destination mappings, sidecar
+execution/signing or macOS Helpbook/Resources-root integration. It does not
+change `readAccess` or page privileges; read data in the backend and expose
+only what your page needs through your API.
+
 ### Distributing to other people (Developer ID + notarization)
 
 The ad-hoc-signed default runs fine on **your** Mac, but on anyone else's,

@@ -477,6 +477,8 @@ declare interface TinyScreen {
 /** Standard per-app directories; data/cache/logs are per app id and NOT
  *  auto-created. Prefer these over hardcoding ~/Library paths. */
 declare interface TinyPaths {
+  /** Absolute project root in dev, bundled data root in builds; null without resources. */
+  resources: string | null;
   home: string;
   data: string;
   cache: string;

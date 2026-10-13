@@ -174,6 +174,19 @@
   <section>
 
     <div class="rel">
+      <h2>Unreleased</h2>
+      <ul>
+        <li><b>Bundled data resources:</b> explicit project-relative files/directories
+        in <code>tinyjs.json</code> <code>resources</code>, with an absolute root
+        from backend <code>app.paths.resources</code> and frontend
+        <code>(await tiny.app.paths()).resources</code>. Dev reads in place;
+        builds preserve paths beside the executable or inside the .app, and
+        local publish archives carry them. Absent/empty resources returns null.
+        Unsafe paths and symlinks are rejected; no sidecar signing/execution.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.52.0 <span class="date">2026-10-13</span></h2>
       <ul>
         <li><b><code>tinyjs dev</code> no longer restarts the app on frontend edits in the Vite templates.</b> The dev watcher watched <code>src/</code>, which in the Vite templates is the frontend, so every save restarted the whole app after Vite's HMR had already applied it. Backend edits in <code>backend/</code> were never watched, so they didn't restart at all. The watcher now follows the backend entry's own folder: frontend edits are left to HMR and backend edits restart. A backend at the project root (<code>"backend": "main.js"</code>) skips <code>.build/</code>, <code>node_modules/</code>, <code>.git/</code> and the build output. Thanks to Anton Tsvilikhovskiy for the report (<a href="https://github.com/tarwin/tinyjsapp/issues/53">#53</a>) and Sam LABBE for the fix (<a href="https://github.com/tarwin/tinyjsapp/pull/54">#54</a>).</li>
