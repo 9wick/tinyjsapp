@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.52.0 — 2026-10-13
 
 - **`tinyjs dev` no longer restarts the app on frontend edits in the Vite
   templates.** The dev watcher watched `src/`, which in the Vite templates

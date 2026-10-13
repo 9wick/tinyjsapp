@@ -174,6 +174,15 @@
   <section>
 
     <div class="rel">
+      <h2>0.52.0 <span class="date">2026-10-13</span></h2>
+      <ul>
+        <li><b><code>tinyjs dev</code> no longer restarts the app on frontend edits in the Vite templates.</b> The dev watcher watched <code>src/</code>, which in the Vite templates is the frontend, so every save restarted the whole app after Vite's HMR had already applied it. Backend edits in <code>backend/</code> were never watched, so they didn't restart at all. The watcher now follows the backend entry's own folder: frontend edits are left to HMR and backend edits restart. A backend at the project root (<code>"backend": "main.js"</code>) skips <code>.build/</code>, <code>node_modules/</code>, <code>.git/</code> and the build output. Thanks to Anton Tsvilikhovskiy for the report (<a href="https://github.com/tarwin/tinyjsapp/issues/53">#53</a>) and Sam LABBE for the fix (<a href="https://github.com/tarwin/tinyjsapp/pull/54">#54</a>).</li>
+        <li><b>New vanilla apps put the backend in <code>src/backend/</code>,</b> next to <code>src/frontend/</code> instead of above it. <code>tinyjs new</code> scaffolds <code>src/backend/main.js</code>, and it is the first place the backend is looked for. Existing apps with <code>src/main.js</code> keep working unchanged.</li>
+        <li><b><code>"frontend": { "reload": false }</code></b> stops <code>tinyjs dev</code> from reloading the page on frontend changes. Use it when your own tool already does (a watch-mode bundler writing into the frontend folder plus a livereload script), so the page doesn't reload twice per save. Dev servers set with <code>devUrl</code> never had tinyjs reloads.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.51.1 <span class="date">2026-10-12</span></h2>
       <ul>
         <li><b>The installers no longer get rate limited on CI.</b> <code>install</code>, <code>install.ps1</code>, <code>tinyjs update</code> and the daily update notice looked up the latest release through GitHub's REST API. Without a token, GitHub allows 60 of those calls an hour per IP, and shared CI runners use that up, so installs failed with a 403 ("could not determine latest release") or "API rate limit exceeded". They now read the tag from the <code>github.com/tarwin/tinyjsapp/releases/latest</code> redirect, which isn't limited this way and needs no token. Pinning with <code>TINYJS_VERSION</code> works as before. Thanks to Tulio Calil for the report (<a href="https://github.com/tarwin/tinyjsapp/issues/51">#51</a>).</li>

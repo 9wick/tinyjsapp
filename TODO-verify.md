@@ -3334,3 +3334,19 @@ instead of the rate-limited `api.github.com` call.
   Never run: no PowerShell on the Mac this was written on.
 - [ ] **`tinyjs update --check` on Windows and Linux** from an installed
   release (not a checkout, which reports `dev`).
+
+## #53/#54 — dev watcher follows the backend's folder; src/backend layout (2026-10-13)
+
+`cmdDev` watches the backend entry's folder instead of `src`, skips a
+frontend nested inside it, and skips `.build`/`node_modules`/`.git`/`dist`
+for a root backend. `frontend.reload: false` drops the dev page reload.
+
+- [x] **macOS, all layouts**: new `src/backend/`, old `src/main.js`, root
+  `"./main.js"` (one restart, no loop), `reload: false`, and the react-ts
+  Vite template (HMR only on `src/App.tsx`, restart on `backend/main.ts`).
+  *(2026-10-13.)*
+- [ ] **Windows**: same checks. `tjs.watch` reports backslash paths there;
+  the watcher normalises them, but nobody has seen the skip work.
+- [ ] **Linux**: same checks. inotify isn't recursive in libuv, so only
+  top-level files in the backend folder restart (unchanged from before) —
+  confirm that's all that's missing, and that a root backend doesn't loop.
