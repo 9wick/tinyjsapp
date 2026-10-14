@@ -32,6 +32,8 @@ works proves the right file shipped. It checks:
 - macOS: `Contents/Helpers/` holds the sidecar, signed as `<id>.side-car`,
   and `codesign --verify --deep --strict` passes on the relocated bundle;
 - the `tinyjs publish` archive carries the sidecar with its exec bit;
+- Linux: a `#!` script checked in without +x gets a note, then builds,
+  runs and publishes executable;
 - a backend at the project root doesn't copy `executables/` into the app;
 - macOS: the missing-slice message (cc-built thin binary for the other
   arch: a Rosetta note on arm64, a warning on Intel); a pre-signed sidecar keeps its entitlements;
@@ -57,3 +59,6 @@ TODO-verify.md, resources).
   3.13: `check.py` PASS; symlinks SKIP without Developer Mode (junctions
   checked by hand, refused). DLL-beside-sidecar and auto-update runs are in
   TODO-verify.md.
+- 2026-10-14, Linux: `check.py` PASS on Ubuntu 24.04 arm64 (GNOME Wayland)
+  and on x86_64 in an Ubuntu 22.04 container under Xvfb +
+  `dbus-run-session` (command in test/resources/README.md).

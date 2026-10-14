@@ -377,6 +377,32 @@ export const api = {
         else:
             print('SKIP Developer ID / JIT sidecar (set TINYJS_TEST_SIGN_IDENTITY and install bun)')
 
+    if OS == 'linux':
+        # A #! script ships too, and the build (not the author) makes it
+        # executable: checked in without +x, it must run from dist/ and keep
+        # its bit in the update tarball. Dev only notes it.
+        reset(OS)
+        put_sidecar(OS)
+        script = exe_root / OS / 'hello.sh'
+        script.write_text('#!/bin/sh\necho "script $1"\n')
+        script.chmod(0o644)
+        p = cli(project, 'build')
+        assert "hello.sh isn't executable" in p.stdout, p.stdout
+        built = project / 'dist/executables/hello.sh'
+        assert os.access(built, os.X_OK), oct(built.stat().st_mode)
+        out = run([built, 'ran'], base).stdout.strip()
+        assert out == 'script ran', out
+        launch([bare], base, str(project / 'dist/executables'))
+        shutil.rmtree(project / 'dist/publish', ignore_errors=True)
+        cli(project, 'publish')
+        import tarfile
+        (archive,) = (project / 'dist/publish').glob('*.tar.gz')
+        with tarfile.open(archive) as z:
+            mode = z.getmember('exec-check/executables/hello.sh').mode
+            assert mode & 0o111, oct(mode)
+        launch(dev, project, staged)
+        print('PASS #! script: built and published executable from a non-executable source, and it runs')
+
     # No folder for this OS, or none at all: null, nothing shipped.
     for folders in [[other], []]:
         reset(*folders)

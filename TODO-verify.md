@@ -154,8 +154,18 @@ the Linux publish `chmod -R +x`) were written there and never run.
   - The running sidecar's `dllcar.exe.update-old` / `helper.dll.update-old`
     stay in `executables/` until the next update's sweep (as the top-level
     exes always have), visible to an app that lists the folder.
-- [ ] Linux x86_64 (22.04 container) and arm64: `check.py` PASS — ELF and
-  `#!` scripts, exec bit in `dist/` and the publish tarball.
+- [x] Linux x86_64 (22.04 container) and arm64: `check.py` PASS — ELF and
+  `#!` scripts, exec bit in `dist/` and the publish tarball. *2026-10-14:
+  arm64 on the Ubuntu 24.04 VM under GNOME Wayland (launcher current);
+  x86_64 in an `ubuntu:22.04` amd64 container (Rosetta) from a fresh clone of
+  `fe7bf71` built by its own `setup.sh` (`file`: both x86-64), under Xvfb +
+  `dbus-run-session`, same command as the resources README. check.py had no
+  `#!` case on Linux (only macOS's rejection), so one was added: a
+  `#!/bin/sh` script checked in mode 644 gets the build's "isn't executable"
+  note, is executable in `dist/executables/`, runs, and keeps +x in the
+  publish tarball. Proven able to fail: with both build chmods
+  (`copyExecutables`, `stageExecutables`) commented out it asserts — either
+  one alone is enough to pass.*
 
 ## App assets (`assets/`), help book, Help menu
 
@@ -1085,9 +1095,14 @@ elsewhere:
       2026-07-28 (the VM's keyring turned out unlocked): set→get→delete
       round-trips in single-digit ms, a second `set` REPLACES rather than
       duplicating (get returns the new value, one delete leaves nothing
-      behind), an unsaved key reads `null` not an error. Still unwatched,
-      because this box can no longer produce them: the no-daemon answer
-      (`no secret service`) and the locked-keyring behavior — GNOME may
+      behind), an unsaved key reads `null` not an error. **No-daemon answer
+      seen 2026-10-14**: in a private `dbus-run-session` with no keyring
+      (x86_64 22.04 container, Xvfb) `secrets.set` and `secrets.get` both
+      reject `no secret service` promptly — no hang. Note
+      `capabilities().secrets` still says `true` there (it doesn't probe the
+      bus the way badge/progress do), so feature detection can't see it;
+      the rejection is the only signal. Still unwatched, because this box
+      can no longer produce it: the locked-keyring behavior — GNOME may
       prompt to unlock, and it's worth knowing whether that blocks the call
       or fails. (Earlier this VM DID report IsLocked while autologin'd, per
       TODO-linux.md, so the locked case is real.)
@@ -1906,6 +1921,20 @@ leaves the second. Compiled-never-watched elsewhere:
       launcher logged **zero GTK warnings/criticals** (only the unrelated
       libEGL DRI3 lines XWayland always prints). Whether the clamp
       arithmetic is right needs a WM that permits off-screen windows.
+      **Clamp arithmetic verified 2026-10-14** under a WM-less Xvfb
+      (1280x800, so the work area is the whole screen and nothing but our
+      code constrains the window) — x86_64, `ubuntu:22.04` container,
+      launcher from `fe7bf71`. A 960x640 main, three boots of a
+      self-driving page: first-ever and unforged second boot (dormant):
+      `setPosition(9999,9999)` **sticks at 9999,9999**, twice;
+      forged `__screens` boot (armed, and the fingerprint was rewritten to
+      the real one): the first `setPosition(9999,9999)` is chased to
+      **320,160** (1280−960, 800−640), the second sticks — first-pos-only, as
+      on macOS and Windows. `ensureOnScreen()` in every boot: 9999,9999 →
+      320,160; −5000,−5000 → **0,0**; half-off-screen 1000,100 (280px
+      visible) **left alone**; a 20x20 sliver at 1260,780 (under the 24px
+      rule) → 320,160. Still unrun: main only, not a secondary; and the
+      monitor-removed sweep mid-session (needs a display to unplug).
 - [x] **Linux (Wayland)** — verified 2026-08-01: a clean no-op. Every
       `getState()` reports 0,0 (gdk has no global origin there),
       `setPosition` changes nothing, and a forged-fingerprint armed boot
