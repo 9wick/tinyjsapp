@@ -1875,7 +1875,9 @@ static void set_style_bits_keep_client(HWND hwnd, LONG bits, bool on) {
 // touching its chrome. This used to be WS_EX_TOOLWINDOW, which also buys the
 // tool-window look: small caption, no icon, no min/max, a thin close (#56).
 // The shell's other documented rule is that an OWNED top-level window gets no
-// button and no Alt+Tab entry, so main is handed a never-shown owner instead.
+// button, so main is handed a never-shown owner instead. It stays in Alt+Tab
+// while shown (Alt+Tab lists an invisible owner's last visible popup; only
+// WS_EX_TOOLWINDOW keeps a window out) — seen and accepted on #56.
 // Main is created by the webview library, so the owner can only be retrofitted
 // through GWLP_HWNDPARENT; the "half-works" caveat on win.open's parent is
 // about z-order against a VISIBLE owner, which this one never is.
