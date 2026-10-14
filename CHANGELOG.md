@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.55.0 — 2026-10-14
 
 - **`src/shared/`: code the backend and the page both import** (#58). Put
   it beside `src/backend/` (or `shared/` beside the Vite templates'
