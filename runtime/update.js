@@ -379,10 +379,12 @@ async function retryLocked(fn) {
 // new file has landed at d.
 async function winSwapWalk(src, dst, journal) {
   await tjs.makeDir(dst, { recursive: true }).catch(() => {});
-  // Sweep leftovers from the previous update first (unlocked by now).
+  // Sweep leftovers from the previous update first (unlocked by now) — but
+  // not the asides this swap's prune just made, which rollback needs.
+  const ours = new Set(journal.map((j) => j.aside));
   const sweep = await tjs.readDir(dst);
   for await (const e of sweep) {
-    if (e.name.endsWith('.update-old'))
+    if (e.name.endsWith('.update-old') && !ours.has(dst + '/' + e.name))
       await retryLocked(() => tjs.remove(dst + '/' + e.name)).catch(() => {});
   }
   const iter = await tjs.readDir(src);
@@ -429,9 +431,61 @@ async function winSwapRollback(journal) {
   return ok;
 }
 
+// The walk only adds and replaces, so a file the new version dropped would
+// linger (macOS and Linux swap the whole bundle and never see this). Inside
+// the folders the build owns, anything the new version lacks is renamed
+// aside like a replaced file — journaled, so a failed swap puts it back.
+// The rest of the install folder is left alone: the Shelf keeps its marker
+// there. Runs BEFORE the walk, which moves src's files away.
+const WIN_OWNED_DIRS = ['executables', 'resources'];
+
+async function isDir(p) {
+  try { return (await tjs.stat(p)).isDirectory; } catch { return false; }
+}
+
+// srcDir is null when the new version has no such folder at all.
+async function winPruneWalk(srcDir, dst, journal, staleDirs) {
+  // Listed up front: the renames below add entries to this very folder.
+  const entries = [];
+  try {
+    for await (const e of await tjs.readDir(dst)) entries.push({ name: e.name, isDirectory: e.isDirectory });
+  } catch { return; }
+  for (const e of entries) {
+    const d = dst + '/' + e.name;
+    if (e.name.endsWith('.update-old')) {
+      // The walk's sweep never visits a folder the new version dropped.
+      await retryLocked(() => tjs.remove(d)).catch(() => {});
+      continue;
+    }
+    const s = srcDir === null ? null : srcDir + '/' + e.name;
+    if (e.isDirectory) {
+      const keep = s !== null && (await isDir(s));
+      await winPruneWalk(keep ? s : null, d, journal, staleDirs);
+      if (!keep) staleDirs.push(d);
+      continue;
+    }
+    if (s !== null && (await exists(s)) && !(await isDir(s))) continue;
+    const entry = { d, aside: d + '.update-old', placed: false };
+    try {
+      await retryLocked(() => tjs.rename(d, entry.aside));
+    } catch (err) {
+      throw new Error('cannot remove ' + d + ' (file locked?): ' + (err?.message ?? err));
+    }
+    journal.push(entry);
+  }
+}
+
 async function winSwapDir(src, dst) {
   const journal = [];
+  const staleDirs = [];
   try {
+    for (const name of WIN_OWNED_DIRS) {
+      if (await isDir(dst + '/' + name)) {
+        const s = src + '/' + name;
+        await winPruneWalk((await isDir(s)) ? s : null, dst + '/' + name, journal, staleDirs);
+        if (!(await isDir(s))) staleDirs.push(dst + '/' + name);
+      }
+    }
     await winSwapWalk(src, dst, journal);
   } catch (e) {
     const cause = e?.message ?? String(e);
@@ -445,6 +499,10 @@ async function winSwapDir(src, dst) {
   for (const e of journal) {
     if (e.aside) await tjs.remove(e.aside).catch(() => {});
   }
+  // Then the folders the new version dropped, deepest first (pushed
+  // children-first); one still holding a locked aside stays until the next
+  // update's prune sweeps it.
+  for (const d of staleDirs) await tjs.remove(d).catch(() => {});
 }
 
 // Captured at import: on Linux, once the running binary has been replaced by

@@ -120,10 +120,40 @@ the Linux publish `chmod -R +x`) were written there and never run.
   Apple accepts it and the stapled app spawns the sidecar on another Mac.
 - [ ] macOS `--universal` / `--arch x86_64` builds skip / pick
   `macos-x86_64/` and the slice warning holds.
-- [ ] Windows: `check.py` PASS — PE check, `dist/executables/`, publish zip,
-  spawn from a relocated dist. Also: a sidecar with a `.dll` beside it.
-- [ ] Windows: auto-update installs a new sidecar (the folder swap carries
-  `executables/`).
+- [x] Windows 11 arm64 (26200), 2026-10-14, Python 3.13: `check.py` PASS —
+  dev copies, PE check, overrides, lists, `dist/executables/`, publish zip,
+  spawn from a relocated dist, null cases. Symlinks SKIP (no Developer
+  Mode); junctions by hand instead: one inside `executables/windows/`,
+  `windows/` itself and `executables/` itself all fail the build with
+  "symlinks are not supported". Two test fixes on the way: the build's CPU
+  folder is `tjs.exe`'s (x64 here, emulated — `windows-x86_64/` is right;
+  the script had taken arm64 from Python), and `launcher.exe` outlives the
+  backend by a moment, keeping the dist locked, so `launch()` now waits
+  until the folder can be renamed.
+  Sidecar with a `.dll` beside it (MinGW-built `dllcar.exe` importing
+  `helper.dll`, both in `executables/windows/`): runs in dev and from a
+  relocated dist; with the DLL deleted it dies 0xC0000135, so the pass is
+  real.
+- [x] Windows: auto-update installs a new sidecar. 2026-10-14, a local
+  manifest server, 1.0.0 → 1.0.1 where 1.0.1 swaps `helper.dll` (42 → 43),
+  adds `new.exe`, drops `gone.exe`; 1.0.0 keeps a sidecar running (exe +
+  DLL loaded) through the install. The relaunched 1.0.1 spawned the sidecar
+  and got "dll says 43"; `new.exe` arrived. Two leftovers, both from the
+  Windows file-by-file swap (not executables-specific — `resources/` has
+  the same shape):
+  - **A file dropped from the new version stayed** (`gone.exe` was still in
+    the install). The walk only adds and replaces; macOS replaces the whole
+    .app and Linux the whole folder, so only Windows kept stale files.
+    **Fixed same day:** `winSwapDir` now prunes `executables/` and
+    `resources/` first (stale files renamed aside through the same journal,
+    dropped folders removed after). Re-run: `gone.exe`, `resources/sub/…`
+    and, in a second run, a whole dropped `resources/` are gone; the Shelf
+    marker and a stray top-level file stay. Rollback: with the app exe held
+    open without delete-sharing the swap fails "current version is intact"
+    and the tree (gone.exe included) is identical to before.
+  - The running sidecar's `dllcar.exe.update-old` / `helper.dll.update-old`
+    stay in `executables/` until the next update's sweep (as the top-level
+    exes always have), visible to an app that lists the folder.
 - [ ] Linux x86_64 (22.04 container) and arm64: `check.py` PASS — ELF and
   `#!` scripts, exec bit in `dist/` and the publish tarball.
 

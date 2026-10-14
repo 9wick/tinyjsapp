@@ -26,6 +26,12 @@ https://tinyjs.app/changelog.
 - **A backend at the project root no longer copies `resources/` and
   `assets/` into the app's sources** (`"backend": "main.js"`); they ship
   only through their own paths.
+- **Windows: an update removes the files the new version dropped** from
+  `executables/` and `resources/`; until now they stayed in the install
+  folder (macOS and Linux replace the whole app, so they never had this).
+  The rest of the folder is left alone, and a failed update still restores
+  every file. It takes effect from the update after an app built with this
+  one, since the installed version's updater does the swap.
 
 ## 0.53.2 — 2026-10-14
 
