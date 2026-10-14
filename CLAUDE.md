@@ -76,7 +76,9 @@ history 2026-07-25) — runbook in ../tinyjsapp-examples/CLAUDE.md.
   that loop misses it — `pgrep -x launcher` too, or kill by pid. A survivor
   is not harmless: it keeps its modal dialogs up, it swallows the XTest keys
   the next run wanted, and (apps being single-instance) a second launch just
-  forwards its argv to the old process and exits.
+  forwards its argv to the old process and exits. Host `pgrep` also sees
+  processes inside running docker containers — a cleanup loop during a
+  containerised check.py run kills ITS launchers (reads as a timeout).
 - Audio measurement: `pw-cat --record --target <sink-or-name> -P
   '{ stream.capture.sink=true }'` + a few lines of Python (rms/peak).
   CAUTION: the built-in ALSA sink's monitor MONO-ISES — L/R comparisons

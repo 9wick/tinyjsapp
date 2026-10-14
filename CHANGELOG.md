@@ -32,6 +32,11 @@ https://tinyjs.app/changelog.
   well as `Credits.html`.
 - **macOS: built apps carry `CFBundleShortVersionString`,** set from
   `version`, the key Finder and the rest of macOS read the version from.
+- **Linux: clicking a menu item no longer gives it a check mark.** GTK
+  toggled every menu bar and tray item on click, so a plain item showed ✓
+  after one use and a checked one lost its ✓, whatever the app had set.
+  `checked` now only changes when the app changes it, as on macOS and
+  Windows.
 
 ## 0.52.0 — 2026-10-13
 

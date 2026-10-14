@@ -182,6 +182,7 @@
         <li><b><code>{ role: 'help' }</code> in <code>setMenu</code>.</b> Your own Help menu items: on macOS the menu always goes last and gets the system search field (plus "&lt;App&gt; Help" when there's a help book); on Windows and Linux it's a plain "Help" menu.</li>
         <li><b>macOS: <code>Credits.rtf</code> and <code>Credits.rtfd</code> work as About panel credits,</b> as well as <code>Credits.html</code>.</li>
         <li><b>macOS: built apps carry <code>CFBundleShortVersionString</code>,</b> set from <code>version</code>, the key Finder and the rest of macOS read the version from.</li>
+        <li><b>Linux: clicking a menu item no longer gives it a check mark.</b> GTK toggled every menu bar and tray item on click, so a plain item showed ✓ after one use and a checked one lost its ✓, whatever the app had set. <code>checked</code> now only changes when the app changes it, as on macOS and Windows.</li>
       </ul>
     </div>
 

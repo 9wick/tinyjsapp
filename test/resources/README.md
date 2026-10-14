@@ -40,7 +40,9 @@ third-party executables, install an update, or build other CPU architectures.
 ## Verified runs
 
 2026-10-13, after the switch to the `resources/` folder: macOS 27.0 arm64
-`check.py` PASS. Windows and Linux need re-running (TODO-verify.md).
+`check.py` PASS. Linux PASS the same day on Ubuntu 22.04 x86_64 (container,
+Xvfb, command below) and Ubuntu 24.04 arm64 under GNOME Wayland. Windows
+passed with two fixture names swapped (TODO-verify.md).
 
 The runs below were of #49's original project-relative layout — 2026-10-11:
 
