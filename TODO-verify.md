@@ -8,6 +8,22 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `dialog.saveFile({ name })` pre-fills the file name (#59, 2026-10-14)
+
+The bridge now forwards `name` (basename only; any folder part is dropped,
+since Windows' SetFileName would navigate to it) as the save arm's existing
+second arg, the one the #36 backend panel already used. Linux's "start in
+Downloads" moved from "has a name" to "is the backend's q<digits> panel", so
+a page's named panel keeps GTK's usual folder.
+
+- [x] **macOS** — `{ types: ['docx'], name: 'mydocument' }` shows
+  `mydocument.docx`; `{ name: '../../etc/evil.txt' }` shows `evil.txt` in
+  the last-used folder. *(seen by hand 2026-10-14)*
+- [ ] **Windows** — same two calls; the name is pre-filled, `.docx` is added
+  on save, and the folder is NOT `../../etc`.
+- [ ] **Linux** — same two calls, plus a wrapped-page `printToPDF` outside
+  the write roots still opens its panel in Downloads (#36 unchanged).
+
 ## Windows accessory / `presence('menubar')` kept the tool-window caption (#56, 2026-10-14)
 
 The taskbar button is now dropped by giving main a never-shown OWNER

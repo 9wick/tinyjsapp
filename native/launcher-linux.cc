@@ -2023,12 +2023,13 @@ static void do_dialog(const std::string& callid, const std::string& body) {
       gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dlg), TRUE);
       // Field 2 (save): suggested file name (optional).
       std::string name = tab_field(f, 2);
-      // A suggested name is the backend's #36 panel; start it in Downloads, as
-      // the other OSes do, not the process cwd GTK falls back to.
-      if (!name.empty()) {
+      // The backend's #36 panel (callid q<digits>) starts in Downloads, not
+      // the process cwd GTK falls back to. A page's saveFile({ name }) only
+      // pre-fills the name, like the other OSes.
+      if (!callid.empty() && callid[0] == 'q')
         gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dlg), downloads_dir().c_str());
+      if (!name.empty())
         gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg), name.c_str());
-      }
     }
     // Field 1 (open/openmulti/save): comma-separated extensions from the
     // bridge, pre-normalized to lowercase. GTK patterns are case-sensitive,
