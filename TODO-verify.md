@@ -151,6 +151,13 @@ the Linux publish `chmod -R +x`) were written there and never run.
     marker and a stray top-level file stay. Rollback: with the app exe held
     open without delete-sharing the swap fails "current version is intact"
     and the tree (gone.exe included) is identical to before.
+  - **An update that adds the first sidecar**: 1.0.0 with no
+    `executables/` (`app.paths.executables` null) → 1.0.1 adding `new.exe` +
+    `helper.dll`; the relaunched 1.0.1 spawned `new.exe` → "dll says 43".
+    Its forced rollback left an EMPTY `executables/` behind (the walk made
+    the folder, rollback never removed it — harmless, null is baked in at
+    build, but not identical). Fixed: the walk journals folders it creates
+    and rollback removes them; both scenarios re-run, trees identical.
   - The running sidecar's `dllcar.exe.update-old` / `helper.dll.update-old`
     stay in `executables/` until the next update's sweep (as the top-level
     exes always have), visible to an app that lists the folder.

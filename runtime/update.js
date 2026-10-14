@@ -378,7 +378,12 @@ async function retryLocked(fn) {
 // file waits (null when the new file is a pure addition); placed once the
 // new file has landed at d.
 async function winSwapWalk(src, dst, journal) {
-  await tjs.makeDir(dst, { recursive: true }).catch(() => {});
+  // A folder this version adds is journaled too ({ dir }), so a rollback
+  // doesn't leave it behind empty.
+  if (!(await exists(dst))) {
+    await tjs.makeDir(dst, { recursive: true }).catch(() => {});
+    journal.push({ dir: dst });
+  }
   // Sweep leftovers from the previous update first (unlocked by now) — but
   // not the asides this swap's prune just made, which rollback needs.
   const ours = new Set(journal.map((j) => j.aside));
@@ -425,6 +430,7 @@ async function winSwapWalk(src, dst, journal) {
 async function winSwapRollback(journal) {
   let ok = true;
   for (const e of [...journal].reverse()) {
+    if (e.dir) await tjs.remove(e.dir).catch(() => { ok = false; }); // emptied above: its files came later
     if (e.placed) await tjs.remove(e.d).catch(() => { ok = false; });
     if (e.aside) await tjs.rename(e.aside, e.d).catch(() => { ok = false; });
   }
