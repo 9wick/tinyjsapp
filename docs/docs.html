@@ -520,8 +520,10 @@ console.log(paths.resources); <i>// string | null</i></pre>
   "audioTap": "app",
   <i>// suppress WebKit's default right-click menu (default: true)</i>
   "contextMenu": false,
-  <i>// devtools: true = F12 opens them, "open" = every window opens them at</i>
-  <i>// creation. Default off in shipped apps; `tinyjs dev` always has F12</i>
+  <i>// devtools: true = F12 opens them (⌥⌘I also works on macOS), "open" =</i>
+  <i>// every window opens them at creation, and they survive page reloads and</i>
+  <i>// `tinyjs dev` backend restarts. Default off in shipped apps; `tinyjs dev`</i>
+  <i>// always has F12</i>
   "debug": true,
   <i>// re-enable the webview's own keys (Ctrl+P, Ctrl+F, Ctrl+R…) — Windows</i>
   <i>// only; suppressed by default so they can't fire under your app</i>

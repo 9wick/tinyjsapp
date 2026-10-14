@@ -255,6 +255,35 @@ async function run(argv, opts = {}) {
   }
 }
 
+// Like run(), but stdout passes through only until a line matches `stopAt`;
+// that line and everything after it are dropped. For create-vite, whose
+// closing "Done. Now run: npm install / npm run dev" contradicts the steps
+// we print next (issue #43).
+async function runUntil(argv, stopAt, opts = {}) {
+  const p = tjs.spawn(argv, { stdin: 'inherit', stdout: 'pipe', stderr: 'inherit', ...opts });
+  const reader = p.stdout.getReader();
+  let pending = '', stopped = false;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (stopped) continue; // keep draining so the child never blocks on a full pipe
+    pending += dec.decode(value, { stream: true });
+    const lines = pending.split('\n');
+    pending = lines.pop();
+    let out = '';
+    for (const l of lines) {
+      if (stopAt.test(l)) { stopped = true; break; }
+      out += l + '\n';
+    }
+    if (out) await writeOut(out);
+  }
+  if (!stopped && pending && !stopAt.test(pending)) await writeOut(pending);
+  const st = await p.wait();
+  if (st.exit_status !== 0 || st.term_signal) {
+    fail(`command failed (${argv[0]}): ` + JSON.stringify(st));
+  }
+}
+
 // Run a command and capture its stdout.
 async function runCapture(argv) {
   const p = tjs.spawn(argv, { stdout: 'pipe', stderr: 'ignore' });
@@ -962,8 +991,9 @@ async function scaffoldViteTemplate(dir, name, template, opts) {
   const alpine = template.replace(/-ts$/, '') === 'alpine';
   const viteTemplate = alpine ? (ts ? 'vanilla-ts' : 'vanilla') : template;
   console.log(`==> ${pm === 'vp' ? 'vp' : pm} create vite (${viteTemplate})`);
-  await run(nodeToolArgv(pm === 'vp' ? VP_CREATE(dir, viteTemplate, under)
-                                     : PACKAGE_MANAGERS[pm].create(dir, viteTemplate)));
+  await runUntil(nodeToolArgv(pm === 'vp' ? VP_CREATE(dir, viteTemplate, under)
+                                          : PACKAGE_MANAGERS[pm].create(dir, viteTemplate)),
+                 /Done\. Now run/);
   if (!(await exists(dir + '/package.json'))) fail(`${pm} create vite did not produce ${dir}/package.json`);
   const backendEntry = 'backend/main.' + (ts ? 'ts' : 'js');
 

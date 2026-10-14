@@ -196,6 +196,7 @@ tiny.menu.setContext([{ id, label }, { separator: true }]);  // right-click
 tiny.menu.onContext((id) => ...);       // backend: export onContextMenu
 // "contextMenu": false in tinyjs.json hides WebKit's default menu entirely
 // "debug": true in tinyjs.json = F12 opens devtools in their own window
+//   (⌥⌘I also works on macOS)
 //   ("open" auto-opens them per window; default off, `tinyjs dev` forces on)
 // "browserAccelerators": true re-enables WebView2's own keys (Ctrl+F find,
 //   Ctrl+R reload, Ctrl+P print…); default suppressed so they can't fire
