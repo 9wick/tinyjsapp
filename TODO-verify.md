@@ -3660,3 +3660,23 @@ for a root backend. `frontend.reload: false` drops the dev page reload.
   dev only probes `devUrl`, a PATH shim mapping `npx esbuild` to the
   native esbuild binary since this VM has no Node) — App.tsx/App.css are
   vite `hmr update` only, backend/main.ts restarts once.)*
+
+## #58 — `src/shared/`: code both sides import (`feat/58-shared`, 2026-10-14)
+
+`generateBuild` copies the shared folder (sibling of the backend's folder)
+to `.build/app/shared` in dev and build; the macOS bare binary gets
+`dist/shared`. The dev watcher restarts on shared edits. The macOS
+launcher widens the page's file:// read root to the frontend's parent when
+a `shared/` sits beside it (with main's launcher the page's import fails).
+Probe app: `src/backend/main.js` and a `<script type="module">` page both
+import `../shared/settings.js`; the page stores both values via
+`tiny.store.set`.
+
+- [x] **macOS**: dev (both sides read it; editing it restarts with the new
+  value), built `.app`. *(2026-10-14.)*
+- [ ] **Windows**: dev and the built exe. Two unknowns: whether WebView2
+  loads a `type="module"` script from file:// across folders at all, and
+  whether the TPK extraction puts `shared/` beside `frontend/`.
+- [ ] **Linux**: dev and the built binary (same TPK question; WebKitGTK
+  already allows file access from file URLs). inotify isn't recursive, so
+  only top-level shared files restart dev.

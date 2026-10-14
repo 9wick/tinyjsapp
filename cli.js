@@ -816,6 +816,18 @@ async function resolveBackendEntry(cfg) {
   fail('no backend entry found (src/backend/main.js|ts, src/main.js|ts, backend/main.js|ts, or "backend" in tinyjs.json)');
 }
 
+// Code both sides import (#58): a shared/ folder beside the backend's folder
+// (src/shared next to src/backend; shared/ at the root next to the Vite
+// templates' backend/). It ships as app/shared, beside app/src (the backend)
+// and app/frontend, so `../shared/x.js` resolves the same from both sides in
+// dev and in a build. A backend at the project root has no sibling folder.
+function sharedDirFor(backendEntry) {
+  const entry = String(backendEntry).replace(/\\/g, '/').replace(/^(\.\/)+/, '');
+  if (!entry.includes('/')) return null;
+  const entryDir = entry.replace(/\/[^/]*$/, '');
+  return entryDir.includes('/') ? entryDir.replace(/\/[^/]*$/, '') + '/shared' : 'shared';
+}
+
 // A frontend with its own build tooling needs its packages installed first.
 // Without node_modules the script's tools come from wherever else they are
 // (a global tsc, say) and fail with errors that never say "install" (#41:
@@ -913,6 +925,17 @@ async function generateBuild(cfg, dev = false) {
       if (e.isDirectory) await copyTree(s, d);
       else await tjs.writeFile(d, await tjs.readFile(s));
     }
+  }
+
+  // shared/: copied in dev too, since the dev backend runs from .build/app/src.
+  // The pre-0.52 layout nests the frontend in the backend's folder, so its
+  // page would reach ../../shared in dev but nothing in a build.
+  const sharedDir = sharedDirFor(backendEntry);
+  if (sharedDir && await exists(sharedDir)) {
+    await copyTree(sharedDir, B + '/shared');
+  } else if (entryDir === 'src' && await exists('src/shared')) {
+    console.log('tinyjs: src/shared/ is only shared with a backend in src/backend/ — ' +
+                'move src/main.js (and the files it imports) there');
   }
 
   // tinyjs.json "inject": document-start JS injected into every window before
@@ -2048,17 +2071,26 @@ async function cmdDev() {
   let child = null;
   let restarting = false;
   let restartTimer = null;
-  tjs.watch(backendDir, (file) => {
-    if (!file) return;
-    const rel = norm(file);
-    if (skips.some((d) => rel === d || rel.startsWith(d + '/'))) return;
+  const restartOn = (rel) => {
     clearTimeout(restartTimer);
     restartTimer = setTimeout(() => {
       console.log(`tinyjs: ${rel} changed, restarting backend`);
       restarting = true;
       child?.kill();
     }, 150);
+  };
+  tjs.watch(backendDir, (file) => {
+    if (!file) return;
+    const rel = norm(file);
+    if (skips.some((d) => rel === d || rel.startsWith(d + '/'))) return;
+    restartOn(rel);
   });
+  // shared/ lives beside the backend's folder, and the backend runs from a
+  // copy of it, so an edit there restarts too (which reloads the page).
+  const sharedDir = sharedDirFor(backendEntry);
+  if (sharedDir && await exists(sharedDir)) {
+    tjs.watch(sharedDir, (file) => { if (file) restartOn(sharedDir + '/' + norm(file)); });
+  }
 
   while (true) {
     const B = await generateBuild(cfg, true);
@@ -2319,6 +2351,8 @@ async function cmdBuild() {
   // wrappers may not have one).
   if (await exists('.build/app/frontend'))
     await run(['cp', '-R', '.build/app/frontend', 'dist/frontend']);
+  if (await exists('.build/app/shared'))
+    await run(['cp', '-R', '.build/app/shared', 'dist/shared']);
 
   // The .app does NOT use the compiled binary (it can't be codesigned, see
   // below): it ships the stock tjs runtime + the app as plain data files in

@@ -625,6 +625,8 @@ console.log(paths.resources); <i>// string | null</i></pre>
   <i>// backend entry; a .ts path is bundled with esbuild. Default: the first</i>
   <i>// of src/backend/main.js|ts, src/main.js|ts, backend/main.js|ts</i>
   "backend": "backend/main.ts",
+  <i>// code both sides import as ../shared/x.js: a shared/ folder beside the</i>
+  <i>// backend's (src/shared next to src/backend; shared/ next to backend/)</i>
   <i>// plain (unbundled) frontend folder, served as-is. Default: src/frontend.</i>
   <i>// reload: false = `tinyjs dev` leaves page reloads to your own watcher</i>
   "frontend": { "dir": "web", "reload": false },

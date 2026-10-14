@@ -4,6 +4,17 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`src/shared/`: code the backend and the page both import** (#58). Put
+  it beside `src/backend/` (or `shared/` beside the Vite templates'
+  `backend/`) and both sides use the same path,
+  `import { X } from '../shared/settings.js'`, in `tinyjs dev` and in a
+  built app. It ships next to the frontend, the macOS page may read it,
+  and editing it in dev restarts the app. The layout before 0.52
+  (`src/main.js`) gets a hint to move the backend into `src/backend/`
+  instead.
+
 ## 0.54.0 — 2026-10-14
 
 - **`executables/`: sidecar programs that ship with the app.** Put the
