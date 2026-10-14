@@ -8,6 +8,51 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Windows first load still blank, intermittently (#32 reopened, 2026-10-14)
+
+Reported on v0.52.0 with `preact-ts` (issuecomment-6170185946): the trace
+ends at `NAVQ n1 main http://127.0.0.1:5173/` → `NAVR n1 allow` with no
+`NAV` after it, so the re-issue went out (or was due to) and no
+NavigationStarting ever followed: WebView2 swallowed it even after the
+cancel's completion. Fix: every re-issue arms a 1s verify; if nothing at all
+has started in that window by then, it is sent again (4 tries total). A
+retry re-stamps the one-use allow-once marker. It never adds a second use:
+if the swallowed attempt does start late, that start is asked like any
+other navigation (see the last item). Written on macOS; compiled and
+verified on Windows the same day.
+
+- [x] **Windows: compiles** — locally via `setup.ps1` (MinGW g++ 16.1),
+  clean. *(2026-10-14; the first tagged CI build is still to come.)*
+- [x] **Windows: dev server first load** — `preact-ts` and `react-ts`,
+  `TINYJS_DEBUG=1 tinyjs dev` launched ~10 times: every run reaches
+  `NAV … commit` and paints. *(2026-10-14: 10/10 each, every run a cold
+  start with no browser process of ours left over. CDP read
+  `http://127.0.0.1:5173/` with a rendered root every time. None of those
+  runs needed the retry, so it was forced with a scratch build that drops
+  the first re-issue (`TINYJS_TEST_SWALLOW`). The verify fired at exactly
+  +1000 ms, the retry started without a second `NAVQ`, and the page
+  painted. Re-run after the fix below, with the same result.)*
+- [x] **Windows: no double ask** — wrapped site (`"url"`) first load,
+  reload, and a link: exactly one `NAVQ` per navigation, as before.
+  *(2026-10-14, real launcher, CDP-driven: `n1` first load, `n2`
+  `location.reload()` (fresh document), `n3` link to `two.html`, each with
+  `allow`/`start`/`finish`.)*
+  Re-run after the fix below: `n1`/`n2`/`n3` again, and 5/5 cold
+  dev-server starts each for `preact-ts` and `react-ts`.
+- [x] **Windows: a retry no longer leaves a spare use behind** — the
+  first cut gave each retry an extra marker use, so the dropped attempt
+  could also pass if it started late. When it never started (the usual
+  case), the spare use stayed live for the full 10 s, and a same-url
+  navigation then passed with **no `NAVQ`**: with the swallow build, a
+  `location.reload()` 93 ms after the retried load. A shorter spare
+  lifetime would not help, because the url and the timing look exactly
+  like a late start. So retries no longer add uses. *(2026-10-14, Windows,
+  swallow build: the same reload now asks `NAVQ n2`, as the no-retry
+  control does. Late-start variant (the dropped attempt fires 500 ms after
+  the retry has loaded): it gets one ordinary `NAVQ n2` → `allow` →
+  `start`/`finish`, and the page stays loaded. That is one extra ask in
+  a rare case, instead of a skipped one.)*
+
 ## Bundled data resources (`resources/`)
 
 Reproducible checks: `python3 -u test/resources/check.py` and

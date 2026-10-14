@@ -5466,27 +5466,64 @@ static const UINT kNavReissueFallbackMs = 2000;
 // an entry that is never matched used to sit here for the life of the process
 // and a LATER navigation to the same url then skipped the ask entirely — a
 // security marker failing OPEN. Cleared three ways now: matched, expired, or
-// superseded by any other navigation in that window.
+// superseded by any other navigation in that window. A retry (the verify
+// below) re-stamps it and never adds a second use: a spare use let the
+// page's own reload of that url, 93ms after the retried load, through with
+// no NAVQ (2026-10-14), and nothing tells that apart from the swallowed
+// attempt starting late. So a late start is asked like any navigation; the
+// cost is one extra ask in a rare case instead of a skipped one.
 struct NavAllowOnce {
   std::string url;
   ULONGLONG at = 0;
 };
 static std::map<std::string, NavAllowOnce> g_nav_allow_once;
 static const ULONGLONG kNavAllowOnceMs = 10000;
+// Waiting for the cancel is not always enough (#32, again on v0.52): a cold
+// browser process can still swallow the re-issue, leaving NAVR allow with no
+// NavigationStarting after it and the window on about:blank for good. So a
+// re-issue is verified: if nothing at all has started in that window a
+// second later, send it again, a few times at most. Any start counts, ours
+// or a newer navigation; both mean the window is no longer stuck.
+// win -> NavigationStarting events seen, the verify's "did anything start":
+static std::map<std::string, unsigned long> g_nav_starts;
+struct NavVerify {
+  NavPending p;
+  unsigned long starts = 0;
+  int tries = 0;
+};
+static std::map<UINT_PTR, NavVerify> g_nav_verify; // timer -> pending check
+static const UINT kNavVerifyMs = 1000;
+static const int kNavVerifyTries = 4;
+
+static void CALLBACK nav_verify_timer_proc(HWND, UINT, UINT_PTR id, DWORD);
 
 // allow: re-issue the navigation we cancelled, marked so the second
 // NavigationStarting passes without another ask. A reload has to go back
 // through Reload() — Navigate()ing the same url instead would drop the
 // page's history entry and turn app.reload() into a fresh load.
-static void nav_reissue(const NavPending &p) {
+static void nav_reissue(const NavPending &p, int tries = 0) {
   ICoreWebView2 *wv = wv2_for_id(p.win);
   if (!wv)
     return;
   g_nav_allow_once[p.win] = {p.url, GetTickCount64()};
+  UINT_PTR t = SetTimer(nullptr, 0, kNavVerifyMs, nav_verify_timer_proc);
+  g_nav_verify[t] = {p, g_nav_starts[p.win], tries};
   if (p.reload)
     wv->Reload();
   else
     wv->Navigate(widen(p.url).c_str());
+}
+
+static void CALLBACK nav_verify_timer_proc(HWND, UINT, UINT_PTR id, DWORD) {
+  KillTimer(nullptr, id);
+  auto it = g_nav_verify.find(id);
+  if (it == g_nav_verify.end())
+    return;
+  NavVerify v = it->second;
+  g_nav_verify.erase(it);
+  if (g_nav_starts[v.p.win] != v.starts || v.tries + 1 >= kNavVerifyTries)
+    return;
+  nav_reissue(v.p, v.tries + 1);
 }
 
 // Drop a held re-issue without running it: the window navigated somewhere
@@ -5505,6 +5542,15 @@ static void nav_reissue_drop(const std::string &win) {
 static void nav_forget_window(const std::string &id) {
   nav_reissue_drop(id);
   g_nav_cancel_open.erase(id);
+  g_nav_starts.erase(id);
+  for (auto it = g_nav_verify.begin(); it != g_nav_verify.end();) {
+    if (it->second.p.win == id) {
+      KillTimer(nullptr, it->first);
+      it = g_nav_verify.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 static void nav_reissue_release(const std::string &win) {
@@ -5633,6 +5679,7 @@ struct NavStartHandler : public ICoreWebView2NavigationStartingEventHandler {
       return S_OK;
     std::string url = narrow(u);
     CoTaskMemFree(u);
+    ++g_nav_starts[winid]; // a re-issue's verify: something started (#32)
     // Consume the allow-once marker — and drop it on ANY other navigation in
     // this window, or on age. A redirect or a failure means the url we marked
     // may never arrive, and a marker left behind waves a later navigation to
