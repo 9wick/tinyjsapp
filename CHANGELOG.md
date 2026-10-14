@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.53.0 — 2026-10-13
 
 - **`resources/`: data files that ship with the app.** Put files your code
   reads at runtime (a dictionary, a database seed, fonts) in a `resources/`
@@ -37,6 +37,10 @@ https://tinyjs.app/changelog.
   after one use and a checked one lost its ✓, whatever the app had set.
   `checked` now only changes when the app changes it, as on macOS and
   Windows.
+- **Windows: `tinyjs publish` from Git Bash writes a real zip.** Git Bash
+  puts GNU tar first on PATH, which ignores `-a` and wrote a tar archive
+  named `-win.zip`, and an app started from Git Bash couldn't unpack
+  its update zip. Both now use Windows' own `tar` from System32.
 
 ## 0.52.0 — 2026-10-13
 

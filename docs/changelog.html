@@ -174,7 +174,7 @@
   <section>
 
     <div class="rel">
-      <h2>Unreleased</h2>
+      <h2>0.53.0 <span class="date">2026-10-13</span></h2>
       <ul>
         <li><b><code>resources/</code>: data files that ship with the app.</b> Put files your code reads at runtime (a dictionary, a database seed, fonts) in a <code>resources/</code> folder and the whole folder ships with the app. <code>app.paths.resources</code> in the backend, and <code>(await tiny.app.paths()).resources</code> in the page, point at it: the folder itself in dev, the bundled copy in builds, <code>null</code> when there is none. <code>"resources": [...]</code> in tinyjs.json ships only the listed paths, and the <code>macos</code> / <code>windows</code> / <code>linux</code> blocks can list different ones per OS. Thanks to Manacost Dev for the implementation (<a href="https://github.com/tarwin/tinyjsapp/pull/49">#49</a>) and Luiz Américo and Sam LABBE for the design discussion (<a href="https://github.com/tarwin/tinyjsapp/issues/8">#8</a>).</li>
         <li><b><code>assets/</code>: the icon, About credits and help book in one place.</b> New projects keep <code>icon.png</code> in <code>assets/</code>, next to the other files the OS reads. Existing projects with <code>icon.png</code> and <code>Credits.html</code> at the project root keep working unchanged. The build notes any file in <code>assets/</code> it doesn't use, since nothing else there ships.</li>
@@ -183,6 +183,7 @@
         <li><b>macOS: <code>Credits.rtf</code> and <code>Credits.rtfd</code> work as About panel credits,</b> as well as <code>Credits.html</code>.</li>
         <li><b>macOS: built apps carry <code>CFBundleShortVersionString</code>,</b> set from <code>version</code>, the key Finder and the rest of macOS read the version from.</li>
         <li><b>Linux: clicking a menu item no longer gives it a check mark.</b> GTK toggled every menu bar and tray item on click, so a plain item showed ✓ after one use and a checked one lost its ✓, whatever the app had set. <code>checked</code> now only changes when the app changes it, as on macOS and Windows.</li>
+        <li><b>Windows: <code>tinyjs publish</code> from Git Bash writes a real zip.</b> Git Bash puts GNU tar first on PATH, which ignores <code>-a</code> and wrote a tar archive named <code>-win.zip</code>, and an app started from Git Bash couldn't unpack its update zip. Both now use Windows' own <code>tar</code> from System32.</li>
       </ul>
     </div>
 
