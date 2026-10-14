@@ -4,6 +4,35 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`executables/`: sidecar programs that ship with the app.** Put the
+  programs your backend launches (a Go or Rust CLI, a `bun build --compile`
+  binary, ffmpeg) in an `executables/` folder. It works like `resources/`:
+  the whole folder ships, `"executables": [...]` (per OS through the
+  `macos` / `windows` / `linux` blocks) narrows it, and
+  `app.paths.executables` (`(await tiny.app.paths()).executables` in the
+  page) is where to `tjs.spawn` them from, or `null` without any. A build
+  ships only its own OS's binaries, so every OS's can live there together;
+  `executables/<os>/` and `executables/<os>-arm64/` or `-x86_64/` override
+  files by name for that OS and CPU. On macOS they go in
+  `Contents/Helpers/` and are signed with the app's identity, with the
+  hardened runtime under a Developer ID, so a notarized app can carry them;
+  `"macos": { "executableEntitlements": { "my-cli": [...] } }` gives a JIT
+  sidecar (Bun, Deno, Node/pkg) the `allow-jit` it needs to run there. The
+  build warns when a macOS sidecar can't run on every Mac the app runs on.
+  Thanks to Luiz Américo, Sam LABBE and Blatman for the design discussion
+  (#8).
+- **A backend at the project root no longer copies `resources/` and
+  `assets/` into the app's sources** (`"backend": "main.js"`); they ship
+  only through their own paths.
+- **Windows: an update removes the files the new version dropped** from
+  `executables/` and `resources/`; until now they stayed in the install
+  folder (macOS and Linux replace the whole app, so they never had this).
+  The rest of the folder is left alone, and a failed update still restores
+  every file. It takes effect from the update after an app built with this
+  one, since the installed version's updater does the swap.
+
 ## 0.53.2 — 2026-10-14
 
 - **Windows: the first window no longer sometimes stays blank in

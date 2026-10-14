@@ -206,6 +206,7 @@ myapp/
     Credits.html          #   optional: About panel credits (or .rtf / .rtfd)
     My App Help/          #   optional: macOS help book ("macos": { "helpBook" })
   resources/              # optional: data your code reads — see "Bundled data resources"
+  executables/            # optional: programs your code spawns — see "Bundled executables"
   src/backend/main.js     # backend: export const api = {...}; export function init(app) {}
   src/frontend/           # index.html + any local js/css/images
 ```
@@ -1478,7 +1479,107 @@ rejected.
 Resources are for data. They don't change `readAccess` or what the page may
 read: read the files in the backend and expose only what your page needs
 through your API. Files macOS itself reads (Credits, a help book) go in
-`assets/` instead, below; executables your app launches aren't supported yet.
+`assets/` instead, and programs your app launches in `executables/`, both
+below.
+
+### Bundled executables (sidecars)
+
+Programs your backend launches — a CLI built with Go, Rust, Bun, Deno, pkg or
+PyInstaller, an ffmpeg — go in an `executables/` folder. It works like
+`resources/`: the whole folder ships by default, `"executables": [...]`
+narrows it, and `app.paths.executables` points at what shipped. The one
+difference is that a build only ships its own OS's binaries, so the
+binaries for every OS can sit in the folder together:
+
+```
+my-app/
+  executables/
+    my-cli.exe            # Windows (PE): only Windows builds ship it
+    my-cli                # macOS (Mach-O, universal)
+    linux/my-cli          # Linux's own my-cli, since the name clashes
+    linux-arm64/my-cli    # …and the arm64 one, for arm64 builds
+```
+
+```js
+export async function init(app) {
+  const dir = app.paths.executables;       // string | null
+  const exe = dir + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
+  const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
+  // …read p.stdout, then await p.wait()
+}
+// Frontend: (await tiny.app.paths()).executables is the same folder.
+```
+
+With no list, a build takes every file at the top of `executables/`, then
+the files in `executables/<os>/` (`macos`, `windows` or `linux`), then those
+in `executables/<os>-arm64/` or `executables/<os>-x86_64/` for a build for
+that CPU — a later file replaces an earlier one with the same name. A macOS
+`--universal` build skips the CPU folders. Files at the top that aren't this
+OS's binaries (another OS's, a README) are left out with a note; in an OS
+folder, where everything is meant for that OS, they fail the build.
+
+To pick the files yourself, list paths inside `executables/` — a folder
+means the files in it. Platform blocks replace the list for their OS, as
+with `resources`:
+
+```json
+{
+  "executables": ["my-cli.exe"],
+  "macos": { "executables": ["mac/my-cli", "mac/helper"] },
+  "linux": { "executables": ["linux/"] }
+}
+```
+
+Everything ships flat — `my-cli` lands at `app.paths.executables + '/my-cli'`
+whichever folder it came from — so two files with the same name in one list
+fail the build. A listed file must be a native binary for that OS. `[]`
+ships nothing. Paths follow the `resources` rules (no `..`, absolute paths
+or symlinks).
+
+In dev, `app.paths.executables` is `.build/executables/`, holding links to
+the files a build would ship (copies on Windows), so a sidecar you rebuild
+is picked up on the next spawn. Run `chmod +x` on a file that isn't
+executable — dev says so; builds mark them. Builds copy the files to
+`Contents/Helpers/` in a macOS .app, or `executables/` beside the
+executable in bare/Windows/Linux portable builds, and `tinyjs publish`
+archives (so auto-updates) carry them. Without an `executables/` folder, or
+with nothing in it for this OS, both APIs return `null`.
+
+Only this OS's native binaries ship, plus the libraries they load (`.dll`,
+`.dylib`, `.so`), and `#!` scripts on Linux. A script can't go in a macOS
+.app's code folder (it can't carry a signature there): put it in
+`resources/` and run it with its interpreter. The same goes for data the
+program reads.
+
+**macOS signing and notarization.** A .app's executables all need a valid
+signature, so the build signs each sidecar with the app's identity
+(`signIdentity`, ad-hoc by default) before the app itself, with the
+identifier `<id>.<file>`. With a Developer ID it adds the hardened runtime
+and a secure timestamp, which notarization requires of every executable in
+the bundle. The hardened runtime kills a JIT runtime — Bun, Deno, Node/pkg
+— on its first compiled function, unless the binary has the entitlement. A
+sidecar keeps the entitlements it arrived with; to set them, list them per
+shipped file name (they replace the ones it had):
+
+```json
+{
+  "macos": {
+    "executableEntitlements": {
+      "my-cli": ["com.apple.security.cs.allow-jit",
+                 "com.apple.security.cs.allow-unsigned-executable-memory",
+                 "com.apple.security.cs.disable-library-validation"]
+    }
+  }
+}
+```
+
+The app's own `permissions` entitlements (mic, camera) don't extend to
+sidecars. The build warns when the app runs on Intel Macs but a sidecar has
+no x86_64 slice — the app would open there and then fail to spawn it. An
+x86_64-only sidecar still runs on Apple Silicon, under Rosetta 2 (the build
+notes it). A binary you downloaded
+may be quarantined, which blocks it in dev (the build's copy is clean):
+`xattr -d com.apple.quarantine executables/macos/my-cli`.
 
 ### App assets
 

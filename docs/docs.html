@@ -287,6 +287,7 @@
     <a href="#install">install</a>
     <a href="#cli">cli</a>
     <a href="#resources">resources</a>
+    <a href="#executables">executables</a>
     <a href="#assets">assets</a>
     <a href="#config">tinyjs.json</a>
     <span class="toc-group">api</span>
@@ -458,6 +459,63 @@ console.log(paths.resources); <i>// string | null</i></pre>
     (including <code>resources/</code> itself) fail the build. Resources don't
     change <code>readAccess</code> or page privileges; expose data through your
     backend API.</p>
+  </section>
+
+  <section id="executables">
+    <h2>Bundled executables (sidecars)</h2>
+    <p>Programs your backend launches — a CLI built with Go, Rust, Bun, Deno,
+    pkg or PyInstaller, ffmpeg — go in <code>executables/</code>. It works like
+    <code>resources/</code>: the whole folder ships by default, a list narrows
+    it, and <code>app.paths.executables</code> points at what shipped. A build
+    only ships its own OS's binaries, so every OS's can sit there together.</p>
+    <pre>my-app/
+  executables/
+    my-cli.exe            <i>// Windows (PE): only Windows builds ship it</i>
+    my-cli                <i>// macOS (Mach-O, universal)</i>
+    linux/my-cli          <i>// Linux's own, since the name clashes</i>
+    linux-arm64/my-cli    <i>// …and the arm64 one, for arm64 builds</i></pre>
+    <pre>export async function init(app) {
+  const dir = app.paths.executables;   <i>// string | null</i>
+  const exe = dir + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
+  const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
+  <i>// …read p.stdout, await p.wait()</i>
+}</pre>
+    <p>With no list, a build takes the files at the top of
+    <code>executables/</code>, then <code>executables/&lt;os&gt;/</code>
+    (<code>macos</code>, <code>windows</code>, <code>linux</code>), then
+    <code>&lt;os&gt;-arm64/</code> or <code>&lt;os&gt;-x86_64/</code> for that
+    CPU's build; a later file replaces an earlier one of the same name. Files at
+    the top that aren't this OS's binaries are left out with a note; in an OS
+    folder they fail the build.</p>
+    <p>Or list paths inside <code>executables/</code> (a folder means its
+    files); platform blocks replace the list, as with resources:</p>
+    <pre>{ "executables": ["my-cli.exe"],
+  "macos": { "executables": ["mac/my-cli", "mac/helper"] },
+  "linux": { "executables": ["linux/"] } }</pre>
+    <p>Everything ships flat, so <code>app.paths.executables + '/my-cli'</code>
+    is the program wherever it came from, and two listed files with one name
+    fail the build. Builds put them in <code>Contents/Helpers/</code> in a
+    macOS .app, or <code>executables/</code> beside a bare/Windows/Linux
+    executable, marked executable; publish archives and auto-updates carry
+    them. In dev the path is <code>.build/executables/</code>, linking to your
+    files (copies on Windows), so a rebuilt sidecar is picked up on the next
+    spawn. No folder, or nothing in it for this OS, means <code>null</code>.</p>
+    <p>Only native binaries for the OS ship, plus the libraries they load (and
+    <code>#!</code> scripts on Linux). Scripts and data the program reads go in
+    <code>resources/</code>.</p>
+    <p><b>macOS signing.</b> The build signs every sidecar with the app's
+    identity, inside out, as <code>&lt;id&gt;.&lt;file&gt;</code>. With a
+    Developer ID that includes the hardened runtime, which notarization
+    requires on every executable, and which kills a JIT runtime (Bun, Deno,
+    Node/pkg) unless it has the entitlement. A sidecar keeps the entitlements
+    it arrived with; to set them, name them per shipped file:</p>
+    <pre>{ "macos": { "executableEntitlements": {
+    "my-cli": ["com.apple.security.cs.allow-jit",
+               "com.apple.security.cs.allow-unsigned-executable-memory"] } } }</pre>
+    <p>The build warns when the app runs on Intel Macs but a sidecar has no
+    x86_64 slice (it would fail to spawn there); an x86_64-only sidecar runs on
+    Apple Silicon under Rosetta 2. A file you downloaded may carry
+    quarantine in dev: <code>xattr -d com.apple.quarantine</code> it.</p>
   </section>
 
   <section id="assets">

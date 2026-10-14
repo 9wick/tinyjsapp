@@ -5,9 +5,9 @@ Versions live in tinyjs.json `"version"`; bump before building.
 `minTinyjsVersion` refuses to run an app on an older tinyjs with a real
 message instead of a mystery TypeError (`tinyjs new` stamps it).
 
-## Bundled data resources and app assets
+## Bundled data resources, executables and app assets
 
-Two project folders ship beside the code, for different readers:
+Three project folders ship beside the code, for different readers:
 
 - `resources/` — data the app's own code reads. Ships whole by default;
   `app.paths.resources` (backend) / `(await tiny.app.paths()).resources`
@@ -35,7 +35,28 @@ export async function init(app) {
 }
 ```
 
-Executables the app launches (sidecars) aren't supported yet.
+- `executables/` — sidecar programs the backend spawns. Works like
+  `resources/` but only ships THIS OS's native binaries (+ .dll/.dylib/.so;
+  `#!` scripts on Linux). No list: the top-level files, overridden by name
+  from `executables/<os>/` (macos|windows|linux), then `<os>-arm64/` /
+  `<os>-x86_64/` for that CPU's build; another OS's file at the top is
+  skipped with a note, a wrong file in an OS folder fails. `"executables":
+  [...]` lists paths inside it instead (a folder = its files; per-OS blocks
+  replace it). Ships FLAT: `app.paths.executables + '/<name>'` — clashing
+  names in a list fail. Dev: `.build/executables/` (links to the sources;
+  copies on Windows); builds: `Contents/Helpers/` in a .app, `executables/`
+  beside the exe elsewhere; `null` without any. macOS signs each with the app
+  identity as `<id>.<file>`, hardened runtime under a Developer ID: a JIT
+  sidecar (Bun, Deno, Node/pkg) then needs
+  `"macos": { "executableEntitlements": { "<file>": ["com.apple.security.cs.allow-jit", …] } }`
+  or it dies at its first JIT. Without that key a sidecar keeps the
+  entitlements it arrived with. The build warns on a sidecar with no x86_64 slice in an
+  app that runs on Intel (x86_64-only sidecars run on Apple Silicon via Rosetta).
+
+```js
+const exe = app.paths.executables + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
+const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
+```
 
 ## macOS
 

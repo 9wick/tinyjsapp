@@ -103,6 +103,90 @@ were of the old layout; the CLI paths changed, so each OS needs a re-run.
 - [x] Linux arm64 + Wayland, 2026-10-13: `check.py` PASS on Ubuntu 24.04
   aarch64, GNOME Wayland session (GDK's default backend, no `GDK_BACKEND`).
 
+## Bundled executables (`executables/<os>/`, #8)
+
+Reproducible checks: `python3 -u test/executables/check.py` and
+`tsc --noEmit --strict --skipLibCheck --lib ES2022,DOM test/executables/types.ts`
+(README in that folder). Built 2026-10-14 on macOS; the Windows/Linux paths
+(`dist/executables/`, PE/ELF checks, dev copies on Windows instead of links,
+the Linux publish `chmod -R +x`) were written there and never run.
+
+- [x] macOS 27.0 arm64, 2026-10-14: `check.py` PASS (root + per-OS/arch
+  overrides + `"executables"` lists), ad-hoc and with
+  `TINYJS_TEST_SIGN_IDENTITY` (Developer ID): Helpers signed with the
+  hardened runtime, a bun-compiled sidecar dies without `allow-jit` and runs
+  with the documented entitlements, bundle verifies.
+- [x] macOS notarization of an app with a sidecar (`tinyjs notarize`) —
+  Apple accepts it and the stapled app spawns the sidecar. *2026-10-14,
+  macOS 27.0 arm64: an app with a universal C sidecar and a `bun build
+  --compile` sidecar (JIT, `executableEntitlements` with allow-jit & co.)
+  — `Accepted`, notary log `issues: None`, both Helpers in the ticket.
+  A ditto-zipped copy given a quarantine xattr: `spctl -a -t exec` says
+  "accepted, source=Notarized Developer ID"; `open` showed the "downloaded
+  from the Internet… Apple checked it" prompt, ran translocated
+  (AppTranslocation path in app.paths.executables) and both sidecars
+  printed. Not seen on a second Mac — same Gatekeeper path, though.*
+- [x] macOS `--universal` / `--arch x86_64` builds skip / pick
+  `macos-x86_64/` and the slice warning holds. *2026-10-14, same app:
+  default build ships the root arm64 `jit`; `--universal` keeps it and
+  warns "no x86_64 slice — spawning it fails on Intel Macs"; `--arch
+  x86_64` picks `macos-x86_64/jit` (lipo: x86_64), the bundle verifies, and
+  under Rosetta both sidecars print x86_64 (`hello x86_64`, `jit x64`). The
+  Intel spawn failure itself can't happen on this Mac — not seen.*
+- [x] Windows 11 arm64 (26200), 2026-10-14, Python 3.13: `check.py` PASS —
+  dev copies, PE check, overrides, lists, `dist/executables/`, publish zip,
+  spawn from a relocated dist, null cases. Symlinks SKIP (no Developer
+  Mode); junctions by hand instead: one inside `executables/windows/`,
+  `windows/` itself and `executables/` itself all fail the build with
+  "symlinks are not supported". Two test fixes on the way: the build's CPU
+  folder is `tjs.exe`'s (x64 here, emulated — `windows-x86_64/` is right;
+  the script had taken arm64 from Python), and `launcher.exe` outlives the
+  backend by a moment, keeping the dist locked, so `launch()` now waits
+  until the folder can be renamed.
+  Sidecar with a `.dll` beside it (MinGW-built `dllcar.exe` importing
+  `helper.dll`, both in `executables/windows/`): runs in dev and from a
+  relocated dist; with the DLL deleted it dies 0xC0000135, so the pass is
+  real.
+- [x] Windows: auto-update installs a new sidecar. 2026-10-14, a local
+  manifest server, 1.0.0 → 1.0.1 where 1.0.1 swaps `helper.dll` (42 → 43),
+  adds `new.exe`, drops `gone.exe`; 1.0.0 keeps a sidecar running (exe +
+  DLL loaded) through the install. The relaunched 1.0.1 spawned the sidecar
+  and got "dll says 43"; `new.exe` arrived. Two leftovers, both from the
+  Windows file-by-file swap (not executables-specific — `resources/` has
+  the same shape):
+  - **A file dropped from the new version stayed** (`gone.exe` was still in
+    the install). The walk only adds and replaces; macOS replaces the whole
+    .app and Linux the whole folder, so only Windows kept stale files.
+    **Fixed same day:** `winSwapDir` now prunes `executables/` and
+    `resources/` first (stale files renamed aside through the same journal,
+    dropped folders removed after). Re-run: `gone.exe`, `resources/sub/…`
+    and, in a second run, a whole dropped `resources/` are gone; the Shelf
+    marker and a stray top-level file stay. Rollback: with the app exe held
+    open without delete-sharing the swap fails "current version is intact"
+    and the tree (gone.exe included) is identical to before.
+  - **An update that adds the first sidecar**: 1.0.0 with no
+    `executables/` (`app.paths.executables` null) → 1.0.1 adding `new.exe` +
+    `helper.dll`; the relaunched 1.0.1 spawned `new.exe` → "dll says 43".
+    Its forced rollback left an EMPTY `executables/` behind (the walk made
+    the folder, rollback never removed it — harmless, null is baked in at
+    build, but not identical). Fixed: the walk journals folders it creates
+    and rollback removes them; both scenarios re-run, trees identical.
+  - The running sidecar's `dllcar.exe.update-old` / `helper.dll.update-old`
+    stay in `executables/` until the next update's sweep (as the top-level
+    exes always have), visible to an app that lists the folder.
+- [x] Linux x86_64 (22.04 container) and arm64: `check.py` PASS — ELF and
+  `#!` scripts, exec bit in `dist/` and the publish tarball. *2026-10-14:
+  arm64 on the Ubuntu 24.04 VM under GNOME Wayland (launcher current);
+  x86_64 in an `ubuntu:22.04` amd64 container (Rosetta) from a fresh clone of
+  `fe7bf71` built by its own `setup.sh` (`file`: both x86-64), under Xvfb +
+  `dbus-run-session`, same command as the resources README. check.py had no
+  `#!` case on Linux (only macOS's rejection), so one was added: a
+  `#!/bin/sh` script checked in mode 644 gets the build's "isn't executable"
+  note, is executable in `dist/executables/`, runs, and keeps +x in the
+  publish tarball. Proven able to fail: with both build chmods
+  (`copyExecutables`, `stageExecutables`) commented out it asserts — either
+  one alone is enough to pass.*
+
 ## App assets (`assets/`), help book, Help menu
 
 - [x] macOS 27.0 arm64, 2026-10-13, Developer ID build of a `tinyjs new`
@@ -1031,9 +1115,14 @@ elsewhere:
       2026-07-28 (the VM's keyring turned out unlocked): set→get→delete
       round-trips in single-digit ms, a second `set` REPLACES rather than
       duplicating (get returns the new value, one delete leaves nothing
-      behind), an unsaved key reads `null` not an error. Still unwatched,
-      because this box can no longer produce them: the no-daemon answer
-      (`no secret service`) and the locked-keyring behavior — GNOME may
+      behind), an unsaved key reads `null` not an error. **No-daemon answer
+      seen 2026-10-14**: in a private `dbus-run-session` with no keyring
+      (x86_64 22.04 container, Xvfb) `secrets.set` and `secrets.get` both
+      reject `no secret service` promptly — no hang. Note
+      `capabilities().secrets` still says `true` there (it doesn't probe the
+      bus the way badge/progress do), so feature detection can't see it;
+      the rejection is the only signal. Still unwatched, because this box
+      can no longer produce it: the locked-keyring behavior — GNOME may
       prompt to unlock, and it's worth knowing whether that blocks the call
       or fails. (Earlier this VM DID report IsLocked while autologin'd, per
       TODO-linux.md, so the locked case is real.)
@@ -1852,6 +1941,20 @@ leaves the second. Compiled-never-watched elsewhere:
       launcher logged **zero GTK warnings/criticals** (only the unrelated
       libEGL DRI3 lines XWayland always prints). Whether the clamp
       arithmetic is right needs a WM that permits off-screen windows.
+      **Clamp arithmetic verified 2026-10-14** under a WM-less Xvfb
+      (1280x800, so the work area is the whole screen and nothing but our
+      code constrains the window) — x86_64, `ubuntu:22.04` container,
+      launcher from `fe7bf71`. A 960x640 main, three boots of a
+      self-driving page: first-ever and unforged second boot (dormant):
+      `setPosition(9999,9999)` **sticks at 9999,9999**, twice;
+      forged `__screens` boot (armed, and the fingerprint was rewritten to
+      the real one): the first `setPosition(9999,9999)` is chased to
+      **320,160** (1280−960, 800−640), the second sticks — first-pos-only, as
+      on macOS and Windows. `ensureOnScreen()` in every boot: 9999,9999 →
+      320,160; −5000,−5000 → **0,0**; half-off-screen 1000,100 (280px
+      visible) **left alone**; a 20x20 sliver at 1260,780 (under the 24px
+      rule) → 320,160. Still unrun: main only, not a secondary; and the
+      monitor-removed sweep mid-session (needs a display to unplug).
 - [x] **Linux (Wayland)** — verified 2026-08-01: a clean no-op. Every
       `getState()` reports 0,0 (gdk has no global origin there),
       `setPosition` changes nothing, and a forged-fingerprint armed boot

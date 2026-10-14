@@ -131,6 +131,184 @@ async function stageResources(paths) {
   }
 }
 
+// Sidecar programs the app spawns ship from executables/, the same way
+// resources/ does: with no list, everything in it, overridden by name from
+// executables/<os>/ (macos, windows, linux) and then executables/<os>-<arch>/
+// (arm64 / x86_64) for that build. "executables": [...] lists paths inside
+// the folder instead (per OS through the platform blocks). A .app puts them
+// in Contents/Helpers/, where codesign treats them as nested code and signs
+// each one; Windows/Linux put them in executables/ beside the exe. Either
+// way they land flat, so app.paths.executables + '/<name>' is the program.
+// Only this OS's native binaries (and the libraries they load) ship:
+// anything else in a .app's code location breaks its signature. A no-list
+// build skips other files at the root with a note (that's where the other
+// OSes' binaries live); in an OS folder or a list they fail the build.
+const EXECUTABLES_DIR = 'executables';
+const EXEC_OS = IS_WIN ? 'windows' : IS_LINUX ? 'linux' : 'macos';
+const EXEC_KIND = IS_WIN ? 'Windows (PE: .exe/.dll)' : IS_LINUX ? 'Linux (ELF or #! script)' : 'macOS (Mach-O)';
+const EXEC_OS_DIR = /^(macos|windows|linux)(-(arm64|x86_64))?$/;
+const JUNK_FILES = ['.DS_Store', 'Thumbs.db', 'desktop.ini'];
+let hostArchP = null;
+const hostArch = () => (hostArchP ??= IS_WIN
+  ? Promise.resolve(/arm64/i.test(tjs.env.PROCESSOR_ARCHITECTURE ?? '') ? 'arm64' : 'x86_64')
+  : capture(['uname', '-m']).then((m) => ({ aarch64: 'arm64', arm64: 'arm64' })[m.trim()] ?? 'x86_64'));
+
+function isNativeBinary(b) {
+  const u32 = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+  if (IS_WIN) return b[0] === 0x4d && b[1] === 0x5a; // MZ
+  if (IS_LINUX) return (b[0] === 0x7f && b[1] === 0x45 && b[2] === 0x4c && b[3] === 0x46) || (b[0] === 0x23 && b[1] === 0x21);
+  if (b.length < 8) return false;
+  const m = u32(0);
+  // Thin Mach-O (either endianness), or a fat header — which Java class files
+  // share; their "arch count" is the class version (45+), so cap it.
+  if ([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe].includes(m)) return true;
+  return (m === 0xcafebabe || m === 0xcafebabf) && u32(4) > 0 && u32(4) < 45;
+}
+
+async function readsAsNative(path) {
+  const fh = await tjs.open(path, 'r');
+  const head = new Uint8Array(8);
+  let n = 0;
+  try { n = (await fh.read(head, 0)) ?? 0; } finally { await fh.close(); }
+  return isNativeBinary(head.subarray(0, n));
+}
+const notNative = () => `not a ${EXEC_KIND} binary` + (IS_WIN || IS_LINUX ? '' :
+  ' — a script in a .app can\'t carry a code signature; ship it in resources/ and run it with its interpreter');
+
+// Returns { files: [{ name, src }] } for this build (name = where it lands,
+// src = its path in the project), or null when nothing ships. target: a
+// macOS build's MAC_TARGET (null = this Mac).
+async function validateExecutables(list, target = null) {
+  if (list !== undefined && !Array.isArray(list)) fail('tinyjs.json "executables" must be an array of paths inside executables/ (got ' + JSON.stringify(list) + ')');
+  let st = null;
+  try { st = await tjs.lstat(EXECUTABLES_DIR); } catch {}
+  if (st?.isSymbolicLink) fail('executables/: symlinks are not supported');
+  if (st && !st.isDirectory) fail('executables/ must be a directory');
+  if (!st) {
+    if (list?.length) fail('tinyjs.json "executables" lists paths inside executables/, but the project has no executables/ folder');
+    return null;
+  }
+  const picked = new Map(); // name -> src
+  const add = async (src, name, strict, where) => {
+    const fst = await tjs.lstat(src);
+    if (fst.isSymbolicLink) fail(`${where}: symlinks are not supported`);
+    if (!fst.isFile) {
+      if (strict) fail(`${where}: expected a file — executables ship flat; put data the program reads in resources/`);
+      console.log(`==> note: ${src}/ isn't shipped — executables ship flat (OS folders are named macos, windows, linux, or <os>-arm64 / <os>-x86_64)`);
+      return;
+    }
+    if (!(await readsAsNative(src))) {
+      if (strict) fail(`${where}: ${notNative()}`);
+      console.log(`==> note: ${src} isn't a ${EXEC_KIND} binary — not shipped in this build`);
+      return;
+    }
+    if (!IS_WIN && !(fst.mode & 0o111))
+      console.log(`==> note: ${src} isn't executable — builds mark it, but run chmod +x on it for dev`);
+    picked.set(name, src);
+  };
+  if (list === undefined) {
+    // Layers, least specific first; a later file replaces an earlier one of
+    // the same name. Everything in an OS folder is meant for that OS, so a
+    // wrong file there fails; at the root it's just another OS's.
+    const arch = target === 'universal' ? null : target ?? await hostArch();
+    const layers = [EXECUTABLES_DIR, EXECUTABLES_DIR + '/' + EXEC_OS];
+    if (arch) layers.push(EXECUTABLES_DIR + '/' + EXEC_OS + '-' + arch);
+    for (const dir of layers) {
+      const root = dir === EXECUTABLES_DIR;
+      if (!root) {
+        let dst = null;
+        try { dst = await tjs.lstat(dir); } catch {}
+        if (!dst) continue;
+        if (dst.isSymbolicLink || !dst.isDirectory) fail(`executables: ${dir}: expected a folder (symlinks are not supported)`);
+      }
+      const names = [];
+      for await (const e of await tjs.readDir(dir)) names.push(e.name);
+      for (const name of names.sort()) {
+        if (JUNK_FILES.includes(name) || (root && EXEC_OS_DIR.test(name))) continue;
+        await add(dir + '/' + name, name, !root, 'executables: ' + dir + '/' + name);
+      }
+    }
+  } else {
+    // A list: exactly these, each a binary for this OS (a folder means the
+    // files in it). Same path rules as "resources".
+    const from = new Map(); // name -> list entry, to report clashes
+    for (const raw of list) {
+      const where = 'tinyjs.json executable ' + JSON.stringify(raw);
+      if (typeof raw !== 'string' || !raw || raw.includes('\0')) fail(where + ': expected a non-empty path inside executables/');
+      const p = raw.replace(/\\/g, '/');
+      if (p.startsWith('/') || p.includes(':')) fail(where + ': absolute, drive and UNC paths are not allowed');
+      const parts = p.split('/').filter((x) => x && x !== '.');
+      if (parts.includes('..')) fail(where + ': parent traversal is not allowed');
+      if (!parts.length) fail(where + ': that is executables/ itself — leave "executables" out to ship the whole folder');
+      for (let i = 1; i <= parts.length; i++) {
+        let pst = null;
+        try { pst = await tjs.lstat(EXECUTABLES_DIR + '/' + parts.slice(0, i).join('/')); } catch {}
+        if (!pst) fail(where + ': not found');
+        if (pst.isSymbolicLink) fail(where + ': symlinks are not supported');
+      }
+      const src = EXECUTABLES_DIR + '/' + parts.join('/');
+      const srcs = [];
+      if ((await tjs.lstat(src)).isDirectory) {
+        const names = [];
+        for await (const e of await tjs.readDir(src)) if (!JUNK_FILES.includes(e.name)) names.push(e.name);
+        for (const name of names.sort()) srcs.push(src + '/' + name);
+      } else srcs.push(src);
+      for (const s of srcs) {
+        const name = s.replace(/^.*\//, '');
+        if (picked.get(name) === s) continue;
+        if (picked.has(name)) fail(`${where}: two files named ${name} would ship (${picked.get(name)} from ${from.get(name)}) — they land side by side, so names must differ`);
+        await add(s, name, true, where + (s === src ? '' : ' (' + s + ')'));
+        from.set(name, JSON.stringify(raw));
+      }
+    }
+  }
+  const files = [...picked].map(([name, src]) => ({ name, src })).sort((a, b) => (a.name < b.name ? -1 : 1));
+  return files.length ? { files } : null;
+}
+
+// Copy the staged sidecars to dest, keeping them executable.
+async function copyExecutables(exe, dest) {
+  if (!exe) return;
+  await tjs.makeDir(dest, { recursive: true });
+  for (const { name } of exe.files) {
+    await copyFile('.build/executables/' + name, dest + '/' + name);
+    if (!IS_WIN) await tjs.chmod(dest + '/' + name, 0o755);
+  }
+}
+
+// "executableEntitlements": { "<file name>": ["com.apple…"] } (macOS) — the
+// entitlements each sidecar is signed with, replacing any it arrived with.
+function executableEntitlements(cfg) {
+  const v = cfg.executableEntitlements;
+  if (v === undefined) return {};
+  const files = (cfg.executablesStaged?.files ?? []).map((f) => f.name);
+  const bad = (why) => fail('tinyjs.json "executableEntitlements": ' + why);
+  if (!isPlainObject(v)) bad('expected { "<file name>": ["com.apple.security…", …] }');
+  for (const [name, list] of Object.entries(v)) {
+    if (!files.includes(name)) bad(`${JSON.stringify(name)} isn't one of the executables this build ships` +
+      (files.length ? ' (' + files.join(', ') + ')' : ' (none)'));
+    if (!Array.isArray(list) || list.some((k) => typeof k !== 'string' || !/^[A-Za-z0-9.-]+$/.test(k)))
+      bad(`${JSON.stringify(name)}: expected an array of entitlement keys, e.g. ["com.apple.security.cs.allow-jit"]`);
+  }
+  return v;
+}
+
+// Gather this build's sidecars flat in .build/executables. Dev links them on
+// macOS/Linux, so a sidecar rebuilt while dev runs is the one that spawns;
+// builds copy and mark them executable.
+async function stageExecutables(exe, dev) {
+  if (!exe) return;
+  await tjs.makeDir('.build/executables', { recursive: true });
+  for (const { name, src } of exe.files) {
+    const dest = '.build/executables/' + name;
+    if (dev && !IS_WIN) await tjs.symlink(await tjs.realPath(src), dest);
+    else {
+      await copyFile(src, dest);
+      if (!IS_WIN) await tjs.chmod(dest, 0o755);
+    }
+  }
+}
+
 // assets/ holds the files the OS and the build read, each by a known name:
 // the icon, the About panel's Credits, the macOS help book. Nothing else in
 // it ships, so anything unrecognised is most likely a page or data file put
@@ -723,6 +901,9 @@ async function generateBuild(cfg, dev = false) {
     const skip = new Set(['frontend', '.build', 'node_modules', 'dist', '.git']);
     if (entryDir === '.') {
       for (const d of [fe0.dir, fe0.dist]) if (d) skip.add(String(d).replace(/^\.\//, '').split('/')[0]);
+      // These ship on their own paths; a copy here would put unsigned code
+      // in Resources/app (and duplicate the data).
+      for (const d of [RESOURCES_DIR, EXECUTABLES_DIR, 'assets']) skip.add(d);
     }
     const iter = await tjs.readDir(entryDir);
     for await (const e of iter) {
@@ -790,15 +971,27 @@ try {
   // extraction directory. Use the existing .app/portable bundle detection,
   // falling back to the executable's directory for a bare macOS binary.
   if (!dev) await stageResources(cfg.resources);
-  const resourceResolver = !cfg.resources.length
-    ? 'const RESOURCES = null;'
-    : dev
-    ? `const RESOURCES = ${JSON.stringify(await tjs.realPath(RESOURCES_DIR))};`
-    : `import { bundlePath } from './update.js';
-const RESOURCE_BUNDLE = await bundlePath();
-const RESOURCES = RESOURCE_BUNDLE
-  ? RESOURCE_BUNDLE + ${JSON.stringify(IS_WIN || IS_LINUX ? '/resources' : '/Contents/Resources/app/resources')}
-  : tjs.exePath.replace(/[\\\\/][^\\\\/]*$/, '') + '/resources';`;
+  // Sidecars (executables/) resolve the same way; a .app keeps them in
+  // Contents/Helpers, and dev in .build/executables (links to the sources).
+  cfg.executablesStaged = await validateExecutables(cfg.executables, dev ? null : MAC_TARGET);
+  await stageExecutables(cfg.executablesStaged, dev);
+  const bundled = (name, sub, macSub) => `const ${name} = PACKAGED_BUNDLE
+  ? PACKAGED_BUNDLE + ${JSON.stringify(IS_WIN || IS_LINUX ? sub : macSub)}
+  : tjs.exePath.replace(/[\\\\/][^\\\\/]*$/, '') + ${JSON.stringify(sub)};`;
+  const resourceResolver = [
+    !dev && (cfg.resources.length || cfg.executablesStaged)
+      ? `import { bundlePath } from './update.js';\nconst PACKAGED_BUNDLE = await bundlePath();` : '',
+    !cfg.resources.length
+      ? 'const RESOURCES = null;'
+      : dev
+      ? `const RESOURCES = ${JSON.stringify(await tjs.realPath(RESOURCES_DIR))};`
+      : bundled('RESOURCES', '/resources', '/Contents/Resources/app/resources'),
+    !cfg.executablesStaged
+      ? 'const EXECUTABLES = null;'
+      : dev
+      ? `const EXECUTABLES = ${JSON.stringify(await tjs.realPath('.build/executables'))};`
+      : bundled('EXECUTABLES', '/executables', '/Contents/Helpers'),
+  ].filter(Boolean).join('\n');
 
   let entry = `import { createApp } from './bridge.js';
 import * as appMod from './src/${entryName}';
@@ -814,6 +1007,7 @@ const app = await createApp({
   tinyjsVersion: ${JSON.stringify(await toolVersion())},
   id: ${JSON.stringify(cfg.id)},
   resourcesPath: RESOURCES,
+  executablesPath: EXECUTABLES,
   api: appMod.api ?? {},
   onMenu: appMod.onMenu,
   onTray: appMod.onTray,
@@ -2061,6 +2255,7 @@ async function cmdBuild() {
   await run([compiler, 'app', 'compile', cwd + '/dist/' + cfg.name], { cwd: cwd + '/.build' });
   if (compiler !== tjs.exePath) await tjs.remove(compiler).catch(() => {});
   if (cfg.resources.length) await copyTree('.build/resources', 'dist/resources');
+  await copyExecutables(cfg.executablesStaged, 'dist/executables');
 
   if (IS_WIN) {
     // Windows build: a portable dist/ folder — just <name>.exe (compiled
@@ -2140,6 +2335,10 @@ async function cmdBuild() {
   await run(['cp', await macTjs(), APP + '/Contents/MacOS/tjs']);
   await run(['cp', '-R', '.build/app', APP + '/Contents/Resources/app']);
   if (cfg.resources.length) await copyTree('.build/resources', APP + '/Contents/Resources/app/resources');
+  // Sidecars: Contents/Helpers is where a bundle keeps helper tools, so
+  // codesign signs them as code (in Resources they'd be sealed as data and
+  // fail notarization).
+  await copyExecutables(cfg.executablesStaged, APP + '/Contents/Helpers');
   // macOS convention: Resources/Credits.{html,rtf,rtfd} feeds the standard
   // About panel — the launcher defers to it when present instead of the
   // tinyjs credit (#8).
@@ -2380,6 +2579,37 @@ async function cmdBuild() {
 `));
     sigFlags.push('--entitlements', ENT);
   }
+  // Sidecars sign first (innermost), each as its own program: the hardened
+  // runtime and timestamp like the rest (notarization wants them on every
+  // executable), an identifier under the app's, and NOT the app's device
+  // entitlements. Their own come from "executableEntitlements", else from
+  // the signature they arrived with — a JIT runtime (Node/pkg, Bun, Deno)
+  // dies under the hardened runtime without allow-jit.
+  const helperEnts = executableEntitlements(cfg);
+  for (const { name: f } of cfg.executablesStaged?.files ?? []) {
+    const flags = [...(identity === '-' ? [] : ['--options', 'runtime', '--timestamp']),
+                   '--identifier', cfg.id + '.' + f.replace(/[^A-Za-z0-9.-]/g, '-')];
+    if (helperEnts[f]) {
+      const ent = '.build/entitlements-' + f + '.plist';
+      await tjs.writeFile(ent, enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>${helperEnts[f].map((k) => `
+  <key>${escXml(k)}</key> <true/>`).join('')}
+</dict>
+</plist>
+`));
+      flags.push('--entitlements', ent);
+    } else {
+      flags.push('--preserve-metadata=entitlements');
+    }
+    for (const bin of ['dist/executables/' + f, APP + '/Contents/Helpers/' + f]) {
+      // Unlike the ad-hoc runs below, a sidecar is the user's own binary and
+      // can fail to sign for its own reasons — always show why.
+      if (!(await tryRun(['codesign', '--force', ...flags, '--sign', identity, bin], { stderr: 'inherit' })))
+        fail(`could not codesign ${bin} — see the codesign error above`);
+    }
+  }
   // Inside-out: tjs before the bundle executable, since codesign refuses a
   // main executable whose nested code is unsigned — and a lipo'd or freshly
   // downloaded tjs arrives with no usable signature.
@@ -2561,6 +2791,21 @@ async function reportMacArchs(cfg, APP) {
   if (!exe.length || !rt.length) return; // couldn't tell — don't guess
   const runsOn = exe.filter((a) => rt.includes(a));
   console.log('==> runs on: ' + (runsOn.map((a) => `${MAC_LABEL[a]} (${a})`).join(', ') || 'nothing — no common architecture'));
+  // A sidecar missing a slice the app has: without x86_64 the app opens on
+  // an Intel Mac and then fails to spawn it (bad CPU type) — say so now.
+  // Without arm64 it still runs on Apple Silicon, translated by Rosetta 2,
+  // which a Mac may not have installed yet.
+  for (const { name, src } of cfg.executablesStaged?.files ?? []) {
+    const has = await macArchsOf(APP + '/Contents/Helpers/' + name);
+    if (!has.length) continue;
+    if (runsOn.includes('x86_64') && !has.includes('x86_64')) {
+      console.log(`warning: ${src} has no x86_64 slice — spawning it fails on Intel Macs. ` +
+        'Ship a universal binary, or one per CPU in executables/macos-<arch>/.');
+    }
+    if (runsOn.includes('arm64') && !has.includes('arm64')) {
+      console.log(`note: ${src} has no arm64 slice — Apple Silicon Macs run it under Rosetta 2 (installed on first use)`);
+    }
+  }
   if (runsOn.length === 1 && runsOn[0] === 'x86_64') {
     // Intel-only still opens on Apple Silicon, translated.
     console.log('    Apple Silicon Macs run it under Rosetta 2');
@@ -2673,6 +2918,9 @@ async function cmdPublish() {
     await tjs.makeDir(stage + '/' + cfg.name, { recursive: true });
     await copyTree('dist', stage + '/' + cfg.name);
     await run(['chmod', '+x', stage + '/' + cfg.name + '/' + cfg.name, stage + '/' + cfg.name + '/launcher']);
+    // copyTree drops modes; sidecars need theirs back too.
+    if (await exists(stage + '/' + cfg.name + '/executables'))
+      await run(['chmod', '-R', '+x', stage + '/' + cfg.name + '/executables']);
     await tjs.makeDir(PUB, { recursive: true });
     await run(['tar', '-czf', PUB + '/' + zipName, '-C', stage, cfg.name]);
   } else if (IS_WIN) {

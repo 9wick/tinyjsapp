@@ -80,6 +80,8 @@ tinyjs.json          { name, title, size, id, version, icon?,
                        attribution?: "…",  // About panel credit line (macOS);
                                            // assets/Credits.html|rtf wins
                        resources?: ["a.json", "dir/"],  // narrow resources/ (default: all)
+                       executables?: ["my-cli.exe", "linux/"],  // narrow executables/ (default: all for this OS)
+                       // macos.executableEntitlements: { "my-cli": ["com.apple.security.cs.allow-jit"] }
                        debug?: true | "open", browserAccelerators?: true,
                        permissions?: { microphone?: "why", camera?: "why",
                                        speechRecognition?: "why" },
@@ -110,6 +112,10 @@ assets/              files the OS reads, by name: icon.png (1024×1024 app
                      Credits.html at the root still work
 resources/           data the backend reads at runtime → app.paths.resources
                      (the folder in dev, bundled copy in builds; null if none)
+executables/         sidecar binaries → app.paths.executables (flat). Ships
+                     this OS's binaries from the top, overridden by name from
+                     <os>/ then <os>-arm64|-x86_64/; signed into
+                     Contents/Helpers on macOS
 src/backend/main.js  backend
 src/frontend/        index.html + assets — served as real files (file://),
                      so relative paths just work

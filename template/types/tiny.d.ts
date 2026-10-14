@@ -492,6 +492,9 @@ declare interface TinyScreen {
 declare interface TinyPaths {
   /** The project's resources/ folder in dev, its bundled copy in builds; null without one. */
   resources: string | null;
+  /** This OS's sidecar programs from executables/, flat: .build/executables in
+   *  dev, the bundled copy in builds (Contents/Helpers in a .app); null without any. */
+  executables: string | null;
   home: string;
   data: string;
   cache: string;
