@@ -3713,6 +3713,10 @@ import `../shared/settings.js`; the page stores both values via
   reloads only, `src/lib` restarts; root `"./main.js"`, no restarts while
   idle or after a restart (no `.build` loop), `lib/` restarts, a frontend
   edit reloads only.)*
-- [ ] **macOS + Windows, no regression from `watchTree`**: there
+- [x] **macOS + Windows, no regression from `watchTree`**: there
   `perDir` is false, so it's the one `tjs.watch` as before. Re-run one
   nested backend edit and one nested frontend edit in dev to be sure.
+  *(2026-10-14, Windows: re-run, all good. macOS: no restarts while idle;
+  `src/backend/lib/util.js` restarts once; `src/frontend/css/app.css`
+  reloads only; `src/shared/lib/deep.js` restarts; the backend comes back
+  with both new values.)*
