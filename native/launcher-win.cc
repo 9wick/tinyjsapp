@@ -5466,12 +5466,15 @@ static const UINT kNavReissueFallbackMs = 2000;
 // an entry that is never matched used to sit here for the life of the process
 // and a LATER navigation to the same url then skipped the ask entirely — a
 // security marker failing OPEN. Cleared three ways now: matched, expired, or
-// superseded by any other navigation in that window. `uses` counts the
-// re-issues sent for it (see the verify below): each start consumes one.
+// superseded by any other navigation in that window. A retry (the verify
+// below) re-stamps it and never adds a second use: a spare use let the
+// page's own reload of that url, 93ms after the retried load, through with
+// no NAVQ (2026-10-14), and nothing tells that apart from the swallowed
+// attempt starting late. So a late start is asked like any navigation; the
+// cost is one extra ask in a rare case instead of a skipped one.
 struct NavAllowOnce {
   std::string url;
   ULONGLONG at = 0;
-  int uses = 1;
 };
 static std::map<std::string, NavAllowOnce> g_nav_allow_once;
 static const ULONGLONG kNavAllowOnceMs = 10000;
@@ -5502,13 +5505,7 @@ static void nav_reissue(const NavPending &p, int tries = 0) {
   ICoreWebView2 *wv = wv2_for_id(p.win);
   if (!wv)
     return;
-  // A retry adds a use rather than resetting: should the swallowed attempt
-  // start late after all, both starts pass without a second ask.
-  auto ao = g_nav_allow_once.find(p.win);
-  int uses = tries > 0 && ao != g_nav_allow_once.end() && ao->second.url == p.url
-                 ? ao->second.uses + 1
-                 : 1;
-  g_nav_allow_once[p.win] = {p.url, GetTickCount64(), uses};
+  g_nav_allow_once[p.win] = {p.url, GetTickCount64()};
   UINT_PTR t = SetTimer(nullptr, 0, kNavVerifyMs, nav_verify_timer_proc);
   g_nav_verify[t] = {p, g_nav_starts[p.win], tries};
   if (p.reload)
@@ -5691,10 +5688,7 @@ struct NavStartHandler : public ICoreWebView2NavigationStartingEventHandler {
     if (ao != g_nav_allow_once.end()) {
       bool fresh = GetTickCount64() - ao->second.at <= kNavAllowOnceMs;
       bool mine = ao->second.url == url;
-      if (mine && fresh && ao->second.uses > 1)
-        --ao->second.uses;
-      else
-        g_nav_allow_once.erase(ao);
+      g_nav_allow_once.erase(ao);
       if (mine && fresh) {
         g_nav_last_url[winid] = url;
         nav_event(winid, "start", url);
