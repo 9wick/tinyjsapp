@@ -19,8 +19,17 @@ a page's named panel keeps GTK's usual folder.
 - [x] **macOS** — `{ types: ['docx'], name: 'mydocument' }` shows
   `mydocument.docx`; `{ name: '../../etc/evil.txt' }` shows `evil.txt` in
   the last-used folder. *(seen by hand 2026-10-14)*
-- [ ] **Windows** — same two calls; the name is pre-filled, `.docx` is added
-  on save, and the folder is NOT `../../etc`.
+- [x] **Windows** — same two calls; the name is pre-filled, `.docx` is added
+  on save, and the folder is NOT `../../etc`. *(2026-10-14, Windows 11
+  arm64, `tinyjs dev` with a rebuilt launcher; the dialog's file-name field
+  and address bar read via Win32, Save pressed with BM_CLICK on its own
+  button.)* `{ types: ['docx'], name: 'mydocument' }`: field
+  `mydocument.docx`, page got `…\Downloads\mydocument.docx`.
+  `'../../etc/evil.txt'` → field `evil.txt`, and `'..\..\Windows\win.txt'`
+  → `win.txt`; both in the last-used folder (Downloads), not steered.
+  Without a name the Windows field is EMPTY (macOS says "Untitled"), so
+  Save does nothing until one is typed — as before; the tiny.js comment
+  that promised 'Untitled' now says so.
 - [ ] **Linux** — same two calls, plus a wrapped-page `printToPDF` outside
   the write roots still opens its panel in Downloads (#36 unchanged).
 

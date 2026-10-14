@@ -729,7 +729,8 @@
       // File pickers take { types: ['md', 'txt', ...] } — extensions, no dots —
       // to filter what's choosable (allowedContentTypes / COMDLG_FILTERSPEC /
       // GtkFileFilter). Omit types and everything is selectable. saveFile also
-      // takes { name } to pre-fill the file name field (default 'Untitled').
+      // takes { name } to pre-fill the file name field (without one, macOS shows
+      // 'Untitled' and Windows an empty field).
       openFile: (opts = {}) => call('dialog.openFile', { types: opts.types }),    // path | null
       openFiles: (opts = {}) => call('dialog.openFiles', { types: opts.types }),  // paths[] | null
       pickFolder: () => call('dialog.pickFolder'),                                // path | null
