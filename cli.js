@@ -3157,6 +3157,8 @@ usage:
   tinyjs publish      build + zip the .app + auto-update manifest (takes --arch /
                       --universal; run once per --arch, the manifest merges both)
                       (--notes "text" | --notes-file FILE → manifest notes)
+                      (--sign-manifest FILE: sign a final merged manifest without building;
+                      requires update.publicKey + TINYJS_UPDATE_PRIVATE_KEY_FILE)
   tinyjs notarize     submit dist/<Name>.app to Apple notarization + staple
                       (--dmg: also rebuild dist/<name>-<version>.dmg from the
                       stapled .app; auto-rebuilt if a dmg already exists;
