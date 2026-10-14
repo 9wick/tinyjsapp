@@ -3674,9 +3674,19 @@ import `../shared/settings.js`; the page stores both values via
 
 - [x] **macOS**: dev (both sides read it; editing it restarts with the new
   value), built `.app`. *(2026-10-14.)*
-- [ ] **Windows**: dev and the built exe. Two unknowns: whether WebView2
+- [x] **Windows**: dev and the built exe. Two unknowns: whether WebView2
   loads a `type="module"` script from file:// across folders at all, and
   whether the TPK extraction puts `shared/` beside `frontend/`.
+  *(2026-10-14, Windows 11 arm64, project folder with spaces; the probe
+  also re-exports from `shared/lib/deep.js`. Both unknowns are yes:
+  `import('../shared/settings.js')` loads from file:// (the launcher
+  already passes `--allow-file-access-from-files`), in dev from
+  `src/frontend/` and in the built exe from
+  `%TEMP%\tjs-<buildid>\frontend/`, where `shared/` sits beside it — run
+  from a relocated `dist/` (still just the exe + launcher.exe). Backend and
+  page agree in each run. Dev restarts on a top-level shared edit AND on a
+  nested `lib/` edit (Windows' watcher is recursive, unlike inotify), and
+  the page comes back with the new value.)*
 - [ ] **Linux**: dev and the built binary (same TPK question; WebKitGTK
   already allows file access from file URLs). inotify isn't recursive, so
   only top-level shared files restart dev.
