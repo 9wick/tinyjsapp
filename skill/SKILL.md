@@ -119,6 +119,10 @@ executables/         sidecar binaries → app.paths.executables (flat). Ships
 src/backend/main.js  backend
 src/frontend/        index.html + assets — served as real files (file://),
                      so relative paths just work
+src/shared/          code both sides import as '../shared/x.js' (same path
+                     from backend and page, dev and build). Ships with the
+                     page: no secrets, no tjs:* imports. Not available in
+                     the pre-0.52 src/main.js layout
 ```
 
 ## Backend (src/backend/main.js)

@@ -288,6 +288,7 @@
     <a href="#cli">cli</a>
     <a href="#resources">resources</a>
     <a href="#executables">executables</a>
+    <a href="#shared">shared code</a>
     <a href="#assets">assets</a>
     <a href="#config">tinyjs.json</a>
     <span class="toc-group">api</span>
@@ -516,6 +517,32 @@ console.log(paths.resources); <i>// string | null</i></pre>
     x86_64 slice (it would fail to spawn there); an x86_64-only sidecar runs on
     Apple Silicon under Rosetta 2. A file you downloaded may carry
     quarantine in dev: <code>xattr -d com.apple.quarantine</code> it.</p>
+  </section>
+
+  <section id="shared">
+    <h2>Code both sides import</h2>
+    <p>Constants, validation or formatting that the backend and the page both
+    use go in a <code>shared/</code> folder beside the backend's folder:
+    <code>src/shared/</code> next to <code>src/backend/</code>, or
+    <code>shared/</code> at the root next to the Vite templates'
+    <code>backend/</code>. Both sides import it with the same path, in dev and
+    in a build.</p>
+    <pre>my-app/
+  src/
+    backend/main.js
+    frontend/app.js
+    shared/settings.js    <i>// export const MY_CONSTANT = 42;</i></pre>
+    <pre><i>// src/backend/main.js and src/frontend/app.js alike</i>
+import { MY_CONSTANT } from '../shared/settings.js';</pre>
+    <p>A plain page loads it with <code>&lt;script type="module"&gt;</code>;
+    a bundled frontend (Vite) pulls it into its own bundle. Use
+    <code>.js</code> modules. The folder ships as plain files next to the
+    frontend, so the page can read it: no secrets, and nothing that imports
+    <code>tjs:*</code> (the page has no <code>tjs</code>). Editing a shared
+    file in <code>tinyjs dev</code> restarts the app. The layout before 0.52
+    (<code>src/main.js</code> with the frontend nested inside it) can't use
+    <code>src/shared/</code>; move the backend into <code>src/backend/</code>
+    first.</p>
   </section>
 
   <section id="assets">
