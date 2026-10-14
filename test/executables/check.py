@@ -24,6 +24,12 @@ MAC = sys.platform == 'darwin'
 WIN = os.name == 'nt'
 OS = 'macos' if MAC else 'windows' if WIN else 'linux'
 ARCH = {'arm64': 'arm64', 'aarch64': 'arm64'}.get(platform.machine().lower(), 'x86_64')
+if WIN:
+    # The app is a copy of tjs.exe, so the build is for ITS CPU: an x64
+    # tjs.exe on Windows on Arm builds x86_64 apps (whatever Python is).
+    import struct
+    _pe = TJS.read_bytes()[:4096]
+    ARCH = 'arm64' if struct.unpack_from('<H', _pe, struct.unpack_from('<I', _pe, 0x3c)[0] + 4)[0] == 0xaa64 else 'x86_64'
 SIDE = 'side-car.exe' if WIN else 'side-car'
 IDENTITY = os.environ.get('TINYJS_TEST_SIGN_IDENTITY')
 # Builds sign ad-hoc unless asked: an identity exported in the shell would
@@ -130,6 +136,20 @@ export const api = {
                 assert result['out'] == (None if expected is None else 'sidecar 42 exit=0'), result
                 if 'dev' not in argv:
                     assert p.wait(timeout=10) == 0, log.read_text()
+                    if WIN:
+                        # launcher.exe outlives the backend by a moment and
+                        # keeps the folder's images locked: wait until the
+                        # folder can be renamed (moved or rebuilt next).
+                        folder = Path(argv[0]).parent
+                        for i in range(100):
+                            try:
+                                os.rename(folder, str(folder) + '~')
+                                os.rename(str(folder) + '~', folder)
+                                break
+                            except PermissionError:
+                                time.sleep(.1)
+                        else:
+                            raise AssertionError(f'{folder} still locked 10s after the app quit')
             finally:
                 if p.poll() is None:
                     if WIN:

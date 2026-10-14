@@ -53,3 +53,7 @@ TODO-verify.md, resources).
 - 2026-10-14, macOS 27.0 arm64: `check.py` PASS on the root + overrides +
   list layout, ad-hoc and with a Developer ID identity (bun 1.3.5 sidecar crashed without `allow-jit`, ran
   with it). `types.ts` PASS with TypeScript 6.0.2.
+- 2026-10-14, Windows 11 arm64 (x64 `tjs.exe`, so x86_64 builds), Python
+  3.13: `check.py` PASS; symlinks SKIP without Developer Mode (junctions
+  checked by hand, refused). DLL-beside-sidecar and auto-update runs are in
+  TODO-verify.md.
