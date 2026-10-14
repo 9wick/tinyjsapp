@@ -116,10 +116,23 @@ the Linux publish `chmod -R +x`) were written there and never run.
   `TINYJS_TEST_SIGN_IDENTITY` (Developer ID): Helpers signed with the
   hardened runtime, a bun-compiled sidecar dies without `allow-jit` and runs
   with the documented entitlements, bundle verifies.
-- [ ] macOS notarization of an app with a sidecar (`tinyjs notarize`) —
-  Apple accepts it and the stapled app spawns the sidecar on another Mac.
-- [ ] macOS `--universal` / `--arch x86_64` builds skip / pick
-  `macos-x86_64/` and the slice warning holds.
+- [x] macOS notarization of an app with a sidecar (`tinyjs notarize`) —
+  Apple accepts it and the stapled app spawns the sidecar. *2026-10-14,
+  macOS 27.0 arm64: an app with a universal C sidecar and a `bun build
+  --compile` sidecar (JIT, `executableEntitlements` with allow-jit & co.)
+  — `Accepted`, notary log `issues: None`, both Helpers in the ticket.
+  A ditto-zipped copy given a quarantine xattr: `spctl -a -t exec` says
+  "accepted, source=Notarized Developer ID"; `open` showed the "downloaded
+  from the Internet… Apple checked it" prompt, ran translocated
+  (AppTranslocation path in app.paths.executables) and both sidecars
+  printed. Not seen on a second Mac — same Gatekeeper path, though.*
+- [x] macOS `--universal` / `--arch x86_64` builds skip / pick
+  `macos-x86_64/` and the slice warning holds. *2026-10-14, same app:
+  default build ships the root arm64 `jit`; `--universal` keeps it and
+  warns "no x86_64 slice — spawning it fails on Intel Macs"; `--arch
+  x86_64` picks `macos-x86_64/jit` (lipo: x86_64), the bundle verifies, and
+  under Rosetta both sidecars print x86_64 (`hello x86_64`, `jit x64`). The
+  Intel spawn failure itself can't happen on this Mac — not seen.*
 - [x] Windows 11 arm64 (26200), 2026-10-14, Python 3.13: `check.py` PASS —
   dev copies, PE check, overrides, lists, `dist/executables/`, publish zip,
   spawn from a relocated dist, null cases. Symlinks SKIP (no Developer

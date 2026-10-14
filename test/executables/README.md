@@ -62,3 +62,7 @@ TODO-verify.md, resources).
 - 2026-10-14, Linux: `check.py` PASS on Ubuntu 24.04 arm64 (GNOME Wayland)
   and on x86_64 in an Ubuntu 22.04 container under Xvfb +
   `dbus-run-session` (command in test/resources/README.md).
+- 2026-10-14, macOS 27.0 arm64, branch head `6f14b07` (after the Windows and
+  Linux fixes): `check.py` PASS ad-hoc and with a Developer ID. Notarization
+  and `--universal` / `--arch x86_64` builds checked by hand with a separate
+  app (TODO-verify.md).
