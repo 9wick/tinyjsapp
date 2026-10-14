@@ -1157,7 +1157,7 @@ function makeStore(appId) {
   };
 }
 
-export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, mainWindow = true, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null }) {
+export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, mainWindow = true, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null, resourcesPath = null }) {
   if (typeof mainWindow !== 'boolean') throw new Error('mainWindow must be a boolean');
   if (!mainWindow && url) throw new Error('`url` needs a main window to load into — drop mainWindow: false');
   // mainWindow: false — the launcher starts with no main window or WebView
@@ -1557,6 +1557,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // and the one place setMenu could not previously reach. Elsewhere the
       // role is unknown and its items are dropped, which is why an app
       // declares Settings here AND in a menu of its own off-macOS.
+      // 'help' is the macOS Help menu: always last, with "<App> Help" on top
+      // when the app ships a help book (standard: false drops that item), and
+      // the menu-search field. Windows and Linux have no such menu, so there
+      // it is sent as a plain "Help" menu of your items, in its slot.
+      if (m?.role === 'help' && (IS_WIN || IS_LINUX)) {
+        if (m.items?.length) { send('MENU Help'); sendItems(m.items); }
+        continue;
+      }
       if (m?.role) {
         const nostd = m.standard === false && !IS_WIN && !IS_LINUX;   // a macOS-only switch
         send('MENUROLE ' + one(m.role) + (nostd ? '\tnostd' : ''));
@@ -2256,6 +2264,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     paths: IS_WIN
       ? {
           home: tjs.homeDir,
+          resources: resourcesPath,
           data: appDataDir(id),
           cache: (tjs.env.LOCALAPPDATA || tjs.homeDir + '/AppData/Local') + '/' + (id || 'tinyjs-app') + '/Cache',
           logs: (tjs.env.LOCALAPPDATA || tjs.homeDir + '/AppData/Local') + '/' + (id || 'tinyjs-app') + '/Logs',
@@ -2267,6 +2276,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       : IS_LINUX
       ? {
           home: tjs.homeDir,
+          resources: resourcesPath,
           data: appDataDir(id),
           cache: (tjs.env.XDG_CACHE_HOME || tjs.homeDir + '/.cache') + '/' + (id || 'tinyjs-app'),
           logs: (tjs.env.XDG_STATE_HOME || tjs.homeDir + '/.local/state') + '/' + (id || 'tinyjs-app'),
@@ -2277,6 +2287,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         }
       : {
           home: tjs.homeDir,
+          resources: resourcesPath,
           data: tjs.homeDir + '/Library/Application Support/' + (id || 'tinyjs-app'),
           cache: tjs.homeDir + '/Library/Caches/' + (id || 'tinyjs-app'),
           logs: tjs.homeDir + '/Library/Logs/' + (id || 'tinyjs-app'),

@@ -25,6 +25,9 @@
 const dec = new TextDecoder();
 const IS_WIN = tjs.env.OS === 'Windows_NT';
 const IS_LINUX = !IS_WIN && /linux/i.test(globalThis.navigator?.platform ?? '');
+// bsdtar by full path: Git for Windows puts GNU tar first on PATH, and it
+// can't read zips.
+const WIN_TAR = (tjs.env.SystemRoot || tjs.env.SYSTEMROOT || 'C:\\Windows') + '\\System32\\tar.exe';
 const LINUX_ARCH = /aarch64|arm64/i.test(globalThis.navigator?.platform ?? '') ? 'arm64' : 'x86_64';
 
 // macOS reports navigator.platform "MacIntel" on every Mac, so ask the
@@ -242,7 +245,7 @@ export async function installUpdate({ url, version, manifest }) {
     await tjs.makeDir(tmp + '/x', { recursive: true }).catch(() => {});
     const winTar = (b => b ? [b + '/launcher.exe', '--run'] : [])(IS_WIN ? await bundlePath() : null);
     const extractOk = IS_WIN
-      ? await runOk([...winTar, 'tar', '-xf', zipPath, '-C', tmp + '/x'])
+      ? await runOk([...winTar, WIN_TAR, '-xf', zipPath, '-C', tmp + '/x'])
       : IS_LINUX
       ? await runOk(['tar', '-xzf', zipPath, '-C', tmp + '/x'])
       : await runOk(['ditto', '-x', '-k', zipPath, tmp + '/x']);

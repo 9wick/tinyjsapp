@@ -53,6 +53,163 @@ async function copyTree(src, dest) {
   }
 }
 
+// Data the app's own code reads at runtime lives in resources/ and reaches
+// it as app.paths.resources: the whole folder, or only the files and
+// directories inside it that tinyjs.json "resources" lists (per OS through
+// the platform blocks). Files the OS reads (icon, Credits, help book) live
+// in assets/ instead. Reject symlinks at every parent and below selected
+// directories, even when they point back into the project.
+const RESOURCES_DIR = 'resources';
+async function validateResources(value) {
+  if (value !== undefined && !Array.isArray(value)) fail('tinyjs.json "resources" must be an array of paths inside resources/ (got ' + JSON.stringify(value) + ')');
+  let dirSt = null;
+  try { dirSt = await tjs.lstat(RESOURCES_DIR); } catch {}
+  if (dirSt?.isSymbolicLink) fail('resources/: symlinks are not supported');
+  if (dirSt && !dirSt.isDirectory) fail('resources/ must be a directory');
+  if (value === undefined) {
+    // No list: everything in the folder, if there is one.
+    if (!dirSt) return [];
+    value = [];
+    for await (const e of await tjs.readDir(RESOURCES_DIR)) value.push(e.name);
+    value.sort();
+  } else if (value.length && !dirSt) {
+    fail('tinyjs.json "resources" lists paths inside resources/, but the project has no resources/ folder');
+  }
+  const paths = [];
+  for (const raw of value) {
+    const bad = (why) => fail('tinyjs.json resource ' + JSON.stringify(raw) + ': ' + why);
+    if (typeof raw !== 'string' || !raw || raw.includes('\0')) bad('expected a non-empty path inside resources/');
+    const p = raw.replace(/\\/g, '/');
+    if (p.startsWith('/') || p.includes(':')) bad('absolute, drive and UNC paths are not allowed');
+    const parts = p.split('/').filter((s) => s && s !== '.');
+    if (parts.includes('..')) bad('parent traversal is not allowed');
+    if (IS_WIN && parts.some((s) => /[. ]$/.test(s))) bad('Windows path components cannot end in a dot or space');
+    if (!parts.length) bad('that is resources/ itself — leave "resources" out to ship the whole folder');
+    const rel = parts.join('/');
+    if (!paths.includes(rel)) paths.push(rel);
+  }
+  // A selected directory already includes its children. Keep the first
+  // occurrence of each root, independent of the order of overlapping entries.
+  const roots = paths.filter((p) => !paths.some((q) => p !== q && p.startsWith(q + '/')));
+  const root = paths.length ? await tjs.realPath(RESOURCES_DIR) : null;
+  async function check(rel, selected, recurse) {
+    const bad = (why) => fail('tinyjs.json resource ' + JSON.stringify(selected) + ' (resources/' + rel + '): ' + why);
+    let st;
+    try { st = await tjs.lstat(root + '/' + rel); }
+    catch { bad('not found or unreadable'); }
+    if (st.isSymbolicLink) bad('symlinks are not supported');
+    if (!st.isDirectory && !st.isFile) bad('expected a regular file or directory');
+    if (recurse && st.isDirectory) {
+      try {
+        const iter = await tjs.readDir(root + '/' + rel);
+        for await (const e of iter) await check(rel + '/' + e.name, selected, true);
+      } catch (e) { bad('could not read directory: ' + String(e)); }
+    }
+  }
+  // Validate ALL entries before dropping overlaps: e.g. file.txt/child must
+  // still fail even if file.txt was also explicitly selected.
+  for (const p of paths) {
+    const parts = p.split('/');
+    for (let i = 1; i < parts.length; i++) await check(parts.slice(0, i).join('/'), p, false);
+    await check(p, p, true);
+  }
+  return roots;
+}
+
+async function stageResources(paths) {
+  // Recheck after any frontend build hook, before copying its output.
+  for (const p of await validateResources(paths)) {
+    const src = RESOURCES_DIR + '/' + p;
+    const dest = '.build/resources/' + p;
+    try {
+      if ((await tjs.lstat(src)).isDirectory) await copyTree(src, dest);
+      else {
+        await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true });
+        await copyFile(src, dest);
+      }
+    } catch (e) { fail('tinyjs.json resource ' + JSON.stringify(p) + ': could not copy: ' + String(e)); }
+  }
+}
+
+// assets/ holds the files the OS and the build read, each by a known name:
+// the icon, the About panel's Credits, the macOS help book. Nothing else in
+// it ships, so anything unrecognised is most likely a page or data file put
+// in the wrong folder — say so instead of dropping it silently.
+const CREDITS_FILES = ['Credits.html', 'Credits.rtf', 'Credits.rtfd'];
+
+// The About panel's credits: assets/Credits.{html,rtf,rtfd}, or a
+// Credits.html at the project root (where it went before assets/).
+async function findCredits() {
+  for (const f of CREDITS_FILES) if (await exists('assets/' + f)) return 'assets/' + f;
+  return (await exists('Credits.html')) ? 'Credits.html' : null;
+}
+
+// "helpBook" (in the macos block) names a folder inside assets/.
+function helpBookRel(value) {
+  if (value === undefined) return null;
+  const rel = typeof value === 'string' ? value.replace(/\\/g, '/').replace(/\/+$/, '') : '';
+  if (!rel || rel.startsWith('/') || rel.includes(':') || rel.split('/').includes('..'))
+    fail('tinyjs.json "helpBook" must name a folder inside assets/ (got ' + JSON.stringify(value) + ')');
+  // It lands in the .app's Resources/, which already holds the app itself
+  // and its icon and credits.
+  const folder = rel.replace(/^.*\//, '');
+  if (/^(app|AppIcon\.icns|Credits\.(html|rtf|rtfd))$/i.test(folder))
+    fail(`tinyjs.json "helpBook": a help book can't be named ${folder} — rename the folder`);
+  return rel;
+}
+
+async function warnUnusedAssets(cfg) {
+  const used = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini', ...CREDITS_FILES]);
+  if (cfg.icon && /^assets\/[^/]+$/.test(cfg.icon)) used.add(cfg.icon.slice(7));
+  if (cfg.helpBookAnyOS) used.add(cfg.helpBookAnyOS.split('/')[0]);
+  let iter;
+  try { iter = await tjs.readDir('assets'); } catch { return; }
+  for await (const e of iter) {
+    if (used.has(e.name)) continue;
+    console.log(`==> note: assets/${e.name} isn't used by the build — assets/ is for the ` +
+      'icon, Credits and help book; files for your page go in the frontend, data for your code in resources/');
+  }
+}
+
+// Copy the help book (#47) into the .app's Resources and (re)build its
+// search index. Returns the Info.plist values, or null without one: the
+// folder, and the name Help Viewer knows it by — the book's own
+// CFBundleIdentifier, falling back to its folder name for a book with no
+// Info.plist (older ones).
+async function stageHelpBook(cfg, resDir) {
+  const rel = helpBookRel(cfg.helpBook);
+  if (!rel) return null;
+  const src = 'assets/' + rel;
+  let st = null;
+  try { st = await tjs.lstat(src); } catch {}
+  if (!st?.isDirectory) fail(`tinyjs.json "helpBook": ${src} is not a folder`);
+  const folder = rel.replace(/^.*\//, '');
+  const dest = resDir + '/' + folder;
+  await run(['cp', '-R', src, dest]);
+  const info = dest + '/Contents/Info.plist';
+  const key = async (k) => (await capture(['plutil', '-extract', k, 'raw', '-o', '-', info])).trim();
+  let name = await key('CFBundleIdentifier');
+  if (!name) {
+    name = folder.replace(/\.help$/i, '');
+    console.log(`==> note: ${src} has no Contents/Info.plist CFBundleIdentifier — naming the help book "${name}"`);
+  }
+  // A stale index is the usual reason Help search finds nothing, so build a
+  // fresh one into the copy for each language, where the book says it lives.
+  const indexPath = await key('HPDBookIndexPath');
+  if (indexPath) {
+    let iter = null;
+    try { iter = await tjs.readDir(dest + '/Contents/Resources'); } catch {}
+    for await (const e of iter ?? []) {
+      if (!e.isDirectory || !e.name.endsWith('.lproj')) continue;
+      const dir = dest + '/Contents/Resources/' + e.name;
+      if (!(await tryRun(['hiutil', '-I', 'corespotlight', '-Caf', dir + '/' + indexPath, dir])))
+        console.log(`==> note: hiutil could not index ${e.name} of the help book — keeping the index it shipped with`);
+    }
+  }
+  console.log(`==> help book ${folder} (${name})`);
+  return { folder, name };
+}
+
 // Portable rm -rf (replaces shelling out, which Windows has no equivalent for).
 async function rmTree(p) {
   try {
@@ -422,6 +579,14 @@ async function loadConfig() {
   }
   if (cfg.mainWindow !== undefined && typeof cfg.mainWindow !== 'boolean') fail('tinyjs.json "mainWindow" must be a boolean');
   if (cfg.mainWindow === false && cfg.url) fail('tinyjs.json "url" needs a main window to load into — drop "mainWindow": false');
+  cfg.resources = await validateResources(cfg.resources);
+  // The app icon: "icon" if set, else assets/icon.png, else icon.png at the
+  // project root (where projects made before assets/ keep it). Every reader
+  // goes through `cfg.icon || 'icon.png'`, so resolving it here covers them.
+  if (!cfg.icon && await exists('assets/icon.png')) cfg.icon = 'assets/icon.png';
+  // The help book is macOS's, but its folder sits in assets/ for every OS's
+  // build to see — keep the name around so they don't flag it as unused.
+  cfg.helpBookAnyOS = helpBookRel(cfg.helpBook ?? raw.macos?.helpBook);
   await checkMinVersion(cfg);
   return { title: cfg.name, size: '960x640', id: 'com.example.' + cfg.name, ...cfg };
 }
@@ -592,10 +757,25 @@ try {
   if (/^\\/[A-Za-z]:\\//.test(FRONTEND)) FRONTEND = FRONTEND.slice(1); // windows /C:/…
 } catch { FRONTEND = tjs.exePath.replace(/[\\\\/][^\\\\/]*$/, '') + '/frontend'; }`;
 
+  // Resources stay outside the TPK, whose file URLs point at a temporary
+  // extraction directory. Use the existing .app/portable bundle detection,
+  // falling back to the executable's directory for a bare macOS binary.
+  if (!dev) await stageResources(cfg.resources);
+  const resourceResolver = !cfg.resources.length
+    ? 'const RESOURCES = null;'
+    : dev
+    ? `const RESOURCES = ${JSON.stringify(await tjs.realPath(RESOURCES_DIR))};`
+    : `import { bundlePath } from './update.js';
+const RESOURCE_BUNDLE = await bundlePath();
+const RESOURCES = RESOURCE_BUNDLE
+  ? RESOURCE_BUNDLE + ${JSON.stringify(IS_WIN || IS_LINUX ? '/resources' : '/Contents/Resources/app/resources')}
+  : tjs.exePath.replace(/[\\\\/][^\\\\/]*$/, '') + '/resources';`;
+
   let entry = `import { createApp } from './bridge.js';
 import * as appMod from './src/${entryName}';
 
 ${frontendResolver}
+${resourceResolver}
 
 const app = await createApp({
   htmlPath: ${devUrl ? 'FRONTEND' : "FRONTEND + '/index.html'"},
@@ -604,6 +784,7 @@ const app = await createApp({
   version: ${JSON.stringify(cfg.version || '0.0.0')},
   tinyjsVersion: ${JSON.stringify(await toolVersion())},
   id: ${JSON.stringify(cfg.id)},
+  resourcesPath: RESOURCES,
   api: appMod.api ?? {},
   onMenu: appMod.onMenu,
   onTray: appMod.onTray,
@@ -855,7 +1036,8 @@ export function init(app${ts ? ': TinyApp' : ''}) {
   await tjs.writeFile(pkgPath, enc.encode(JSON.stringify(pkg, null, 2) + '\n'));
   if (alpine) await overlayAlpine(dir, name, ts);
 
-  await tjs.writeFile(dir + '/icon.png', await tjs.readFile(TOOL_DIR + 'template/icon.png'));
+  await tjs.makeDir(dir + '/assets', { recursive: true });
+  await tjs.writeFile(dir + '/assets/icon.png', await tjs.readFile(TOOL_DIR + 'template/assets/icon.png'));
   await writeAgentSkill(dir);
 
   // vp create installs on its own; only Alpine's added deps need a re-run.
@@ -1310,8 +1492,9 @@ async function cmdWrap() {
   const regen = force && await exists(dir + '/tinyjs.json');
   if (await exists(dir)) {
     // --force regenerates an existing wrapped project in place: it overwrites
-    // ONLY the files this generator owns (tinyjs.json, src/main.js, icon.png,
-    // src/tray.png) and leaves the user's own edits, added files and .git alone.
+    // ONLY the files this generator owns (tinyjs.json, src/main.js,
+    // assets/icon.png, src/tray.png) and leaves the user's own edits, added
+    // files and .git alone.
     if (!regen) fail(`'${dir}' already exists (--force overwrites a tinyjs project)`);
     console.log(`==> overwriting ${dir} (generated files only)`);
   }
@@ -1421,7 +1604,6 @@ async function cmdWrap() {
       ? 'ip-' + host.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '.wrap'
       : labels.slice().reverse().join('.').toLowerCase() + '.wrap',
     version: '0.1.0',
-    icon: 'icon.png',
     url: base.href,
     // Window chrome lives in the TOP-LEVEL lists, not in the runtime's
     // API_ALWAYS: an origin that matches no key (a redirect target like
@@ -1499,9 +1681,16 @@ async function cmdWrap() {
   }
   // A --force re-wrap that finds no icon keeps the one already on disk —
   // overwriting a good icon with the template would be a downgrade.
-  const hadIcon = regen && await exists(dir + '/icon.png');
-  if (icon || !hadIcon)
-    await tjs.writeFile(dir + '/icon.png', icon ?? await tjs.readFile(TOOL_DIR + 'template/icon.png'));
+  // New wraps keep it in assets/; one re-wrapped from before assets/ keeps
+  // its root icon.png (its tinyjs.json may name it).
+  const iconRel = regen && await exists(dir + '/icon.png') && !(await exists(dir + '/assets/icon.png'))
+    ? 'icon.png' : 'assets/icon.png';
+  const iconPath = dir + '/' + iconRel;
+  const hadIcon = regen && await exists(iconPath);
+  if (icon || !hadIcon) {
+    await tjs.makeDir(dir + '/assets', { recursive: true });
+    await tjs.writeFile(iconPath, icon ?? await tjs.readFile(TOOL_DIR + 'template/assets/icon.png'));
+  }
   // Apple icon grid: fetched favicons are full-bleed, so the dock/menu-bar
   // icon renders oversized next to system apps. Pad to ~82% content on a
   // transparent 1024 canvas (JXA + Cocoa, macOS only — other platforms
@@ -1509,15 +1698,15 @@ async function cmdWrap() {
   if (!IS_WIN && !IS_LINUX && icon) {
     try {
       await runCapture(['osascript', '-l', 'JavaScript',
-        TOOL_DIR + 'native/pad-icon.jxa', dir + '/icon.png']);
+        TOOL_DIR + 'native/pad-icon.jxa', iconPath]);
       // the Cocoa pass renders at the source's scale (can be 2048) — pin to 1024
-      await run(['sips', '-z', '1024', '1024', dir + '/icon.png'], { stdout: 'ignore', stderr: 'ignore' });
+      await run(['sips', '-z', '1024', '1024', iconPath], { stdout: 'ignore', stderr: 'ignore' });
       console.log('==> icon padded to the Apple grid');
     } catch { /* keep the raw icon */ }
   }
   // The menu-bar backend loads src/tray.png: src/ ships inside the build,
-  // the project root's icon.png does not.
-  if (menubar) await tjs.writeFile(dir + '/src/tray.png', await tjs.readFile(dir + '/icon.png'));
+  // the app icon does not.
+  if (menubar) await tjs.writeFile(dir + '/src/tray.png', await tjs.readFile(iconPath));
 
   const extra = Object.keys(origins).filter((k) => k !== base.origin);
   console.log(`created ${dir}/
@@ -1779,6 +1968,7 @@ async function cmdBuild() {
   // out in the release and can silently predate the --embed-icon flag it is
   // being asked for. No-op unless this is a dev checkout.
   await ensureLauncherFresh();
+  await warnUnusedAssets(cfg);
   await generateBuild(cfg);
   const cwd = tjs.cwd;
 
@@ -1840,6 +2030,7 @@ async function cmdBuild() {
   }
   await run([compiler, 'app', 'compile', cwd + '/dist/' + cfg.name], { cwd: cwd + '/.build' });
   if (compiler !== tjs.exePath) await tjs.remove(compiler).catch(() => {});
+  if (cfg.resources.length) await copyTree('.build/resources', 'dist/resources');
 
   if (IS_WIN) {
     // Windows build: a portable dist/ folder — just <name>.exe (compiled
@@ -1918,13 +2109,19 @@ async function cmdBuild() {
   await run(['cp', await macLauncher(), APP + '/Contents/MacOS/' + cfg.name]);
   await run(['cp', await macTjs(), APP + '/Contents/MacOS/tjs']);
   await run(['cp', '-R', '.build/app', APP + '/Contents/Resources/app']);
-  // macOS convention: Resources/Credits.html feeds the standard About panel —
-  // the launcher defers to it when present instead of the tinyjs credit (#8).
-  if (await exists('Credits.html')) {
-    await run(['cp', 'Credits.html', APP + '/Contents/Resources/Credits.html']);
+  if (cfg.resources.length) await copyTree('.build/resources', APP + '/Contents/Resources/app/resources');
+  // macOS convention: Resources/Credits.{html,rtf,rtfd} feeds the standard
+  // About panel — the launcher defers to it when present instead of the
+  // tinyjs credit (#8).
+  const credits = await findCredits();
+  if (credits) {
+    await run(['cp', '-R', credits, APP + '/Contents/Resources/' + credits.replace(/^.*\//, '')]);
   }
-  // App icon: icon.png in the project root (1024×1024; the template ships a
-  // default) becomes AppIcon.icns via sips + iconutil.
+  // A help book (#47) goes at the Resources root, where Help Viewer looks
+  // for it; Info.plist names it below and the launcher adds the Help menu.
+  const helpBook = await stageHelpBook(cfg, APP + '/Contents/Resources');
+  // App icon: assets/icon.png (or "icon", or a root icon.png; 1024×1024, the
+  // template ships a default) becomes AppIcon.icns via sips + iconutil.
   let iconKey = '';
   const iconSrc = cfg.icon || 'icon.png';
   if (await exists(iconSrc)) {
@@ -2094,6 +2291,13 @@ async function cmdBuild() {
   <key>CFBundleDocumentTypes</key>
   <array>${dicts.join('')}</array>`;
   }
+  if (helpBook) {
+    // Help Viewer finds the book by folder (relative to Resources) and
+    // identifies it by the book's own bundle id.
+    extraKeys += `
+  <key>CFBundleHelpBookFolder</key> <string>${escXml(helpBook.folder)}</string>
+  <key>CFBundleHelpBookName</key>   <string>${escXml(helpBook.name)}</string>`;
+  }
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -2103,6 +2307,7 @@ async function cmdBuild() {
   <key>CFBundleDisplayName</key>     <string>${escXml(cfg.title)}</string>
   <key>CFBundleIdentifier</key>      <string>${escXml(cfg.id)}</string>
   <key>CFBundleVersion</key>         <string>${escXml(cfg.version || '0.1.0')}</string>
+  <key>CFBundleShortVersionString</key> <string>${escXml(cfg.version || '0.1.0')}</string>
   <key>CFBundleExecutable</key>      <string>${escXml(cfg.name)}</string>
   <key>CFBundlePackageType</key>     <string>APPL</string>
   <key>NSHighResolutionCapable</key> <true/>${iconKey}${extraKeys}
@@ -2443,13 +2648,15 @@ async function cmdPublish() {
   } else if (IS_WIN) {
     // Stage dist/ under a named folder so the zip's one top-level entry is
     // the app folder (what update.js swaps in); bsdtar (Windows 10+) writes
-    // zip when told -a with a .zip name.
+    // zip when told -a with a .zip name. By full path: from Git Bash, PATH
+    // finds GNU tar first, which ignores -a and writes a tar named .zip.
     const stage = '.build/publish-stage';
     await rmTree(stage);
     await tjs.makeDir(stage + '/' + cfg.name, { recursive: true });
     await copyTree('dist', stage + '/' + cfg.name);
     await tjs.makeDir(PUB, { recursive: true });
-    await run(['tar', '-a', '-cf', PUB + '/' + zipName, '-C', stage, cfg.name]);
+    const tar = (tjs.env.SystemRoot || tjs.env.SYSTEMROOT || 'C:\\Windows') + '\\System32\\tar.exe';
+    await run([tar, '-a', '-cf', PUB + '/' + zipName, '-C', stage, cfg.name]);
   } else {
     await tjs.makeDir(PUB, { recursive: true });
     await run(['ditto', '-c', '-k', '--keepParent', 'dist/' + cfg.title + '.app', PUB + '/' + zipName]);

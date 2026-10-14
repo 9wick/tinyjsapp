@@ -1557,8 +1557,21 @@ static void on_menu_item_activate(GtkMenuItem* item, gpointer data) {
   // Match on the WIDGET, not the id: several windows can hold an item with
   // this id, and only this one's enabled flag has any say here.
   auto range = g_items.equal_range(id);
-  for (auto it = range.first; it != range.second; ++it)
-    if (it->second.widget == GTK_WIDGET(item) && !it->second.enabled) return;
+  for (auto it = range.first; it != range.second; ++it) {
+    if (it->second.widget != GTK_WIDGET(item)) continue;
+    // Every item is a GtkCheckMenuItem, whose class handler has already
+    // toggled it by now — so a plain item grew a ✓ once clicked. `checked`
+    // belongs to the app (menu.update), as on macOS/Windows: put it back.
+    if (GTK_IS_CHECK_MENU_ITEM(item) &&
+        gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item)) != it->second.checked) {
+      g_signal_handlers_block_matched(item, G_SIGNAL_MATCH_FUNC, 0, 0,
+        nullptr, (gpointer)on_menu_item_activate, nullptr);
+      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), it->second.checked);
+      g_signal_handlers_unblock_matched(item, G_SIGNAL_MATCH_FUNC, 0, 0,
+        nullptr, (gpointer)on_menu_item_activate, nullptr);
+    }
+    if (!it->second.enabled) return;
+  }
   if (kind == "tray") pipe_write_line("TRAY " + id);
   else pipe_write_line("MENU " + id);
 }

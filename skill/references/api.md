@@ -154,6 +154,12 @@ tiny.menu.set([
                                              // items are DROPPED: declare
                                              // them in a menu of your own
                                              // there too. First block wins.
+  { role: 'help', items: [                   // Help menu: macOS puts it LAST,
+    { id: 'site', label: 'Visit Website' },  // adds the search field, and —
+  ]},                                        // with macos.helpBook — "<App>
+                                             // Help" ⌘? above these
+                                             // (standard: false drops it).
+                                             // win/linux: plain "Help" menu.
   { title: 'Actions', items: [
     { id: 'open', label: 'Open…', key: 'o' },        // ⌘O (Ctrl+O win/linux)
     { id: 'find', label: 'Find', key: 'alt+shift+f' },// ⌥⇧⌘F — extra modifiers
@@ -167,8 +173,8 @@ tiny.menu.set([
 tiny.menu.on((id) => ...);   // "about": "menu" in tinyjs.json routes macOS's
                              // About item here as id 'about' (own panel).
                              // To keep the standard panel but change its
-                             // credit: Credits.html in the project root
-                             // (bundled by `tinyjs build`, shown with its
+                             // credit: assets/Credits.html (or .rtf/.rtfd;
+                             // bundled by `tinyjs build`, shown with its
                              // links; needs <meta charset="utf-8"> and a
                              // font, or it's Latin-1 in Times), else
                              // "attribution": "…" in tinyjs.json
@@ -373,8 +379,10 @@ audio.src = tiny.fileURL(path);  // file:// URL for a disk path — ALWAYS this,
 // file:// media loads only under the frontend dir by default — widen with
 // "readAccess": true | "/path" in tinyjs.json.
 await tiny.app.paths();   // { home, data, cache, logs, temp, downloads,
-                          //   desktop, documents } — per-OS correct; backend
+                          //   desktop, documents, resources } — per-OS correct; backend
                           //   twin app.paths is a plain object (no await)
+// resources: the project's resources/ folder in dev, its bundled copy in
+// builds, null without one. Backend: app.paths.resources.
 await tiny.app.shell.open('https://x.com');  // URL or path; resolves true/rejects
 await tiny.app.shell.reveal(path); await tiny.app.shell.trash(path);
 await tiny.app.thumbnail(path, size?);  // png for ANY path (macOS/Windows:

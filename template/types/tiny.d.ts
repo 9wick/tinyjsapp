@@ -45,8 +45,21 @@ declare interface TinyMenu {
    * DROPPED rather than landing somewhere arbitrary — declare the same item
    * in a menu of your own for those platforms. Only the first 'app' block is
    * used.
+   *
+   * 'help' is the Help menu. On macOS it always goes last in the bar; when
+   * the built app ships a help book (tinyjs.json `"macos": { "helpBook" }`)
+   * it starts with "<App> Help" (⌘?), which opens the book, and your
+   * `items` go below it (`standard: false` drops that item). macOS adds its
+   * menu-search field at the top. A help book gets this menu even without
+   * the role. Windows and Linux draw a plain "Help" menu of your items in
+   * the slot where you declared it.
    */
-  role?: 'edit' | 'app';
+  role?: 'edit' | 'app' | 'help';
+  /**
+   * macOS, with `role`: false leaves out the stock items the launcher would
+   * add (the Edit menu's Undo…Select All group, "<App> Help").
+   */
+  standard?: boolean;
 }
 
 declare interface TinyMenuItemState {
@@ -477,6 +490,8 @@ declare interface TinyScreen {
 /** Standard per-app directories; data/cache/logs are per app id and NOT
  *  auto-created. Prefer these over hardcoding ~/Library paths. */
 declare interface TinyPaths {
+  /** The project's resources/ folder in dev, its bundled copy in builds; null without one. */
+  resources: string | null;
   home: string;
   data: string;
   cache: string;

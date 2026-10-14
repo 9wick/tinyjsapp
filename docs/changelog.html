@@ -174,6 +174,19 @@
   <section>
 
     <div class="rel">
+      <h2>Unreleased</h2>
+      <ul>
+        <li><b><code>resources/</code>: data files that ship with the app.</b> Put files your code reads at runtime (a dictionary, a database seed, fonts) in a <code>resources/</code> folder and the whole folder ships with the app. <code>app.paths.resources</code> in the backend, and <code>(await tiny.app.paths()).resources</code> in the page, point at it: the folder itself in dev, the bundled copy in builds, <code>null</code> when there is none. <code>"resources": [...]</code> in tinyjs.json ships only the listed paths, and the <code>macos</code> / <code>windows</code> / <code>linux</code> blocks can list different ones per OS. Thanks to Manacost Dev for the implementation (<a href="https://github.com/tarwin/tinyjsapp/pull/49">#49</a>) and Luiz Américo and Sam LABBE for the design discussion (<a href="https://github.com/tarwin/tinyjsapp/issues/8">#8</a>).</li>
+        <li><b><code>assets/</code>: the icon, About credits and help book in one place.</b> New projects keep <code>icon.png</code> in <code>assets/</code>, next to the other files the OS reads. Existing projects with <code>icon.png</code> and <code>Credits.html</code> at the project root keep working unchanged. The build notes any file in <code>assets/</code> it doesn't use, since nothing else there ships.</li>
+        <li><b>macOS: help books.</b> Put an Apple help book folder in <code>assets/</code> and name it with <code>"macos": { "helpBook": "My App Help" }</code>. The build bundles it, registers it in Info.plist and rebuilds its search index, and the app gets a Help menu with "&lt;App&gt; Help" (⌘?) and a search field that searches the book. Thanks to Blatman for the request and a sample book (<a href="https://github.com/tarwin/tinyjsapp/issues/47">#47</a>).</li>
+        <li><b><code>{ role: 'help' }</code> in <code>setMenu</code>.</b> Your own Help menu items: on macOS the menu always goes last and gets the system search field (plus "&lt;App&gt; Help" when there's a help book); on Windows and Linux it's a plain "Help" menu.</li>
+        <li><b>macOS: <code>Credits.rtf</code> and <code>Credits.rtfd</code> work as About panel credits,</b> as well as <code>Credits.html</code>.</li>
+        <li><b>macOS: built apps carry <code>CFBundleShortVersionString</code>,</b> set from <code>version</code>, the key Finder and the rest of macOS read the version from.</li>
+        <li><b>Linux: clicking a menu item no longer gives it a check mark.</b> GTK toggled every menu bar and tray item on click, so a plain item showed ✓ after one use and a checked one lost its ✓, whatever the app had set. <code>checked</code> now only changes when the app changes it, as on macOS and Windows.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.52.0 <span class="date">2026-10-13</span></h2>
       <ul>
         <li><b><code>tinyjs dev</code> no longer restarts the app on frontend edits in the Vite templates.</b> The dev watcher watched <code>src/</code>, which in the Vite templates is the frontend, so every save restarted the whole app after Vite's HMR had already applied it. Backend edits in <code>backend/</code> were never watched, so they didn't restart at all. The watcher now follows the backend entry's own folder: frontend edits are left to HMR and backend edits restart. A backend at the project root (<code>"backend": "main.js"</code>) skips <code>.build/</code>, <code>node_modules/</code>, <code>.git/</code> and the build output. Thanks to Anton Tsvilikhovskiy for the report (<a href="https://github.com/tarwin/tinyjsapp/issues/53">#53</a>) and Sam LABBE for the fix (<a href="https://github.com/tarwin/tinyjsapp/pull/54">#54</a>).</li>

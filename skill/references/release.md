@@ -5,6 +5,38 @@ Versions live in tinyjs.json `"version"`; bump before building.
 `minTinyjsVersion` refuses to run an app on an older tinyjs with a real
 message instead of a mystery TypeError (`tinyjs new` stamps it).
 
+## Bundled data resources and app assets
+
+Two project folders ship beside the code, for different readers:
+
+- `resources/` — data the app's own code reads. Ships whole by default;
+  `app.paths.resources` (backend) / `(await tiny.app.paths()).resources`
+  (frontend) is the folder itself in dev and the bundled copy in builds
+  (`Contents/Resources/app/resources/` in a .app, `resources/` beside the
+  executable elsewhere), `null` without one. `"resources": [...]` lists paths
+  inside it to ship only those. An OS block's list REPLACES the root one for
+  that OS (like every config key); an OS without one uses the root value,
+  else the whole folder — so `"macos": { "resources": ["x"] }` alone narrows
+  only macOS. Mac-only file: root `"resources": []` + the macos list. Dev
+  still reads the whole folder. Symlinks, `..`, absolute paths fail the build.
+- `assets/` — files the OS reads, by name: `icon.png` (every OS),
+  `Credits.html|rtf|rtfd` (macOS About panel), and a help book folder named by
+  `"macos": { "helpBook": "<folder>" }`. The build copies the book into the
+  .app's Resources, names it in Info.plist by its own `CFBundleIdentifier`,
+  re-runs `hiutil` for its search index, and the launcher adds a Help menu
+  ("<App> Help" ⌘? + search field). Built apps only — dev has no bundle.
+  Help Viewer caches books by version: bump `version` to see an edit.
+  Anything else in `assets/` gets a build note: it doesn't ship.
+
+```js
+export async function init(app) {
+  const root = app.paths.resources;           // string | null
+  if (root) console.log(new TextDecoder().decode(await tjs.readFile(root + '/dictionary.json')));
+}
+```
+
+Executables the app launches (sidecars) aren't supported yet.
+
 ## macOS
 
 ```sh

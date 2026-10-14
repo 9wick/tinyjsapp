@@ -8,6 +8,127 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Bundled data resources (`resources/`)
+
+Reproducible checks: `python3 -u test/resources/check.py` and
+`tsc --noEmit --strict --skipLibCheck --lib ES2022,DOM test/resources/types.ts`.
+
+Reworked 2026-10-13 from #49's project-relative list to the `resources/`
+folder (whole folder by default, list narrows it). The 2026-10-11 runs below
+were of the old layout; the CLI paths changed, so each OS needs a re-run.
+
+- [x] macOS 27.0 arm64, 2026-10-13: `check.py` PASS on the folder layout —
+  dev, bare executable and relocated .app backend/frontend reads, whole
+  folder by default, list narrowing + per-OS override, list without folder,
+  folder symlink, URL wrapper, null without resources, rebuild cleanup,
+  publish archive, signature.
+- [~] Windows 11 arm64 (26200), 2026-10-13, Python 3.13: `check.py` PASS
+  with two fixture names swapped — dev and portable backend/frontend RPC,
+  relocated dist in a `moved build ü` folder, binary bytes, path rejection,
+  platform override, rebuild cleanup, publish zip bytes, URL wrapper, whole
+  folder, null. Symlinks SKIP (no Developer Mode); junctions checked by
+  hand instead — `resources/link` and `resources/` itself as `mklink /J`
+  both refused "symlinks are not supported". The swaps, and why the stock
+  script can't pass here yet:
+  - project folder `project with spaces ü` → ASCII: **tjs.exe's argv is
+    ANSI** (upstream txiki `main`), so `tjs run <path with ü>` gets `�` and
+    ENOENTs. `tinyjs dev` passes an absolute entry path, and `tinyjs.cmd`
+    passes `%~dp0cli.js` — so a user whose profile is `C:\Users\Jürgen`
+    can't run the CLI at all. Pre-existing, not resources-specific. Fix
+    candidates: an `activeCodePage` UTF-8 manifest stamped onto tjs.exe at
+    setup (compiled apps inherit it), or upstream `wmain`.
+  - fixture `данные` → `données`: **Windows' bsdtar 3.8.8 segfaults
+    creating any archive holding a name outside the ANSI codepage**
+    (0xC0000005; `ü` is fine), and skips such entries extracting (exit 1).
+    So `publish` crashes and the updater would refuse those files.
+    Pre-existing; resources make non-ASCII file names likelier.
+  Fixed on the way: `publish` and the updater now call
+  `%SystemRoot%\System32\tar.exe` — from Git Bash, PATH found GNU tar,
+  which ignores `-a` and wrote a POSIX tar named `-win.zip`. check.py now
+  re-execs in UTF-8 mode on Windows and compares paths separator-blind
+  (packaged roots are `C:\…\dir/resources`, like the other `app.paths`).
+- [x] Linux x86_64, 2026-10-13: `check.py` PASS on the folder layout in an
+  Ubuntu 22.04 amd64 container (Rosetta, on the arm64 VM) under Xvfb +
+  `dbus-run-session`, command in `test/resources/README.md`, against a
+  fresh clone of `dad7102` built by its own `setup.sh`. The first attempt
+  "failed" on the last launch with an empty log: that was the host's
+  `pgrep -x launcher-linux` cleanup loop (other checks running at the same
+  time), which sees and kills processes inside docker containers. The re-run,
+  with nothing else killing launchers, passed every step.
+- [x] Linux arm64 + Wayland, 2026-10-13: `check.py` PASS on Ubuntu 24.04
+  aarch64, GNOME Wayland session (GDK's default backend, no `GDK_BACKEND`).
+
+## App assets (`assets/`), help book, Help menu
+
+- [x] macOS 27.0 arm64, 2026-10-13, Developer ID build of a `tinyjs new`
+  app with #47's sample book: `assets/icon.png` → AppIcon.icns; Credits.rtf
+  in Resources; book copied to Resources, `CFBundleHelpBookFolder` /
+  `CFBundleHelpBookName` (= the book's `CFBundleIdentifier`) and
+  `CFBundleShortVersionString` in Info.plist; `hiutil` rebuilt the index;
+  `codesign --verify --deep --strict` OK; Help menu appears last in the bar
+  (screenshot). Unused `assets/logo.svg` noted by the build.
+- [x] macOS 27.0, 2026-10-13, hand-tested in the built app: "<App> Help" and
+  ⌘? open the book in Help Viewer; the Help search field finds the book's
+  pages; About shows the Credits.rtf text; a `{ role: 'help', items }` item
+  sits below "<App> Help".
+- [x] macOS 2026-10-13: in `tinyjs dev` (no book) a `{ role: 'help' }`
+  declared FIRST still lands last in the bar, after Develop (screenshot).
+- [x] macOS 2026-10-13, hand-tested: a `{ role: 'help' }` item's click
+  reaches `tiny.menu.on`; `standard: false` leaves just the search field and
+  the app's items (no "<App> Help"); About shows `assets/Credits.html` with a
+  working link and "Version x.y.z" from `CFBundleShortVersionString`;
+  `resources/hello.txt` read from the .app (backend and page agree on the
+  root, which followed the .app to a new folder).
+- [x] macOS 2026-10-13: `tinyjs notarize` of a Developer ID app carrying a
+  help book AND `resources/` — Accepted, stapled, `spctl` accepts it
+  (Notarized Developer ID).
+- [x] macOS 2026-10-13: Help Viewer caches the book — an edited page in a
+  rebuild at the SAME version (even from a different .app path) showed the
+  old copy; bumping `version` showed the edit.
+- [x] Windows 11 arm64, 2026-10-13, dev AND built: a menu declared File,
+  `{ role: 'help', items }`, View reads `File | Help | View` (GetMenu, and
+  screenshot); WM_COMMAND on both Help items reached the backend's `onMenu`
+  (`site`, `issue`). A solid-magenta `assets/icon.png` is the window's big
+  and small icon (WM_GETICON — what the taskbar shows) in dev and built,
+  and `helpcheck.exe` + `launcher.exe` carry it (ExtractIconEx, 32/16 px).
+  No `assets/`, green root `icon.png`: green in dev, built window and exe.
+- [x] Linux arm64, 2026-10-13, dev AND built, under XWayland
+  (`GDK_BACKEND=x11`, so xwd and XTest work): a menu declared File,
+  `{ role: 'help', items }`, View reads `File | Help | View` (xwd of the
+  window); the Help popup lists Website and "Report Issue  Shift+Ctrl+H".
+  Both items reached the backend's `onMenu`: `issue` via its accelerator,
+  `site` via XTest F10 → Right → Down → Return. A solid-magenta
+  `assets/icon.png` is the window's `_NET_WM_ICON` in dev and built, is
+  copied to `dist/icon.png`, and the first-run `.desktop` has
+  `Icon=<dist>/icon.png` (and `StartupWMClass` = id). No `assets/`, green
+  root `icon.png`: green `_NET_WM_ICON` in dev and built, green `dist/icon.png`.
+  **Found and fixed on the way:** every Linux menu bar and tray item is a
+  `GtkCheckMenuItem`, and GTK's class handler toggles it on activate. So
+  "Report Issue" showed a ✓ after its accelerator fired, and a `checked`
+  item lost its ✓ on click, whatever the app had set. `on_menu_item_activate`
+  now puts the widget back to the registry's `checked`. Re-checked with an
+  xwd of the popup: no ✓ on a plain item after activation, a `checked:true`
+  item keeps its ✓ after activation, and an item the app unticks via
+  `updateMenuItem` in `onMenu` stays unticked through a second press.
+- [x] macOS 2026-10-13: vanilla `tinyjs new` and `tinyjs wrap` scaffold
+  `assets/icon.png` and build from it; a project with `icon.png` and
+  `Credits.html` at the root (no `assets/`) still builds with both.
+- [x] `tinyjs new --template …` (vite) scaffolds `assets/icon.png`; `wrap
+  --force` on a pre-assets wrap keeps its root icon; both on Windows/Linux.
+  Windows 2026-10-13: `new vt --template vanilla-ts --no-install` →
+  `vt/assets/icon.png`; `wrap` of a local page → `assets/icon.png`; with
+  that moved to a (green) root `icon.png` and `assets/` deleted, `wrap
+  --force` against a page with no favicon left `icon.png` byte-identical
+  and made no `assets/`. Linux arm64 2026-10-13: the same three
+  (`new vt --template vanilla-ts --no-install` → `vt/assets/icon.png`, run
+  in the arm64 node container since this VM has no host Node; `wrap
+  http://127.0.0.1:8765/` → `assets/icon.png`; root green `icon.png` and no
+  `assets/`, then `wrap --force` → `icon.png` md5 unchanged, no `assets/`).
+  Also seen on Linux (container, no TTY): `tinyjs new … --template react-ts`
+  or `vanilla-ts` WITH install finishes its work and prints "created …",
+  then **tjs segfaults on exit (139)**. With `--no-install` it exits 0. Not
+  investigated; with a TTY, `new` stops at its prompts instead.
+
 ## How to run the app-surface checks
 
 ```sh
@@ -2224,7 +2345,7 @@ accelerator call above, and composing with it):
       `detach` pair is the same shape and may have the same timing hole —
       watch where the inspector actually appears, not just that it appears.
 
-## Headless fail-fast in the launchers — macOS verified, Linux + Windows UNRUN (2026-08-24)
+## Headless fail-fast in the launchers — verified on all three (2026-08-24)
 
 Feedback from a tester whose sandbox couldn't open the WebKit window: the
 failure was indistinguishable from an app bug, and they misdiagnosed it
@@ -2244,21 +2365,32 @@ hanging on a peer that already gave up.
       path also verified: with a GUI session the check passes through to
       the socket-connect error, and the full smoke page
       (`TINYJS_HTML=test/smoke.html`) still runs clean.
-- [ ] **Linux** — `DISPLAY`/`WAYLAND_DISPLAY` both unset ⇒ message +
+- [x] **Linux** — `DISPLAY`/`WAYLAND_DISPLAY` both unset ⇒ message +
       exit 3; else `gtk_init_check()` false ⇒ message + exit 3. The old
       bare `gtk_init()` call after the socket connect is GONE (init now
       runs before the connect — g_set_prgname still precedes it, as the
-      WM_CLASS comment requires). NOT COMPILED — written on the Mac.
-      Check: `env -u DISPLAY -u WAYLAND_DISPLAY tinyjs dev` prints the
-      tinyjs: lines and the bridge says "launcher exited before
-      connecting"; a normal desktop run still opens the window.
-- [ ] **Windows** — window station lacks `WSF_VISIBLE`
+      WM_CLASS comment requires). **Verified 2026-10-13, Ubuntu 24.04
+      arm64:** `env -u DISPLAY -u WAYLAND_DISPLAY tinyjs dev` printed both
+      `tinyjs:` lines, then `launcher exited before connecting:
+      {"exit_status":3}`; `DISPLAY=:99 WAYLAND_DISPLAY=nonexist` took the
+      `gtk_init_check` branch ("GTK could not open display ':99'"), same
+      exit; bare `launcher-linux x.html bogus.sock` exited 3 with no
+      display and reached `connect: No such file` with one. Every normal
+      dev run that day opened its window.
+- [x] **Windows** — window station lacks `WSF_VISIBLE`
       (`GetUserObjectInformationW(UOI_FLAGS)`) ⇒ message + exit 3, before
-      the pipe connect. NOT COMPILED — written on the Mac. Check both
-      ways: an `ssh` (non-console) session or a service context fails
-      loud; a normal desktop run is unaffected. Note the check is
-      deliberately permissive — if the UOI_FLAGS query itself fails we
-      proceed rather than block a working desktop.
+      the pipe connect. Note the check is deliberately permissive — if the
+      UOI_FLAGS query itself fails we proceed rather than block a working
+      desktop. **Verified 2026-10-13, Windows 11 arm64, no elevation**:
+      an unnamed `CreateWindowStation` (lands as `Service-0x0-…$`, never
+      visible) + `CreateDesktop`, then `CreateProcess` with
+      `lpDesktop = <that>\Default` (a scheduled task as SYSTEM or S4U
+      needs admin; this doesn't). In it: bare `launcher-win.exe` printed
+      both `tinyjs:` lines and exited 3; `tinyjs dev` and a built app
+      printed them and then `launcher exited before connecting:
+      {"exit_status":3}`. Same launcher on the interactive desktop passed
+      the check and reached "cannot connect" to the bogus pipe; every
+      normal run today was unaffected.
 
 ## macOS per-arch builds (`--arch x86_64`) — never run on a real Intel Mac (2026-09-24)
 
@@ -3327,13 +3459,24 @@ instead of the rate-limited `api.github.com` call.
   determine latest release". *(2026-10-12, lookup block run on its own.)*
 - [x] **`fetchLatestVersion` in tjs** returns v0.51.0 via `res.url` after a
   followed HEAD. *(2026-10-12, macOS, function extracted and run.)*
-- [ ] **Windows `install.ps1` on PS 5.1 AND PS 7**: `irm
+- [x] **Windows `install.ps1` on PS 5.1 AND PS 7**: `irm
   https://tinyjs.app/install.ps1 | iex` resolves and installs the latest
   tag. The final URL comes from `BaseResponse.ResponseUri` on 5.1 and
   `BaseResponse.RequestMessage.RequestUri` on 7, so both shells need running.
-  Never run: no PowerShell on the Mac this was written on.
-- [ ] **`tinyjs update --check` on Windows and Linux** from an installed
-  release (not a checkout, which reports `dev`).
+  *(2026-10-13, Windows 11 arm64: the live script — same bytes as
+  docs/install.ps1 — under Windows PowerShell 5.1 and portable pwsh 7.6.7,
+  each with `TINYJS_HOME` in a scratch dir: both resolved v0.52.0,
+  checksum OK, `installed: tinyjs v0.52.0`. User PATH restored after.)*
+- [x] **`tinyjs update --check` on Windows and Linux** from an installed
+  release (not a checkout, which reports `dev`). *Windows 2026-10-13:
+  fresh v0.52.0 install → "already up to date (v0.52.0)"; the same
+  install with VERSION set to v0.51.0, and a real v0.51.1 install → "v0.52.0
+  is available". Linux arm64 2026-10-13: the live `tinyjs.app/install`
+  (same bytes as docs/install) under `env -i` with a scratch `HOME` and
+  `PATH=/usr/bin:/bin` (so it can't relink the checkout's
+  `~/.local/bin/tinyjs`): v0.52.0 → "already up to date (v0.52.0)"; VERSION
+  set to v0.51.0 → "v0.52.0 is available"; a real `TINYJS_VERSION=v0.51.1`
+  install → "v0.52.0 is available (you have v0.51.1)".*
 
 ## #53/#54 — dev watcher follows the backend's folder; src/backend layout (2026-10-13)
 
@@ -3345,8 +3488,27 @@ for a root backend. `frontend.reload: false` drops the dev page reload.
   `"./main.js"` (one restart, no loop), `reload: false`, and the react-ts
   Vite template (HMR only on `src/App.tsx`, restart on `backend/main.ts`).
   *(2026-10-13.)*
-- [ ] **Windows**: same checks. `tjs.watch` reports backslash paths there;
-  the watcher normalises them, but nobody has seen the skip work.
-- [ ] **Linux**: same checks. inotify isn't recursive in libuv, so only
-  top-level files in the backend folder restart (unchanged from before) —
-  confirm that's all that's missing, and that a root backend doesn't loop.
+- [x] **Windows**: same checks. `tjs.watch` reports backslash paths there;
+  the watcher normalises them. *(2026-10-13, Windows 11 arm64, a node
+  harness counting dev's output per edit, 5s idle first: `src/backend/`
+  — main.js and a nested lib/util.js restart, frontend edits only reload;
+  old `src/main.js` — restarts for main.js and src/lib/util.js, the nested
+  src/frontend is skipped (reload only), so the backslash skip works; root
+  `"./main.js"` — no restarts idle (no .build loop), one per main.js or
+  README.md edit, frontend reload only; `reload: false` — frontend edit
+  silent, backend restarts; react-ts Vite — App.tsx/App.css are vite
+  `hmr update` only, backend/main.ts restarts.)*
+- [x] **Linux**: same checks. inotify isn't recursive in libuv, so only
+  top-level files in the backend folder restart (unchanged from before).
+  *(2026-10-13, Ubuntu 24.04 arm64, a shell harness counting dev's
+  output per edit, 7s idle first: `src/backend/` — main.js restarts,
+  nested lib/util.js does NOT (the known inotify gap, and the only one),
+  frontend edits reload only; old `src/main.js` — main.js restarts,
+  src/lib/util.js doesn't, src/frontend edits reload only; root
+  `"./main.js"` — no restarts idle or after a restart (no .build loop),
+  one per main.js or README.md edit, frontend reload only; `reload: false`
+  — frontend edit silent, backend restarts; react-ts Vite (Vite in the
+  arm64 node container with host networking, `frontend.dev` dropped so
+  dev only probes `devUrl`, a PATH shim mapping `npx esbuild` to the
+  native esbuild binary since this VM has no Node) — App.tsx/App.css are
+  vite `hmr update` only, backend/main.ts restarts once.)*
