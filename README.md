@@ -209,6 +209,7 @@ myapp/
   executables/            # optional: programs your code spawns — see "Bundled executables"
   src/backend/main.js     # backend: export const api = {...}; export function init(app) {}
   src/frontend/           # index.html + any local js/css/images
+  src/shared/             # optional: code both sides import — see below
 ```
 
 Projects made before 0.53 keep `icon.png` (and `Credits.html`) at the
@@ -224,6 +225,27 @@ picks the plain page folder. A bundler project uses `"frontend": { "build",
 "dist", "dev", "devUrl" }` instead, as the `--template` scaffolds do. Its
 packages must be installed before `tinyjs dev` or `build` (the scaffolds do
 that unless `--no-install`; otherwise the build stops and says so).
+
+Code both the backend and the page use (constants, validation, formatting)
+goes in a `shared/` folder beside the backend's folder: `src/shared/` next
+to `src/backend/`, or `shared/` at the root next to the Vite templates'
+`backend/`. Both sides import it with the same path, in dev and in a build:
+
+```js
+// src/shared/settings.js
+export const MY_CONSTANT = 42;
+
+// src/backend/main.js and src/frontend/app.js alike
+import { MY_CONSTANT } from '../shared/settings.js';
+```
+
+It ships as plain files next to the frontend, so the page can read it: no
+secrets, and nothing that imports `tjs:*` (the page has no `tjs`). Use
+`.js` modules. A page loads them with `<script type="module">`, and a
+bundled frontend (Vite) pulls them into its own bundle. Editing a shared
+file in `tinyjs dev` restarts the app. The layout before 0.52
+(`src/main.js`, frontend nested inside it) can't use `src/shared/`; move
+the backend into `src/backend/` first.
 
 Keys that genuinely differ per platform go in a `macos` / `windows` / `linux`
 block, merged on top of the root ones for that OS — the block names are the

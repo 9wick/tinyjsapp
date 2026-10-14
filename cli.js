@@ -53,6 +53,47 @@ async function copyTree(src, dest) {
   }
 }
 
+// tjs.watch on a folder: cb(rel) per change, rel relative to dir with '/'
+// separators, skipped when skip(rel). macOS (FSEvents) and Windows watch the
+// whole tree from one call, but Linux's inotify only sees a folder's direct
+// entries, so with `perDir` every subfolder gets its own watch, including
+// folders made later. Self-contained: the dev entry inlines its source for
+// the frontend reload watcher.
+async function watchTree(dir, cb, skip = () => false, perDir = false) {
+  const watchers = new Map();
+  const add = async (rel) => {
+    if (watchers.has(rel)) return;
+    const path = rel ? dir + '/' + rel : dir;
+    try {
+      watchers.set(rel, tjs.watch(path, (file) => {
+        if (!file) return;
+        const r = (rel ? rel + '/' : '') + String(file).replace(/\\/g, '/');
+        if (skip(r)) return;
+        if (perDir) sync(r);
+        cb(r);
+      }));
+    } catch { return; }
+    if (!perDir) return;
+    try {
+      for await (const e of await tjs.readDir(path)) {
+        const r = (rel ? rel + '/' : '') + e.name;
+        if (e.isDirectory && !skip(r)) await add(r);
+      }
+    } catch {}
+  };
+  // A name that changed may be a folder made (watch it and what's inside) or
+  // removed (drop its watches, so one made again later is watched afresh).
+  const sync = async (r) => {
+    let isDir = false;
+    try { isDir = (await tjs.stat(dir + '/' + r)).isDirectory; } catch {}
+    if (isDir) return add(r);
+    for (const [k, w] of watchers) {
+      if (k === r || k.startsWith(r + '/')) { try { w.close(); } catch {} watchers.delete(k); }
+    }
+  };
+  await add('');
+}
+
 // Data the app's own code reads at runtime lives in resources/ and reaches
 // it as app.paths.resources: the whole folder, or only the files and
 // directories inside it that tinyjs.json "resources" lists (per OS through
@@ -816,6 +857,18 @@ async function resolveBackendEntry(cfg) {
   fail('no backend entry found (src/backend/main.js|ts, src/main.js|ts, backend/main.js|ts, or "backend" in tinyjs.json)');
 }
 
+// Code both sides import (#58): a shared/ folder beside the backend's folder
+// (src/shared next to src/backend; shared/ at the root next to the Vite
+// templates' backend/). It ships as app/shared, beside app/src (the backend)
+// and app/frontend, so `../shared/x.js` resolves the same from both sides in
+// dev and in a build. A backend at the project root has no sibling folder.
+function sharedDirFor(backendEntry) {
+  const entry = String(backendEntry).replace(/\\/g, '/').replace(/^(\.\/)+/, '');
+  if (!entry.includes('/')) return null;
+  const entryDir = entry.replace(/\/[^/]*$/, '');
+  return entryDir.includes('/') ? entryDir.replace(/\/[^/]*$/, '') + '/shared' : 'shared';
+}
+
 // A frontend with its own build tooling needs its packages installed first.
 // Without node_modules the script's tools come from wherever else they are
 // (a global tsc, say) and fail with errors that never say "install" (#41:
@@ -913,6 +966,17 @@ async function generateBuild(cfg, dev = false) {
       if (e.isDirectory) await copyTree(s, d);
       else await tjs.writeFile(d, await tjs.readFile(s));
     }
+  }
+
+  // shared/: copied in dev too, since the dev backend runs from .build/app/src.
+  // The pre-0.52 layout nests the frontend in the backend's folder, so its
+  // page would reach ../../shared in dev but nothing in a build.
+  const sharedDir = sharedDirFor(backendEntry);
+  if (sharedDir && await exists(sharedDir)) {
+    await copyTree(sharedDir, B + '/shared');
+  } else if (entryDir === 'src' && await exists('src/shared')) {
+    console.log('tinyjs: src/shared/ is only shared with a backend in src/backend/ — ' +
+                'move src/main.js (and the files it imports) there');
   }
 
   // tinyjs.json "inject": document-start JS injected into every window before
@@ -1063,7 +1127,8 @@ if (appMod.init) appMod.init(app);
     // which would otherwise reload the page twice per save.
     entry += `
 let reloadTimer = null;
-tjs.watch(FRONTEND, () => {
+${watchTree}
+await watchTree(FRONTEND, () => {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(async () => {
     try {
@@ -1073,7 +1138,7 @@ tjs.watch(FRONTEND, () => {
       console.log('tinyjs: frontend reload failed:', String(e));
     }
   }, 150);
-});
+}, undefined, ${IS_LINUX});
 `;
   }
 
@@ -2048,17 +2113,22 @@ async function cmdDev() {
   let child = null;
   let restarting = false;
   let restartTimer = null;
-  tjs.watch(backendDir, (file) => {
-    if (!file) return;
-    const rel = norm(file);
-    if (skips.some((d) => rel === d || rel.startsWith(d + '/'))) return;
+  const restartOn = (rel) => {
     clearTimeout(restartTimer);
     restartTimer = setTimeout(() => {
       console.log(`tinyjs: ${rel} changed, restarting backend`);
       restarting = true;
       child?.kill();
     }, 150);
-  });
+  };
+  await watchTree(backendDir, restartOn,
+    (rel) => skips.some((d) => rel === d || rel.startsWith(d + '/')), IS_LINUX);
+  // shared/ lives beside the backend's folder, and the backend runs from a
+  // copy of it, so an edit there restarts too (which reloads the page).
+  const sharedDir = sharedDirFor(backendEntry);
+  if (sharedDir && await exists(sharedDir)) {
+    await watchTree(sharedDir, (rel) => restartOn(sharedDir + '/' + rel), undefined, IS_LINUX);
+  }
 
   while (true) {
     const B = await generateBuild(cfg, true);
@@ -2319,6 +2389,8 @@ async function cmdBuild() {
   // wrappers may not have one).
   if (await exists('.build/app/frontend'))
     await run(['cp', '-R', '.build/app/frontend', 'dist/frontend']);
+  if (await exists('.build/app/shared'))
+    await run(['cp', '-R', '.build/app/shared', 'dist/shared']);
 
   // The .app does NOT use the compiled binary (it can't be codesigned, see
   // below): it ships the stock tjs runtime + the app as plain data files in

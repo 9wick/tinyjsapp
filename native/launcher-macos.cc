@@ -550,6 +550,15 @@ static void do_terminate(webview_t, void *) {
 // the two instead; the app asked for the wider of them anyway.
 static NSURL *tiny_read_access_url(NSURL *pageURL) {
   NSURL *pageDir = [pageURL URLByDeletingLastPathComponent];
+  // A shared/ folder beside the page's folder (src/frontend + src/shared,
+  // app/frontend + app/shared in a build) is code the page imports as
+  // ../shared/x.js, so the root starts at their parent.
+  NSURL *parent = [pageDir URLByDeletingLastPathComponent];
+  BOOL isDir = NO;
+  if ([[NSFileManager defaultManager]
+          fileExistsAtPath:[[parent URLByAppendingPathComponent:@"shared"] path]
+               isDirectory:&isDir] && isDir)
+    pageDir = parent;
   if (g_read_access.empty())
     return pageDir;
   NSString *want = [[NSString stringWithUTF8String:g_read_access.c_str()]
