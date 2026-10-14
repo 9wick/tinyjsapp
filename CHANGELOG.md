@@ -4,6 +4,22 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.55.1 — 2026-10-14
+
+- **Windows: `"activation": "accessory"` keeps a normal title bar.** Hiding
+  the taskbar button also turned the window into a tool window, with a small
+  caption, no icon, no minimize or maximize, and an odd close button. The
+  window now keeps its full title bar and still has no taskbar button; the
+  same goes for `app.presence('menubar')`. With nothing on the taskbar to
+  minimize to, minimizing hides the window, and the tray (or `show()`)
+  brings it back. A showing accessory window is listed in Alt+Tab. Thanks to
+  lionel-rowe for the report (#56).
+- **Windows: `setResizable(false)` no longer grows the page.** The page came
+  out 10px wider and taller than declared, because the thinner frame's
+  spare pixels went to the page. The page now keeps its size and the
+  window's frame shrinks around it. Thanks to sheffieldnikki for the report
+  (#57).
+
 ## 0.55.0 — 2026-10-14
 
 - **`src/shared/`: code the backend and the page both import** (#58). Put
