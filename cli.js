@@ -53,6 +53,47 @@ async function copyTree(src, dest) {
   }
 }
 
+// tjs.watch on a folder: cb(rel) per change, rel relative to dir with '/'
+// separators, skipped when skip(rel). macOS (FSEvents) and Windows watch the
+// whole tree from one call, but Linux's inotify only sees a folder's direct
+// entries, so with `perDir` every subfolder gets its own watch, including
+// folders made later. Self-contained: the dev entry inlines its source for
+// the frontend reload watcher.
+async function watchTree(dir, cb, skip = () => false, perDir = false) {
+  const watchers = new Map();
+  const add = async (rel) => {
+    if (watchers.has(rel)) return;
+    const path = rel ? dir + '/' + rel : dir;
+    try {
+      watchers.set(rel, tjs.watch(path, (file) => {
+        if (!file) return;
+        const r = (rel ? rel + '/' : '') + String(file).replace(/\\/g, '/');
+        if (skip(r)) return;
+        if (perDir) sync(r);
+        cb(r);
+      }));
+    } catch { return; }
+    if (!perDir) return;
+    try {
+      for await (const e of await tjs.readDir(path)) {
+        const r = (rel ? rel + '/' : '') + e.name;
+        if (e.isDirectory && !skip(r)) await add(r);
+      }
+    } catch {}
+  };
+  // A name that changed may be a folder made (watch it and what's inside) or
+  // removed (drop its watches, so one made again later is watched afresh).
+  const sync = async (r) => {
+    let isDir = false;
+    try { isDir = (await tjs.stat(dir + '/' + r)).isDirectory; } catch {}
+    if (isDir) return add(r);
+    for (const [k, w] of watchers) {
+      if (k === r || k.startsWith(r + '/')) { try { w.close(); } catch {} watchers.delete(k); }
+    }
+  };
+  await add('');
+}
+
 // Data the app's own code reads at runtime lives in resources/ and reaches
 // it as app.paths.resources: the whole folder, or only the files and
 // directories inside it that tinyjs.json "resources" lists (per OS through
@@ -1086,7 +1127,8 @@ if (appMod.init) appMod.init(app);
     // which would otherwise reload the page twice per save.
     entry += `
 let reloadTimer = null;
-tjs.watch(FRONTEND, () => {
+${watchTree}
+await watchTree(FRONTEND, () => {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(async () => {
     try {
@@ -1096,7 +1138,7 @@ tjs.watch(FRONTEND, () => {
       console.log('tinyjs: frontend reload failed:', String(e));
     }
   }, 150);
-});
+}, undefined, ${IS_LINUX});
 `;
   }
 
@@ -2079,17 +2121,13 @@ async function cmdDev() {
       child?.kill();
     }, 150);
   };
-  tjs.watch(backendDir, (file) => {
-    if (!file) return;
-    const rel = norm(file);
-    if (skips.some((d) => rel === d || rel.startsWith(d + '/'))) return;
-    restartOn(rel);
-  });
+  await watchTree(backendDir, restartOn,
+    (rel) => skips.some((d) => rel === d || rel.startsWith(d + '/')), IS_LINUX);
   // shared/ lives beside the backend's folder, and the backend runs from a
   // copy of it, so an edit there restarts too (which reloads the page).
   const sharedDir = sharedDirFor(backendEntry);
   if (sharedDir && await exists(sharedDir)) {
-    tjs.watch(sharedDir, (file) => { if (file) restartOn(sharedDir + '/' + norm(file)); });
+    await watchTree(sharedDir, (rel) => restartOn(sharedDir + '/' + rel), undefined, IS_LINUX);
   }
 
   while (true) {

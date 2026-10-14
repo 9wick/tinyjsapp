@@ -3648,6 +3648,8 @@ for a root backend. `frontend.reload: false` drops the dev page reload.
   `hmr update` only, backend/main.ts restarts.)*
 - [x] **Linux**: same checks. inotify isn't recursive in libuv, so only
   top-level files in the backend folder restart (unchanged from before).
+  **Gap closed 2026-10-14** (`watchTree` in cli.js, per-folder watches on
+  Linux only) — see the #58 Linux entry below for the re-run.
   *(2026-10-13, Ubuntu 24.04 arm64, a shell harness counting dev's
   output per edit, 7s idle first: `src/backend/` — main.js restarts,
   nested lib/util.js does NOT (the known inotify gap, and the only one),
@@ -3687,6 +3689,30 @@ import `../shared/settings.js`; the page stores both values via
   page agree in each run. Dev restarts on a top-level shared edit AND on a
   nested `lib/` edit (Windows' watcher is recursive, unlike inotify), and
   the page comes back with the new value.)*
-- [ ] **Linux**: dev and the built binary (same TPK question; WebKitGTK
+- [x] **Linux**: dev and the built binary (same TPK question; WebKitGTK
   already allows file access from file URLs). inotify isn't recursive, so
   only top-level shared files restart dev.
+  *(2026-10-14, Ubuntu 24.04 arm64, Wayland, WebKitGTK 2.52.6; same probe
+  as Windows incl. `shared/lib/deep.js`. Dev: the page's
+  `import('../shared/settings.js')` loads from `src/frontend/` and the
+  backend logs the same values. A top-level `settings.js` edit restarts
+  and both sides come back with the new value; a nested `lib/deep.js` edit
+  does NOT restart (the known inotify gap). Built binary, run from a
+  relocated `dist/` in a path with spaces (just the binary + `launcher`):
+  extracts to `/tmp/tjs-<buildid>/` with `shared/` (and `shared/lib/`)
+  beside `frontend/`; page and backend agree.)*
+- [x] **Linux, subfolder edits in dev** (fixes the inotify gap above and
+  in #53): `watchTree` gives each subfolder its own watch on Linux, and
+  watches a folder made while dev runs (it drops the watches when the
+  folder is removed). *(2026-10-14, same VM, harness counting dev's
+  output, 8s idle first: `shared/lib/deep.js` restarts and the page shows
+  the new value; `src/backend/lib/util.js` restarts;
+  `src/frontend/css/app.css` reloads without a restart;
+  `mkdir -p shared/new/deeper` then editing a file in it restarts.
+  Skips still hold: old `src/main.js` layout, `src/frontend/css` edit
+  reloads only, `src/lib` restarts; root `"./main.js"`, no restarts while
+  idle or after a restart (no `.build` loop), `lib/` restarts, a frontend
+  edit reloads only.)*
+- [ ] **macOS + Windows, no regression from `watchTree`**: there
+  `perDir` is false, so it's the one `tjs.watch` as before. Re-run one
+  nested backend edit and one nested frontend edit in dev to be sure.

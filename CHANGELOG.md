@@ -14,6 +14,13 @@ https://tinyjs.app/changelog.
   and editing it in dev restarts the app. The layout before 0.52
   (`src/main.js`) gets a hint to move the backend into `src/backend/`
   instead.
+- **Linux: `tinyjs dev` sees edits in subfolders.** Linux file watching
+  only reports a folder's own files, so editing `src/backend/lib/util.js`
+  never restarted the app and editing `src/frontend/css/app.css` never
+  reloaded the page. You had to save a top-level file or restart dev by
+  hand. Dev now watches every subfolder of the backend, `shared/` and
+  frontend folders, including folders you add while it runs. macOS and
+  Windows already watched the whole tree.
 
 ## 0.54.0 — 2026-10-14
 
