@@ -174,7 +174,7 @@
   <section>
 
     <div class="rel">
-      <h2>Unreleased</h2>
+      <h2>0.54.0 <span class="date">2026-10-14</span></h2>
       <ul>
         <li><b><code>executables/</code>: sidecar programs that ship with the app.</b> Put the programs your backend launches (a Go or Rust CLI, a <code>bun build --compile</code> binary, ffmpeg) in an <code>executables/</code> folder. It works like <code>resources/</code>: the whole folder ships, <code>"executables": [...]</code> (per OS through the <code>macos</code> / <code>windows</code> / <code>linux</code> blocks) narrows it, and <code>app.paths.executables</code> (<code>(await tiny.app.paths()).executables</code> in the page) is where to <code>tjs.spawn</code> them from, or <code>null</code> without any. A build ships only its own OS's binaries, so every OS's can live there together; <code>executables/&lt;os&gt;/</code> and <code>executables/&lt;os&gt;-arm64/</code> or <code>-x86_64/</code> override files by name for that OS and CPU. On macOS they go in <code>Contents/Helpers/</code> and are signed with the app's identity, with the hardened runtime under a Developer ID, so a notarized app can carry them; <code>"macos": { "executableEntitlements": { "my-cli": [...] } }</code> gives a JIT sidecar (Bun, Deno, Node/pkg) the <code>allow-jit</code> it needs to run there. The build warns when a macOS sidecar can't run on every Mac the app runs on. Thanks to Luiz Américo, Sam LABBE and Blatman for the design discussion (#8).</li>
         <li><b>A backend at the project root no longer copies <code>resources/</code> and <code>assets/</code> into the app's sources</b> (<code>"backend": "main.js"</code>); they ship only through their own paths.</li>

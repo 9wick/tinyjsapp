@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.54.0 — 2026-10-14
 
 - **`executables/`: sidecar programs that ship with the app.** Put the
   programs your backend launches (a Go or Rust CLI, a `bun build --compile`
