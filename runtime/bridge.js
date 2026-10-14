@@ -705,7 +705,7 @@ async function systemCapabilities(query, aiStatus) {
     // there at all and `rssi` only as a 0-100 quality percentage. Route and
     // caveats in TODO-windows.md.
     wifi: false,
-    // app.attention (FlashWindowEx) and app.presence (WS_EX_TOOLWINDOW) both
+    // app.attention (FlashWindowEx) and app.presence (an owner window) both
     // work. app.badge renders an overlay HICON at runtime and hands it to
     // ITaskbarList3::SetOverlayIcon; it was declared false while it existed
     // only as compiled-but-unrun code, and was SEEN on Windows 11 26200 on

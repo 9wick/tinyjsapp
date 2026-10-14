@@ -85,7 +85,8 @@ names refer to the protocol table in the README; Windows handlers live in
 - [x] **Chrome transparent + backdrop** — `DefaultBackgroundColor` +
       DWM system backdrops (vibrancy 'hud'/'popover'/'menu' → acrylic, other
       materials → mica; Win11 22H2+, silent no-op earlier).
-- [x] **Accessory mode polish** — `WS_EX_TOOLWINDOW` (no taskbar button);
+- [x] **Accessory mode polish** — a hidden owner window (no taskbar button;
+      was `WS_EX_TOOLWINDOW` until #56 — that also gave a tool-window caption);
       `setDockVisible` toggles the taskbar button.
 
 ## Still open

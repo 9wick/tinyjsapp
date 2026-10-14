@@ -8,6 +8,37 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Windows accessory / `presence('menubar')` kept the tool-window caption (#56, 2026-10-14)
+
+The taskbar button is now dropped by giving main a never-shown OWNER
+(`set_taskbar_button`) instead of `WS_EX_TOOLWINDOW`, so the title bar stays
+normal. With no button to minimize to, minimize HIDES main (title-bar button
+via WM_SYSCOMMAND, and `win.minimize()`); `show` un-minimizes a window that
+got minimized some other way. Written on macOS.
+
+- [ ] **Windows: compiles**
+- [ ] **Windows: accessory title bar** — `"activation": "accessory"`, show
+  from the tray: icon, minimize, maximize and a normal close are all there;
+  no taskbar button; not in Alt+Tab.
+- [ ] **Windows: minimize hides** — the title-bar button and `win.minimize()`
+  both hide; the tray's show brings it back restored, not as a caption strip.
+- [ ] **Windows: Win+M then show** — whatever Win+M leaves, showing from the
+  tray brings the window back restored.
+- [ ] **Windows: presence round-trip** — `presence('menubar')` drops the
+  button with the caption unchanged; `presence('normal')` brings the button
+  back, and minimize goes to the taskbar again. Re-run the app-surface page.
+
+## Windows `setResizable(false)` grew the page +10x+10 (#57, 2026-10-14)
+
+Flipping WS_THICKFRAME held the OUTER rect, so the thick-vs-thin border
+difference went to the client. The op now goes through
+`set_style_bits_keep_client`, like `chrome.frame` does. Written on macOS.
+
+- [ ] **Windows: compiles**
+- [ ] **Windows: page keeps its size** — declare 400x300, call
+  `setResizable(false)` then `(true)`; `innerWidth`/`innerHeight` stay
+  400x300 both times, and the edges stop/start resizing.
+
 ## Windows first load still blank, intermittently (#32 reopened, 2026-10-14)
 
 Reported on v0.52.0 with `preact-ts` (issuecomment-6170185946): the trace
