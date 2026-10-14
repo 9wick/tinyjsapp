@@ -103,6 +103,30 @@ were of the old layout; the CLI paths changed, so each OS needs a re-run.
 - [x] Linux arm64 + Wayland, 2026-10-13: `check.py` PASS on Ubuntu 24.04
   aarch64, GNOME Wayland session (GDK's default backend, no `GDK_BACKEND`).
 
+## Bundled executables (`executables/<os>/`, #8)
+
+Reproducible checks: `python3 -u test/executables/check.py` and
+`tsc --noEmit --strict --skipLibCheck --lib ES2022,DOM test/executables/types.ts`
+(README in that folder). Built 2026-10-14 on macOS; the Windows/Linux paths
+(`dist/executables/`, PE/ELF checks, dev copies on Windows instead of links,
+the Linux publish `chmod -R +x`) were written there and never run.
+
+- [x] macOS 27.0 arm64, 2026-10-14: `check.py` PASS (root + per-OS/arch
+  overrides + `"executables"` lists), ad-hoc and with
+  `TINYJS_TEST_SIGN_IDENTITY` (Developer ID): Helpers signed with the
+  hardened runtime, a bun-compiled sidecar dies without `allow-jit` and runs
+  with the documented entitlements, bundle verifies.
+- [ ] macOS notarization of an app with a sidecar (`tinyjs notarize`) —
+  Apple accepts it and the stapled app spawns the sidecar on another Mac.
+- [ ] macOS `--universal` / `--arch x86_64` builds skip / pick
+  `macos-x86_64/` and the slice warning holds.
+- [ ] Windows: `check.py` PASS — PE check, `dist/executables/`, publish zip,
+  spawn from a relocated dist. Also: a sidecar with a `.dll` beside it.
+- [ ] Windows: auto-update installs a new sidecar (the folder swap carries
+  `executables/`).
+- [ ] Linux x86_64 (22.04 container) and arm64: `check.py` PASS — ELF and
+  `#!` scripts, exec bit in `dist/` and the publish tarball.
+
 ## App assets (`assets/`), help book, Help menu
 
 - [x] macOS 27.0 arm64, 2026-10-13, Developer ID build of a `tinyjs new`
