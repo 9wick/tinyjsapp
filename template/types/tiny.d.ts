@@ -903,11 +903,14 @@ declare interface Tiny {
      *  Windows and Linux also show an "All files" escape hatch. Omit for
      *  no filter. `saveFile` appends the first extension when the name is
      *  typed without one (and the type filter, not "All files", is the one
-     *  selected) — on Windows and Linux; macOS's own panel decides there. */
+     *  selected) — on Windows and Linux; macOS's own panel decides there.
+     *  `saveFile`'s `name` pre-fills the file name field: a name, not a path
+     *  (any folder part is dropped). Without it macOS shows "Untitled" and
+     *  Windows and Linux an empty field. */
     openFile(opts?: { types?: string[] }): Promise<string | null>;
     openFiles(opts?: { types?: string[] }): Promise<string[] | null>;
     pickFolder(): Promise<string | null>;
-    saveFile(opts?: { types?: string[] }): Promise<string | null>;
+    saveFile(opts?: { types?: string[]; name?: string }): Promise<string | null>;
     alert(message: string, detail?: string): Promise<true>;
     confirm(message: string, opts?: { detail?: string; ok?: string; cancel?: string }): Promise<boolean>;
     prompt(message: string, opts?: { default?: string; ok?: string; cancel?: string }): Promise<string | null>;
