@@ -4,6 +4,17 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.53.1 — 2026-10-14
+
+- **`tinyjs new` no longer tells you to run `npm install` and `npm run dev`.**
+  That advice was create-vite's own closing message, printed just before
+  ours; it is now hidden, so the only next steps shown are tinyjs's (`cd`,
+  then `tinyjs dev`). Thanks to Raymond Camden for the report (#43).
+- **Docs: the devtools key on macOS.** `"debug": true` opens devtools with
+  F12 on every OS, and ⌥⌘I also works on macOS, where F12 needs fn on most
+  keyboards. `"debug": "open"` keeps the inspector open through page
+  reloads and `tinyjs dev` backend restarts (#44).
+
 ## 0.53.0 — 2026-10-13
 
 - **`resources/`: data files that ship with the app.** Put files your code
