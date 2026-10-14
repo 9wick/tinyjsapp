@@ -1871,6 +1871,44 @@ static void set_style_bits_keep_client(HWND hwnd, LONG bits, bool on) {
                SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
 }
 
+// Taskbar button on/off for main (accessory activation, app.presence) without
+// touching its chrome. This used to be WS_EX_TOOLWINDOW, which also buys the
+// tool-window look: small caption, no icon, no min/max, a thin close (#56).
+// The shell's other documented rule is that an OWNED top-level window gets no
+// button, so main is handed a never-shown owner instead. It stays in Alt+Tab
+// while shown (Alt+Tab lists an invisible owner's last visible popup; only
+// WS_EX_TOOLWINDOW keeps a window out) — seen and accepted on #56.
+// Main is created by the webview library, so the owner can only be retrofitted
+// through GWLP_HWNDPARENT; the "half-works" caveat on win.open's parent is
+// about z-order against a VISIBLE owner, which this one never is.
+static HWND g_taskbar_owner = nullptr;
+static bool g_no_taskbar = false; // main currently has no taskbar button
+
+static void set_taskbar_button(bool show) {
+  if (!show && !g_taskbar_owner) {
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"TinyjsTaskbarOwner";
+    RegisterClassW(&wc);
+    g_taskbar_owner =
+        CreateWindowExW(0, L"TinyjsTaskbarOwner", L"", WS_OVERLAPPED, 0, 0, 0,
+                        0, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!g_taskbar_owner)
+      return;
+  }
+  g_no_taskbar = !show;
+  // The shell only re-reads a window's button when it is shown, so flip the
+  // owner while hidden.
+  bool visible = IsWindowVisible(g_hwnd);
+  if (visible)
+    ShowWindow(g_hwnd, SW_HIDE);
+  SetWindowLongPtrW(g_hwnd, GWLP_HWNDPARENT,
+                    show ? 0 : (LONG_PTR)g_taskbar_owner);
+  if (visible)
+    ShowWindow(g_hwnd, SW_SHOWNA);
+}
+
 static void set_click_through(bool on) {
   LONG ex = GetWindowLongW(g_hwnd, GWL_EXSTYLE);
   if (on) {
@@ -1991,13 +2029,20 @@ static void do_winop(webview_t, void *arg) {
     ShowWindow(hwnd, SW_HIDE);
   } else if (starts("show")) {
     bool activate = op != "show 0";
+    // A window minimized while it had no taskbar button by some route we
+    // don't intercept (Win+M) would come back still minimized — un-minimize.
+    if (IsIconic(hwnd))
+      ShowWindow(hwnd, activate ? SW_RESTORE : SW_SHOWNOACTIVATE);
     ShowWindow(hwnd, activate ? SW_SHOW : SW_SHOWNA);
     if (activate)
       SetForegroundWindow(hwnd);
   } else if (op == "center") {
     do_center(hwnd);
   } else if (op == "minimize") {
-    ShowWindow(hwnd, SW_MINIMIZE);
+    // No taskbar button = nowhere to minimize TO (an owned window collapses
+    // to a caption strip at the desktop's bottom-left); hide instead, as the
+    // title-bar button does — see WM_SYSCOMMAND.
+    ShowWindow(hwnd, main && g_no_taskbar ? SW_HIDE : SW_MINIMIZE);
   } else if (op == "restore") {
     ShowWindow(hwnd, SW_RESTORE);
   } else if (op == "zoom") {
@@ -2031,7 +2076,11 @@ static void do_winop(webview_t, void *arg) {
     SetWindowPos(hwnd, op.substr(6) == "1" ? HWND_TOPMOST : HWND_NOTOPMOST,
                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
   } else if (starts("resizable ")) {
-    set_style_bits(hwnd, WS_THICKFRAME | WS_MAXIMIZEBOX, op.substr(10) == "1");
+    // Keep the PAGE's size: WS_THICKFRAME's border is wider than the thin
+    // frame left without it, so holding the outer rect handed the difference
+    // to the client — setResizable(false) grew the page +10x+10 on Win10 (#57).
+    set_style_bits_keep_client(hwnd, WS_THICKFRAME | WS_MAXIMIZEBOX,
+                               op.substr(10) == "1");
   } else if (starts("clickthrough ") && main) {
     set_click_through(op.substr(13) == "1");
   } else if (starts("level ")) {
@@ -2066,18 +2115,9 @@ static void do_winop(webview_t, void *arg) {
   } else if (starts("hideonclose ") && main) {
     g_hide_on_close = op.substr(12) == "1";
   } else if (starts("presence ") && main) {
-    // app.presence maps to the taskbar button: hidden = tool window (the
-    // tray-only app look). Must hide while flipping the style or the shell
-    // ignores it.
-    bool show = op.substr(9) == "1";
-    bool visible = IsWindowVisible(g_hwnd);
-    if (visible)
-      ShowWindow(g_hwnd, SW_HIDE);
-    LONG ex = GetWindowLongW(g_hwnd, GWL_EXSTYLE);
-    ex = show ? (ex & ~WS_EX_TOOLWINDOW) : (ex | WS_EX_TOOLWINDOW);
-    SetWindowLongW(g_hwnd, GWL_EXSTYLE, ex);
-    if (visible)
-      ShowWindow(g_hwnd, SW_SHOWNA);
+    // app.presence maps to the taskbar button (menubar = none, the tray-only
+    // app look) — see set_taskbar_button.
+    set_taskbar_button(op.substr(9) == "1");
   }
   // allspaces: no Windows equivalent — ignored.
   delete req;
@@ -6723,6 +6763,15 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
     }
     break;
   }
+  case WM_SYSCOMMAND:
+    // Minimize with no taskbar button (accessory / presence('menubar')): the
+    // tray or the app is the way back, so hide rather than leave an owned
+    // window's caption strip at the desktop's bottom-left (#56).
+    if ((wp & 0xFFF0) == SC_MINIMIZE && hwnd == g_hwnd && g_no_taskbar) {
+      ShowWindow(hwnd, SW_HIDE);
+      return 0;
+    }
+    break;
   case WM_SETFOCUS:
     // Same as the secondaries: activation stops at the host window unless the
     // page is handed the keyboard explicitly.
@@ -8661,8 +8710,7 @@ static int run(int argc, char **argv) {
     if (n > 0 && strcmp(act, "accessory") == 0) {
       g_accessory = true;
       ShowWindow(g_hwnd, SW_HIDE);
-      SetWindowLongW(g_hwnd, GWL_EXSTYLE,
-                     GetWindowLongW(g_hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW);
+      set_taskbar_button(false);
     }
   }
 

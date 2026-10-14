@@ -8,6 +8,63 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Windows accessory / `presence('menubar')` kept the tool-window caption (#56, 2026-10-14)
+
+The taskbar button is now dropped by giving main a never-shown OWNER
+(`set_taskbar_button`) instead of `WS_EX_TOOLWINDOW`, so the title bar stays
+normal. With no button to minimize to, minimize HIDES main (title-bar button
+via WM_SYSCOMMAND, and `win.minimize()`); `show` un-minimizes a window that
+got minimized some other way. Written on macOS.
+
+- [x] **Windows: compiles** — MinGW g++ 16.1, the setup.ps1 command; no new
+  warnings under `-Wall`.
+- [x] **Windows: accessory title bar** — `"activation": "accessory"`, show
+  from the tray: icon, minimize, maximize and a normal close are all there;
+  no taskbar button. ~~Not in Alt+Tab~~ — **it IS in Alt+Tab while shown**
+  (seen by hand 2026-10-14): Alt+Tab lists the last visible popup of an
+  invisible root owner, so the owner trick only drops the taskbar button.
+  Only WS_EX_TOOLWINDOW keeps a window out of Alt+Tab, and that is #56's
+  caption. Accepted: a showing accessory window can be Alt+Tabbed to;
+  hidden, it isn't listed. **SEEN** (screenshot): full caption
+  with icon + min/max/close, no taskbar button; Win32: owned (GW_OWNER =
+  TinyjsTaskbarOwner), no WS_EX_TOOLWINDOW, MINIMIZEBOX/MAXIMIZEBOX kept.
+  *(2026-10-14, Windows 11 arm64 26200 at 200%, `tinyjs dev` of a probe app driven from Python: tray clicks posted as the shell callback to main — with a main window the tray icon lives on main, not a TinyjsHost — and state read via Win32; screenshots.)*
+- [x] **Windows: minimize hides** — the title-bar button and `win.minimize()`
+  both hide; the tray's show brings it back restored, not as a caption strip.
+  **SEEN:** WM_SYSCOMMAND SC_MINIMIZE (what the button sends) → hidden, not
+  iconic; tray click → visible, 800x600 client, same position. Same for
+  `app.minimize()`.
+- [x] **Windows: Win+M then show** — whatever Win+M leaves, showing from the
+  tray brings the window back restored. **Stand-in SEEN:** minimized from
+  outside with ShowWindow(SW_MINIMIZE) (no WM_SYSCOMMAND, so not
+  intercepted) it sits as a 314x50 caption strip at the bottom-left; a tray
+  click brings it back restored (not iconic, 800x600 client). Real Win+M,
+  by hand: it leaves the window alone (no state change logged) — Win+M
+  minimizes taskbar-button windows, as it skipped the tool window before;
+  the tray click then works as usual. The title-bar minimize by hand: hidden,
+  and the tray brings it back at the same rect (twice).
+- [x] **Windows: presence round-trip** — `presence('menubar')` drops the
+  button with the caption unchanged; `presence('normal')` brings the button
+  back, and minimize goes to the taskbar again. Re-run the app-surface page.
+  **SEEN** in the probe and in `test/appsurface.html` (all results ok;
+  screenshots in each hold): menubar → no button, owner set, caption
+  unchanged; normal → button back, owner cleared, the title-bar minimize
+  goes to the taskbar (iconic at -32000) and `show` restores it.
+
+## Windows `setResizable(false)` grew the page +10x+10 (#57, 2026-10-14)
+
+Flipping WS_THICKFRAME held the OUTER rect, so the thick-vs-thin border
+difference went to the client. The op now goes through
+`set_style_bits_keep_client`, like `chrome.frame` does. Written on macOS.
+
+- [x] **Windows: compiles**
+- [x] **Windows: page keeps its size** — declare 400x300, call
+  `setResizable(false)` then `(true)`; `innerWidth`/`innerHeight` stay
+  400x300 both times, and the edges stop/start resizing. **SEEN:**
+  false/true twice: `innerWidth`×`innerHeight` 400x300 every time, client
+  800x600 (200%), the outer rect shrinking 826x671 → 806x651 and back
+  instead; THICKFRAME + MAXIMIZEBOX cleared and restored. *(2026-10-14, Windows 11 arm64 26200 at 200%, `tinyjs dev` of a probe app driven from Python: tray clicks posted as the shell callback to main — with a main window the tray icon lives on main, not a TinyjsHost — and state read via Win32; screenshots.)*
+
 ## Windows first load still blank, intermittently (#32 reopened, 2026-10-14)
 
 Reported on v0.52.0 with `preact-ts` (issuecomment-6170185946): the trace
