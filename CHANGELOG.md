@@ -4,6 +4,16 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.53.2 — 2026-10-14
+
+- **Windows: the first window no longer sometimes stays blank in
+  `tinyjs dev`.** The fix in 0.48.0 made the first page load wait until
+  WebView2 had finished an internal step before sending it, but a
+  freshly started WebView2 could still silently drop it, leaving an empty
+  window. The launcher now checks a second later that the load actually
+  started, and sends it again if it didn't (up to 4 tries). Wrapped sites
+  benefit too. Thanks to lionel-rowe for the report and the trace (#32).
+
 ## 0.53.1 — 2026-10-14
 
 - **`tinyjs new` no longer tells you to run `npm install` and `npm run dev`.**
