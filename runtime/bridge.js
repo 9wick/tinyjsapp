@@ -887,11 +887,16 @@ const extList = (types) => (Array.isArray(types) ? types : [])
   .filter((t) => /^[a-z0-9][a-z0-9+._-]*$/.test(t))
   .join(',');
 
+// saveFile's suggested name: a file name, not a path. Every launcher already
+// takes one (the #36 panel), but a slash would let it steer the panel's folder
+// on Windows (SetFileName navigates), so only the last segment survives.
+const fileName = (n) => one(n).split(/[\\/]/).pop().trim();
+
 const DIALOG_OPS = {
   'dialog.openFile': { op: 'open', args: (p) => [extList(p.types)] },
   'dialog.openFiles': { op: 'openmulti', args: (p) => [extList(p.types)] },
   'dialog.pickFolder': { op: 'dir', args: () => [] },
-  'dialog.saveFile': { op: 'save', args: (p) => [extList(p.types)] },
+  'dialog.saveFile': { op: 'save', args: (p) => [extList(p.types), fileName(p.name)] },
   // A dialog's detail is the one field where line breaks earn their keep — a
   // list of what's missing, or a command on a line of its own. The wire is
   // newline-delimited, so they ride across escaped and the launcher puts them

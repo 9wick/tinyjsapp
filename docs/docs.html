@@ -1056,6 +1056,8 @@ await <b>tiny.dialog.saveFile</b>();      <i>// path | null</i>
 <i>// Windows and Linux keep an "All files" entry; saveFile appends the first</i>
 <i>// extension when the typed name has none</i>
 await <b>tiny.dialog.openFile</b>({ types: ['md', 'markdown', 'txt'] });
+<i>// name: pre-fill the save panel's file name (a name, not a path)</i>
+await <b>tiny.dialog.saveFile</b>({ types: ['docx'], name: 'report' });   <i>// …/report.docx</i>
 await <b>tiny.dialog.alert</b>(message, detail);
 await <b>tiny.dialog.confirm</b>(message, { detail, ok, cancel });   <i>// true | false</i>
 await <b>tiny.dialog.prompt</b>(message, { default, ok, cancel });   <i>// string | null</i></pre>

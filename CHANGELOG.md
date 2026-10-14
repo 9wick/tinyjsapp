@@ -4,6 +4,17 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.56.0 — 2026-10-14
+
+- **`tiny.dialog.saveFile({ name })` pre-fills the file name.**
+  `saveFile({ types: ['docx'], name: 'report' })` opens the save panel with
+  `report.docx` in the name field instead of "Untitled" (macOS) or an empty
+  field (Windows, Linux), so an app can suggest the name the user would
+  otherwise type every time. It is a file name, not a path: any folder part
+  is dropped, so a page can't use it to open the panel somewhere else. The
+  panel opens in its usual folder. Verified on all three platforms. Thanks
+  to Blatman for the request (#59).
+
 ## 0.55.1 — 2026-10-14
 
 - **Windows: `"activation": "accessory"` keeps a normal title bar.** Hiding

@@ -8,6 +8,46 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `dialog.saveFile({ name })` pre-fills the file name (#59, 2026-10-14)
+
+The bridge now forwards `name` (basename only; any folder part is dropped,
+since Windows' SetFileName would navigate to it) as the save arm's existing
+second arg, the one the #36 backend panel already used. Linux's "start in
+Downloads" moved from "has a name" to "is the backend's q<digits> panel", so
+a page's named panel keeps GTK's usual folder.
+
+- [x] **macOS** — `{ types: ['docx'], name: 'mydocument' }` shows
+  `mydocument.docx`; `{ name: '../../etc/evil.txt' }` shows `evil.txt` in
+  the last-used folder. *(seen by hand 2026-10-14)*
+- [x] **Windows** — same two calls; the name is pre-filled, `.docx` is added
+  on save, and the folder is NOT `../../etc`. *(2026-10-14, Windows 11
+  arm64, `tinyjs dev` with a rebuilt launcher; the dialog's file-name field
+  and address bar read via Win32, Save pressed with BM_CLICK on its own
+  button.)* `{ types: ['docx'], name: 'mydocument' }`: field
+  `mydocument.docx`, page got `…\Downloads\mydocument.docx`.
+  `'../../etc/evil.txt'` → field `evil.txt`, and `'..\..\Windows\win.txt'`
+  → `win.txt`; both in the last-used folder (Downloads), not steered.
+  Without a name the Windows field is EMPTY (macOS says "Untitled"), so
+  Save does nothing until one is typed — as before; the tiny.js comment
+  that promised 'Untitled' now says so.
+- [x] **Linux** — same two calls, plus a wrapped-page `printToPDF` outside
+  the write roots still opens its panel in Downloads (#36 unchanged).
+  *(2026-10-14, Ubuntu 24.04 arm64, `GDK_BACKEND=x11`, launcher rebuilt by
+  `tinyjs dev`; a wrapped `http://127.0.0.1:8859` page with `dialog.*`,
+  `win.*`, `store.*`, `app.paths` granted; panels photographed with xwd and
+  seen by hand, Save clicked by hand. `{ types: ['docx'], name:
+  'mydocument' }`: name `mydocument`, filter `*.docx`, opens in GTK's
+  usual folder (dev's cwd), NOT Downloads; returned `…/mydocument.docx`.
+  `{ name: '../../etc/evil.txt' }`: shows `evil.txt` in that same folder;
+  returned `<cwd>/evil.txt`. `printToPDF('~/probe59-outside.pdf')`: panel
+  opens in `~/Downloads` with `probe59-outside.pdf` filled in; Save wrote
+  a real PDF there. Driving note: the launcher's XTest `keystroke('return')`
+  can't answer these panels while a Wayland-native window (the terminal)
+  holds focus — `_NET_ACTIVE_WINDOW` is 0x0 and mutter marks the modal
+  DEMANDS_ATTENTION, so the key goes to the terminal. The #36 run got away
+  with it; don't rely on it, and don't send keys you wouldn't want typed
+  into the terminal.)*
+
 ## Windows accessory / `presence('menubar')` kept the tool-window caption (#56, 2026-10-14)
 
 The taskbar button is now dropped by giving main a never-shown OWNER

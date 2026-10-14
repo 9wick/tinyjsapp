@@ -879,6 +879,9 @@ const dest  = await tiny.dialog.saveFile();     // path | null
 // COMDLG_FILTERSPEC on Windows, GtkFileFilter on Linux; the latter two add
 // an "All files" escape hatch). Omit types and everything is selectable.
 const md = await tiny.dialog.openFile({ types: ['md', 'markdown', 'txt'] });
+// saveFile({ name }) pre-fills the file name: a name, not a path (any
+// folder part is dropped). With types, the extension goes on as usual.
+const doc = await tiny.dialog.saveFile({ types: ['docx'], name: 'report' });  // …/report.docx
 
 // native system dialogs (NSAlert)
 await tiny.dialog.alert('Heads up', 'optional detail');

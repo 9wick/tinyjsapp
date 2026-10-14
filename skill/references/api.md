@@ -215,6 +215,9 @@ await tiny.dialog.pickFolder();   // path | null       saveFile() -> path|null
 // OS (Linux: only with the type filter selected; its overwrite prompt sees
 // the name as typed).
 await tiny.dialog.openFile({ types: ['md', 'markdown', 'txt'] });
+// saveFile({ name }) pre-fills the file name field (a name, not a path;
+// any folder part is dropped). The extension rule above still applies.
+await tiny.dialog.saveFile({ types: ['docx'], name: 'report' });
 await tiny.dialog.alert(message, detail);
 await tiny.dialog.confirm(message, { detail, ok, cancel });   // true | false
 await tiny.dialog.prompt(message, { default, ok, cancel });   // string | null

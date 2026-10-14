@@ -174,6 +174,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.56.0 <span class="date">2026-10-14</span></h2>
+      <ul>
+        <li><b><code>tiny.dialog.saveFile({ name })</code> pre-fills the file name.</b> <code>saveFile({ types: ['docx'], name: 'report' })</code> opens the save panel with <code>report.docx</code> in the name field instead of "Untitled" (macOS) or an empty field (Windows, Linux), so an app can suggest the name the user would otherwise type every time. It is a file name, not a path: any folder part is dropped, so a page can't use it to open the panel somewhere else. The panel opens in its usual folder. Verified on all three platforms. Thanks to Blatman for the request (#59).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.55.1 <span class="date">2026-10-14</span></h2>
       <ul>
         <li><b>Windows: <code>"activation": "accessory"</code> keeps a normal title bar.</b> Hiding the taskbar button also turned the window into a tool window, with a small caption, no icon, no minimize or maximize, and an odd close button. The window now keeps its full title bar and still has no taskbar button; the same goes for <code>app.presence('menubar')</code>. With nothing on the taskbar to minimize to, minimizing hides the window, and the tray (or <code>show()</code>) brings it back. A showing accessory window is listed in Alt+Tab. Thanks to lionel-rowe for the report (#56).</li>
