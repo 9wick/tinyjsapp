@@ -7,7 +7,7 @@ runtime and platform launcher. It also checks a `TINYJS_LAUNCHER` dev override
 when set; packaged builds still require the bundled launcher.
 
 Files must be non-empty regular files, with executable permission bits on
-macOS/Linux. Missing or unreadable files and missing executable bits produce
+macOS/Linux. Missing or inaccessible paths and missing executable bits produce
 `FAIL` messages with recovery instructions. Exit status is **1** for these
 errors or unsupported arguments, **0** when the file checks pass. Notes and
 warnings do not change that status.

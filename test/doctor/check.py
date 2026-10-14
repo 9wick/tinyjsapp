@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory(prefix='tinyjs doctor ') as tmp:
     (install / 'bin').mkdir(parents=True)
     (install / 'native').mkdir()
     shutil.copy2(TOOL / 'cli.js', install / 'cli.js')
+    shutil.copytree(TOOL / 'runtime', install / 'runtime')
     shutil.copy2(TOOL / 'bin' / RUNTIME, install / 'bin' / RUNTIME)
     shutil.copy2(TOOL / 'native' / LAUNCHER, install / 'native' / LAUNCHER)
     (install / 'VERSION').write_text('0.56.0\n')
