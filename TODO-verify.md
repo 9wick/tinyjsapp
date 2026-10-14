@@ -8,6 +8,26 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Windows first load still blank, intermittently (#32 reopened, 2026-10-14)
+
+Reported on v0.52.0 with `preact-ts` (issuecomment-6170185946): the trace
+ends at `NAVQ n1 main http://127.0.0.1:5173/` → `NAVR n1 allow` with no
+`NAV` after it, so the re-issue went out (or was due to) and no
+NavigationStarting ever followed: WebView2 swallowed it even after the
+cancel's completion. Fix: every re-issue arms a 1s verify; if nothing at all
+has started in that window by then, it is sent again (4 tries total). A
+retry adds a use to the allow-once marker, so a late start of the swallowed
+attempt plus the retry both pass without a second ask. Written on macOS,
+not compiled locally (CI builds only on tags).
+
+- [ ] **Windows: compiles** (first tagged build).
+- [ ] **Windows: dev server first load** — `preact-ts` and `react-ts`,
+  `TINYJS_DEBUG=1 tinyjs dev` launched ~10 times: every run reaches
+  `NAV … commit` and paints. Ideally catch one run where the trace shows
+  the retry (a ~1s gap between `NAVR` and `NAV`).
+- [ ] **Windows: no double ask** — wrapped site (`"url"`) first load,
+  reload, and a link: exactly one `NAVQ` per navigation, as before.
+
 ## Bundled data resources (`resources/`)
 
 Reproducible checks: `python3 -u test/resources/check.py` and
