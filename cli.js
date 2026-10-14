@@ -3065,6 +3065,53 @@ async function cmdVersion() {
   console.log('tinyjs ' + v + ' (txiki.js ' + tjs.version + ')');
 }
 
+// Availability checks only: never launch a window, rebuild, or contact a server.
+async function cmdDoctor() {
+  if (args.length) fail('usage: tinyjs doctor (no arguments)');
+  await cmdVersion();
+  console.log('Platform: ' + EXEC_OS + ' (' + (globalThis.navigator?.platform ?? 'unknown') + ')');
+  console.log('CPU: ' + (tjs.system?.cpus?.[0]?.model || 'unknown'));
+  console.log('Installation: ' + TOOL_DIR);
+  console.log('Running runtime: ' + tjs.exePath);
+  let errors = 0;
+  async function checkFile(label, path, fix) {
+    try {
+      const st = await tjs.stat(path);
+      if (!st.isFile || !st.size)
+        throw new Error('expected a non-empty regular file');
+      if (!IS_WIN && !(st.mode & 0o111))
+        throw new Error('no executable permission bits; run chmod +x on this file');
+      console.log('OK: ' + label + ': ' + path);
+    } catch (e) {
+      errors++;
+      console.log('FAIL: ' + label + ': ' + path + ' (' + String(e) + ')');
+      console.log('      ' + fix);
+    }
+  }
+  const restore = 'Release install: reinstall tinyjs using the README installation instructions. ' +
+    'Source checkout: run ' + (IS_WIN ? 'setup.ps1' : './setup.sh') + ' from the installation directory.';
+  await checkFile('Bundled runtime', TOOL_DIR + 'bin/' + (IS_WIN ? 'tjs.exe' : 'tjs'), restore);
+  const launcher = TOOL_DIR + 'native/' + (IS_WIN ? 'launcher-win.exe' : IS_LINUX ? 'launcher-linux' : 'launcher-macos');
+  await checkFile('Bundled launcher', launcher, restore);
+  if (tjs.env.TINYJS_LAUNCHER) {
+    console.log('NOTE: TINYJS_LAUNCHER overrides the launcher for dev; builds still use the bundled launcher.');
+    await checkFile('Dev launcher override', tjs.env.TINYJS_LAUNCHER,
+      'Correct or unset TINYJS_LAUNCHER before running tinyjs dev.');
+  }
+  if (IS_WIN) {
+    console.log('WARN: WebView2 Runtime is not checked. If windows fail to open, install the Microsoft Edge WebView2 Evergreen Runtime (see README).');
+  } else if (IS_LINUX) {
+    console.log('WARN: WebKitGTK and shared libraries are not checked. Install the WebKitGTK 4.1 runtime (Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-0; openSUSE: sudo zypper install libwebkit2gtk-4_1-0).');
+    if (!tjs.env.DISPLAY && !tjs.env.WAYLAND_DISPLAY)
+      console.log('WARN: neither DISPLAY nor WAYLAND_DISPLAY is set. Run tinyjs dev from a graphical desktop session.');
+  } else {
+    console.log('NOTE: macOS supplies WebKit; no compiler is required for a release install.');
+  }
+  console.log('NOTE: file availability does not verify binary architecture, shared libraries, permissions enforced by the OS, or that a window can open.');
+  console.log('doctor: ' + errors + ' error(s). No files changed.');
+  tjs.exit(errors ? 1 : 0);
+}
+
 // Apple-Silicon-first: the bundled tjs runtime is arm64, so an app built or run
 // on an Intel Mac won't launch on Apple Silicon (and vice-versa). Heads-up for
 // devs — non-fatal, since local dev with the x86_64 build still works. Apple
@@ -3087,6 +3134,7 @@ switch (cmd) {
   case 'new': await cmdNew(); break;
   case 'wrap': await cmdWrap(); break;
   case 'dev': await cmdDev(); break;
+  case 'doctor': await cmdDoctor(); break;
   case 'build': await cmdBuild(); break;
   case 'publish': await cmdPublish(); break;
   case 'notarize': await cmdNotarize(); break;
@@ -3126,6 +3174,7 @@ usage:
   tinyjs update       update the tinyjs CLI itself (--check: only report,
                       --dry-run: print what it would run)
   tinyjs uninstall    remove ~/.tinyjs and the PATH symlink (--yes: no prompt)
+  tinyjs doctor       check runtime and launcher availability (read-only)
   tinyjs version      print version`);
     tjs.exit(cmd ? 1 : 0);
 }
