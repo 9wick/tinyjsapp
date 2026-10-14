@@ -78,16 +78,25 @@ were of the old layout; the CLI paths changed, so each OS needs a re-run.
 - [x] macOS 2026-10-13: Help Viewer caches the book — an edited page in a
   rebuild at the SAME version (even from a different .app path) showed the
   old copy; bumping `version` showed the edit.
-- [ ] Windows: `{ role: 'help', items }` draws a "Help" menu in its slot and
-  clicks reach onMenu; `assets/icon.png` is the window/taskbar/exe icon in
-  dev and build; a project with root `icon.png` still builds with its icon.
+- [x] Windows 11 arm64, 2026-10-13, dev AND built: a menu declared File,
+  `{ role: 'help', items }`, View reads `File | Help | View` (GetMenu, and
+  screenshot); WM_COMMAND on both Help items reached the backend's `onMenu`
+  (`site`, `issue`). A solid-magenta `assets/icon.png` is the window's big
+  and small icon (WM_GETICON — what the taskbar shows) in dev and built,
+  and `helpcheck.exe` + `launcher.exe` carry it (ExtractIconEx, 32/16 px).
+  No `assets/`, green root `icon.png`: green in dev, built window and exe.
 - [ ] Linux: same as Windows (menu, `assets/icon.png` in dev, build and
   .desktop, root `icon.png` fallback).
 - [x] macOS 2026-10-13: vanilla `tinyjs new` and `tinyjs wrap` scaffold
   `assets/icon.png` and build from it; a project with `icon.png` and
   `Credits.html` at the root (no `assets/`) still builds with both.
-- [ ] `tinyjs new --template …` (vite) scaffolds `assets/icon.png`; `wrap
+- [~] `tinyjs new --template …` (vite) scaffolds `assets/icon.png`; `wrap
   --force` on a pre-assets wrap keeps its root icon; both on Windows/Linux.
+  Windows 2026-10-13: `new vt --template vanilla-ts --no-install` →
+  `vt/assets/icon.png`; `wrap` of a local page → `assets/icon.png`; with
+  that moved to a (green) root `icon.png` and `assets/` deleted, `wrap
+  --force` against a page with no favicon left `icon.png` byte-identical
+  and made no `assets/`. Linux still owed.
 
 ## How to run the app-surface checks
 
@@ -2305,7 +2314,7 @@ accelerator call above, and composing with it):
       `detach` pair is the same shape and may have the same timing hole —
       watch where the inspector actually appears, not just that it appears.
 
-## Headless fail-fast in the launchers — macOS verified, Linux + Windows UNRUN (2026-08-24)
+## Headless fail-fast in the launchers — macOS + Windows verified, Linux UNRUN (2026-08-24)
 
 Feedback from a tester whose sandbox couldn't open the WebKit window: the
 failure was indistinguishable from an app bug, and they misdiagnosed it
@@ -2333,13 +2342,20 @@ hanging on a peer that already gave up.
       Check: `env -u DISPLAY -u WAYLAND_DISPLAY tinyjs dev` prints the
       tinyjs: lines and the bridge says "launcher exited before
       connecting"; a normal desktop run still opens the window.
-- [ ] **Windows** — window station lacks `WSF_VISIBLE`
+- [x] **Windows** — window station lacks `WSF_VISIBLE`
       (`GetUserObjectInformationW(UOI_FLAGS)`) ⇒ message + exit 3, before
-      the pipe connect. NOT COMPILED — written on the Mac. Check both
-      ways: an `ssh` (non-console) session or a service context fails
-      loud; a normal desktop run is unaffected. Note the check is
-      deliberately permissive — if the UOI_FLAGS query itself fails we
-      proceed rather than block a working desktop.
+      the pipe connect. Note the check is deliberately permissive — if the
+      UOI_FLAGS query itself fails we proceed rather than block a working
+      desktop. **Verified 2026-10-13, Windows 11 arm64, no elevation**:
+      an unnamed `CreateWindowStation` (lands as `Service-0x0-…$`, never
+      visible) + `CreateDesktop`, then `CreateProcess` with
+      `lpDesktop = <that>\Default` (a scheduled task as SYSTEM or S4U
+      needs admin; this doesn't). In it: bare `launcher-win.exe` printed
+      both `tinyjs:` lines and exited 3; `tinyjs dev` and a built app
+      printed them and then `launcher exited before connecting:
+      {"exit_status":3}`. Same launcher on the interactive desktop passed
+      the check and reached "cannot connect" to the bogus pipe; every
+      normal run today was unaffected.
 
 ## macOS per-arch builds (`--arch x86_64`) — never run on a real Intel Mac (2026-09-24)
 
@@ -3408,13 +3424,19 @@ instead of the rate-limited `api.github.com` call.
   determine latest release". *(2026-10-12, lookup block run on its own.)*
 - [x] **`fetchLatestVersion` in tjs** returns v0.51.0 via `res.url` after a
   followed HEAD. *(2026-10-12, macOS, function extracted and run.)*
-- [ ] **Windows `install.ps1` on PS 5.1 AND PS 7**: `irm
+- [x] **Windows `install.ps1` on PS 5.1 AND PS 7**: `irm
   https://tinyjs.app/install.ps1 | iex` resolves and installs the latest
   tag. The final URL comes from `BaseResponse.ResponseUri` on 5.1 and
   `BaseResponse.RequestMessage.RequestUri` on 7, so both shells need running.
-  Never run: no PowerShell on the Mac this was written on.
-- [ ] **`tinyjs update --check` on Windows and Linux** from an installed
-  release (not a checkout, which reports `dev`).
+  *(2026-10-13, Windows 11 arm64: the live script — same bytes as
+  docs/install.ps1 — under Windows PowerShell 5.1 and portable pwsh 7.6.7,
+  each with `TINYJS_HOME` in a scratch dir: both resolved v0.52.0,
+  checksum OK, `installed: tinyjs v0.52.0`. User PATH restored after.)*
+- [~] **`tinyjs update --check` on Windows and Linux** from an installed
+  release (not a checkout, which reports `dev`). *Windows 2026-10-13:
+  fresh v0.52.0 install → "already up to date (v0.52.0)"; the same
+  install with VERSION set to v0.51.0, and a real v0.51.1 install → "v0.52.0
+  is available". Linux still owed.*
 
 ## #53/#54 — dev watcher follows the backend's folder; src/backend layout (2026-10-13)
 
@@ -3426,8 +3448,16 @@ for a root backend. `frontend.reload: false` drops the dev page reload.
   `"./main.js"` (one restart, no loop), `reload: false`, and the react-ts
   Vite template (HMR only on `src/App.tsx`, restart on `backend/main.ts`).
   *(2026-10-13.)*
-- [ ] **Windows**: same checks. `tjs.watch` reports backslash paths there;
-  the watcher normalises them, but nobody has seen the skip work.
+- [x] **Windows**: same checks. `tjs.watch` reports backslash paths there;
+  the watcher normalises them. *(2026-10-13, Windows 11 arm64, a node
+  harness counting dev's output per edit, 5s idle first: `src/backend/`
+  — main.js and a nested lib/util.js restart, frontend edits only reload;
+  old `src/main.js` — restarts for main.js and src/lib/util.js, the nested
+  src/frontend is skipped (reload only), so the backslash skip works; root
+  `"./main.js"` — no restarts idle (no .build loop), one per main.js or
+  README.md edit, frontend reload only; `reload: false` — frontend edit
+  silent, backend restarts; react-ts Vite — App.tsx/App.css are vite
+  `hmr update` only, backend/main.ts restarts.)*
 - [ ] **Linux**: same checks. inotify isn't recursive in libuv, so only
   top-level files in the backend folder restart (unchanged from before) —
   confirm that's all that's missing, and that a root backend doesn't loop.
