@@ -50,7 +50,8 @@ export async function init(app) {
   sidecar (Bun, Deno, Node/pkg) then needs
   `"macos": { "executableEntitlements": { "<file>": ["com.apple.security.cs.allow-jit", …] } }`
   or it dies at its first JIT. Without that key a sidecar keeps the
-  entitlements it arrived with. The build warns on a missing CPU slice.
+  entitlements it arrived with. The build warns on a sidecar with no x86_64 slice in an
+  app that runs on Intel (x86_64-only sidecars run on Apple Silicon via Rosetta).
 
 ```js
 const exe = app.paths.executables + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');

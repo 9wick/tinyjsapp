@@ -512,8 +512,9 @@ console.log(paths.resources); <i>// string | null</i></pre>
     <pre>{ "macos": { "executableEntitlements": {
     "my-cli": ["com.apple.security.cs.allow-jit",
                "com.apple.security.cs.allow-unsigned-executable-memory"] } } }</pre>
-    <p>The build warns when a sidecar lacks one of the app's CPU slices (it
-    would fail to spawn on that Mac). A file you downloaded may carry
+    <p>The build warns when the app runs on Intel Macs but a sidecar has no
+    x86_64 slice (it would fail to spawn there); an x86_64-only sidecar runs on
+    Apple Silicon under Rosetta 2. A file you downloaded may carry
     quarantine in dev: <code>xattr -d com.apple.quarantine</code> it.</p>
   </section>
 

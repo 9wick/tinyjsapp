@@ -306,7 +306,10 @@ export const api = {
         run([cc, '-o', exe_root / OS / 'presigned', src], base)
         run(['codesign', '--force', '--sign', '-', '--entitlements', ent, exe_root / OS / 'presigned'], base)
         p = cli(project, 'build')
-        assert f'executables/macos/thin has no {ARCH} slice' in p.stdout, p.stdout
+        # The host arch is missing: arm64 runs it under Rosetta (a note),
+        # x86_64 can't run it at all (a warning).
+        assert (f'executables/macos/thin has no arm64 slice — Apple Silicon Macs run it under Rosetta' if ARCH == 'arm64'
+                else 'executables/macos/thin has no x86_64 slice — spawning it fails') in p.stdout, p.stdout
         ents = lambda f: run(['codesign', '-d', '--entitlements', '-', '--xml', bundle / 'Contents/Helpers' / f], base).stdout
         assert 'disable-library-validation' in ents('presigned'), ents('presigned')
         print('PASS missing-slice warning; a sidecar keeps the entitlements it arrived with')

@@ -2791,14 +2791,19 @@ async function reportMacArchs(cfg, APP) {
   if (!exe.length || !rt.length) return; // couldn't tell — don't guess
   const runsOn = exe.filter((a) => rt.includes(a));
   console.log('==> runs on: ' + (runsOn.map((a) => `${MAC_LABEL[a]} (${a})`).join(', ') || 'nothing — no common architecture'));
-  // A sidecar missing a slice the app has starts the app fine and then
-  // fails at spawn on that Mac (bad CPU type) — say so now.
+  // A sidecar missing a slice the app has: without x86_64 the app opens on
+  // an Intel Mac and then fails to spawn it (bad CPU type) — say so now.
+  // Without arm64 it still runs on Apple Silicon, translated by Rosetta 2,
+  // which a Mac may not have installed yet.
   for (const { name, src } of cfg.executablesStaged?.files ?? []) {
     const has = await macArchsOf(APP + '/Contents/Helpers/' + name);
-    const missing = runsOn.filter((a) => !has.includes(a));
-    if (has.length && missing.length) {
-      console.log(`warning: ${src} has no ${missing.join('/')} slice — spawning it fails on ` +
-        missing.map((a) => MAC_LABEL[a]).join(' and ') + ' Macs. Ship a universal binary, or one per CPU in executables/macos-<arch>/.');
+    if (!has.length) continue;
+    if (runsOn.includes('x86_64') && !has.includes('x86_64')) {
+      console.log(`warning: ${src} has no x86_64 slice — spawning it fails on Intel Macs. ` +
+        'Ship a universal binary, or one per CPU in executables/macos-<arch>/.');
+    }
+    if (runsOn.includes('arm64') && !has.includes('arm64')) {
+      console.log(`note: ${src} has no arm64 slice — Apple Silicon Macs run it under Rosetta 2 (installed on first use)`);
     }
   }
   if (runsOn.length === 1 && runsOn[0] === 'x86_64') {

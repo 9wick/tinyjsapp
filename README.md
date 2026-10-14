@@ -1574,8 +1574,10 @@ shipped file name (they replace the ones it had):
 ```
 
 The app's own `permissions` entitlements (mic, camera) don't extend to
-sidecars. The build warns when a sidecar lacks a CPU slice the app has — it
-would launch and then fail to spawn it on that Mac. A binary you downloaded
+sidecars. The build warns when the app runs on Intel Macs but a sidecar has
+no x86_64 slice — the app would open there and then fail to spawn it. An
+x86_64-only sidecar still runs on Apple Silicon, under Rosetta 2 (the build
+notes it). A binary you downloaded
 may be quarantined, which blocks it in dev (the build's copy is clean):
 `xattr -d com.apple.quarantine executables/macos/my-cli`.
 

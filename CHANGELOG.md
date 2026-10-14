@@ -20,7 +20,7 @@ https://tinyjs.app/changelog.
   hardened runtime under a Developer ID, so a notarized app can carry them;
   `"macos": { "executableEntitlements": { "my-cli": [...] } }` gives a JIT
   sidecar (Bun, Deno, Node/pkg) the `allow-jit` it needs to run there. The
-  build warns when a macOS sidecar is missing one of the app's CPU slices.
+  build warns when a macOS sidecar can't run on every Mac the app runs on.
   Thanks to Luiz Américo, Sam LABBE and Blatman for the design discussion
   (#8).
 - **A backend at the project root no longer copies `resources/` and

@@ -33,8 +33,8 @@ works proves the right file shipped. It checks:
   and `codesign --verify --deep --strict` passes on the relocated bundle;
 - the `tinyjs publish` archive carries the sidecar with its exec bit;
 - a backend at the project root doesn't copy `executables/` into the app;
-- macOS: a missing-CPU-slice warning (cc-built thin binary for the other
-  arch); a pre-signed sidecar keeps its entitlements;
+- macOS: the missing-slice message (cc-built thin binary for the other
+  arch: a Rosetta note on arm64, a warning on Intel); a pre-signed sidecar keeps its entitlements;
   `"executableEntitlements"` replaces them; bad values fail the build;
 - no folder, or nothing for this OS: `null`, nothing shipped.
 
