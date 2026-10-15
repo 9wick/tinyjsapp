@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.2 <span class="date">2026-10-15</span></h2>
+      <ul>
+        <li><b><code>win.open('main')</code> behaves the same on every platform.</b> It now shows and focuses the main window, the way <code>win.open</code> on any open window focuses it, and ignores the options. Under <code>mainWindow: false</code> it throws. Before, macOS focused main, Linux ignored the call, Windows built a half-wired second window, and a windowless app got silence everywhere.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.1 <span class="date">2026-10-15</span></h2>
       <ul>
         <li><b>macOS: <code>setChrome({ squareCorners })</code> no longer re-enables resizing.</b> Switching square corners on or off rebuilt the window's style with the resize bit always set, so a window that had called <code>setResizable(false)</code> became resizable again. It hit <code>app.window(id)</code> and <code>tiny.win</code> in named windows, and turning square corners off on the main window. Windows and Linux weren't affected.</li>

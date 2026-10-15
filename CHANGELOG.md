@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.57.2 — 2026-10-15
 
 - **Fix: `win.open('main')` behaves the same on every platform.** It now
   shows and focuses the main window, the way `win.open` on any open window
