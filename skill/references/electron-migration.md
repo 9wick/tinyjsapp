@@ -80,7 +80,7 @@ architecture, not the code.
 
 1. Move `main.js` IPC handlers to `export const api = {}` methods 1:1;
    replace `fs`/`path` calls with `tjs.*` (join with '/', it works
-   everywhere; use `app.paths` instead of `app.getPath`).
+   everywhere; use `app.paths()` instead of `app.getPath`).
 2. Point tinyjs at your existing renderer build — `"frontend": { build,
    dist, dev, devUrl }` runs your Vite/webpack dev server inside the native
    window with HMR.

@@ -272,13 +272,17 @@
     <div class="brand"><a class="mark" href="./index.html"><img src="images/rakali-badge.svg" alt="Rakali, the tinyjs mascot — an Australian native water rat" width="30" height="30">tinyjs</a> <span class="links"><a href="./docs.html" class="here">docs</a><a href="./changelog.html">changelog</a><a href="https://github.com/tarwin/tinyjsapp-examples">examples</a></span><button class="theme" onclick="cycleTheme()" title="Theme — click to cycle auto / light / dark" aria-label="Change theme"></button><span class="social"><a href="https://github.com/tarwin/tinyjsapp" title="GitHub" aria-label="GitHub"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a><a href="https://discord.com/invite/NGsFQhEUD" title="Discord" aria-label="Discord"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a></span></div>
     <h1>the <em>docs</em></h1>
     <p class="sub">Everything a tinyjs app can do. Frontend calls live under
-    <code>window.tiny</code>; the backend exports plain functions.</p>
-    <p class="sub">Written mac-first — most calls below work identically on
-    Windows and Linux (both in beta). Where an OS can't do something it
-    rejects or answers <code>'unsupported'</code> so cross-platform code can
-    feature-detect; the full per-OS breakdown lives in the
-    <a href="https://github.com/tarwin/tinyjsapp#readme" style="color:var(--accent)">README's Portability section</a>
-    and <a href="https://github.com/tarwin/tinyjsapp/blob/main/TODO-linux.md" style="color:var(--accent)">TODO-linux.md</a>.</p>
+    <code>window.tiny</code>; the backend gets the same calls on its
+    <code>app</code> handle, by the same names — the
+    <a href="./api-map.html" style="color:var(--accent)">API map</a> lists every
+    one side by side.</p>
+    <p class="sub">Written mac-first, but everything below is tested on
+    Windows and Linux too, and works the same there unless a call says
+    otherwise. Where an OS needs its own handling, the call notes it; where
+    an OS can't do something at all, the call rejects or answers
+    <code>'unsupported'</code> so cross-platform code can feature-detect. The
+    full per-OS breakdown lives in the
+    <a href="https://github.com/tarwin/tinyjsapp#portability" style="color:var(--accent)">README's Portability section</a>.</p>
   </header>
 
   <nav class="toc">
@@ -323,6 +327,7 @@
     <a href="#howitworks">how it works</a>
     <a href="#portability">portability</a>
     <a href="#gotchas">gotchas</a>
+    <a href="./api-map.html">api map</a>
   </nav>
 
   <section id="install">
@@ -353,7 +358,7 @@
         <code><b>curl</b> -fsSL https://tinyjs.app/install | <b>sh</b></code>
         <button onclick="copyCmd(this)">copy</button>
       </div>
-      <div class="platform">linux (beta) · x86_64 + arm64 · same script as macOS,
+      <div class="platform">linux · x86_64 + arm64 · same script as macOS,
       detects Linux · glibc 2.35+ (Ubuntu 22.04 / Debian 12 and newer) · needs
       libwebkit2gtk-4.1-0
       (<code style="font-size:11px">sudo apt install libwebkit2gtk-4.1-0</code> ·
@@ -421,16 +426,15 @@
   <section id="resources">
     <h2>Bundled data resources</h2>
     <p>Data your own code reads at runtime goes in a <code>resources/</code>
-    folder. The whole folder ships, and <code>app.paths.resources</code> points
+    folder. The whole folder ships, and <code>(await app.paths()).resources</code> points
     at it — the folder itself in dev, the bundled copy in builds, so the same
     relative paths work in both.</p>
     <pre>my-app/
   resources/
     dictionary.json
     fonts/</pre>
-    <pre><i>// Backend: app.paths is an object.</i>
-export async function init(app) {
-  const root = app.paths.resources;
+    <pre>export async function init(app) {
+  const root = (await app.paths()).resources;
   if (root === null) return;
   const bytes = await tjs.readFile(root + '/dictionary.json');
   console.log(new TextDecoder().decode(bytes));
@@ -467,7 +471,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
     <p>Programs your backend launches — a CLI built with Go, Rust, Bun, Deno,
     pkg or PyInstaller, ffmpeg — go in <code>executables/</code>. It works like
     <code>resources/</code>: the whole folder ships by default, a list narrows
-    it, and <code>app.paths.executables</code> points at what shipped. A build
+    it, and <code>(await app.paths()).executables</code> points at what shipped. A build
     only ships its own OS's binaries, so every OS's can sit there together.</p>
     <pre>my-app/
   executables/
@@ -476,7 +480,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
     linux/my-cli          <i>// Linux's own, since the name clashes</i>
     linux-arm64/my-cli    <i>// …and the arm64 one, for arm64 builds</i></pre>
     <pre>export async function init(app) {
-  const dir = app.paths.executables;   <i>// string | null</i>
+  const dir = (await app.paths()).executables;   <i>// string | null</i>
   const exe = dir + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
   const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
   <i>// …read p.stdout, await p.wait()</i>
@@ -493,7 +497,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
     <pre>{ "executables": ["my-cli.exe"],
   "macos": { "executables": ["mac/my-cli", "mac/helper"] },
   "linux": { "executables": ["linux/"] } }</pre>
-    <p>Everything ships flat, so <code>app.paths.executables + '/my-cli'</code>
+    <p>Everything ships flat, so <code>(await app.paths()).executables + '/my-cli'</code>
     is the program wherever it came from, and two listed files with one name
     fail the build. Builds put them in <code>Contents/Helpers/</code> in a
     macOS .app, or <code>executables/</code> beside a bare/Windows/Linux
@@ -592,7 +596,7 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
   "icon": "assets/icon.png",
   <i>// codesigning identity (default: ad-hoc)</i>
   "signIdentity": "Developer ID Application: …",
-  <i>// deep links: myapp://…</i>
+  <i>// deep links: myapp://… (an array registers several schemes)</i>
   "urlScheme": "myapp",
   <i>// "Open With" file associations</i>
   "fileExtensions": ["md"],
@@ -603,7 +607,10 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
                    "speechRecognition": "why" },
   <i>// enable tiny.audioTap ("app" | "system")</i>
   "audioTap": "app",
-  <i>// suppress WebKit's default right-click menu (default: true)</i>
+  <i>// the reason in macOS's audio-capture prompt (default: "&lt;title&gt; reads</i>
+  <i>// audio output for metering and visualization.")</i>
+  "audioTapReason": "Shows a level meter for what's playing",
+  <i>// false hides WebKit's default right-click menu (default: true, shown)</i>
   "contextMenu": false,
   <i>// devtools: true = F12 opens them (⌥⌘I also works on macOS), "open" =</i>
   <i>// every window opens them at creation, and they survive page reloads and</i>
@@ -639,7 +646,9 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
   "url": "https://app.example.com",
   <i>// what that origin may call over the bridge. tiny is injected into EVERY</i>
   <i>// origin, so without this the site's own JS holds an RPC channel to a</i>
-  <i>// backend with full filesystem access. enable wins over disable.</i>
+  <i>// backend with full filesystem access. enable wins over disable. Also</i>
+  <i>// takes a preset name, ["notify", …] (only these), "all" | "none", or</i>
+  <i>// { preset, enable, disable }; an unknown preset denies everything</i>
   "api": { "origins": { "https://app.example.com": ["notify", "store.*"] } },
   <i>// document-start script for every page (.ts is bundled with esbuild)</i>
   "inject": "src/shim.js",
@@ -647,7 +656,10 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
   "downloads": "auto",
   <i>// window.open / target=_blank: external (real browser) | window | deny</i>
   "popups": "external",
-  <i>// frameless / translucent window</i>
+  <i>// frameless / translucent window. Same keys as win.setChrome(), applied</i>
+  <i>// before first paint: frame, vibrancy, transparent, windowControls,</i>
+  <i>// windowControlsPos, squareCorners, acceptsFirstMouse, menu. Windows only</i>
+  <i>// makes the MAIN window see-through when transparent is set here</i>
   "chrome": { "frame": false, "vibrancy": "hud" },
   <i>// backend entry; a .ts path is bundled with esbuild. Default: the first</i>
   <i>// of src/backend/main.js|ts, src/main.js|ts, backend/main.js|ts</i>
@@ -664,8 +676,12 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
     "build": "npm run build", "dist": "dist",
     "dev": "npm run dev", "devUrl": "http://127.0.0.1:5173"
   },
-  <i>// menu-bar agent: no Dock icon, starts hidden (no launch flash)</i>
+  <i>// "regular" (default) | "accessory": a menu-bar agent — no Dock icon,</i>
+  <i>// starts hidden (no launch flash)</i>
   "activation": "accessory",
+  <i>// false: no main window or WebView at all; a tray agent opens named</i>
+  <i>// windows on demand (default: true; can't be false with "url")</i>
+  "mainWindow": true,
   <i>// auto-update manifest published by `tinyjs publish`; auto: "launch" |</i>
   <i>// "daily" checks for you and fires 'update-available'</i>
   "update": { "url": "https://…/manifest.json", "auto": "launch" },
@@ -687,11 +703,13 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
   "permissions": { "microphone": "why", "camera": "why",
                    "speechRecognition": "why" },
   "audioTap": "app",
+  "audioTapReason": "Shows a level meter for what's playing",
   "contextMenu": false,
   "debug": true,
   "browserAccelerators": true,
   "readAccess": true,
   "about": "menu",
+  "attribution": "© 2026 You — made with tinyjs",
   "offscreenRescue": false,
   "windowPlacement": true,
   "userAgent": "Mozilla/5.0 …",
@@ -707,6 +725,7 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
     "dev": "npm run dev", "devUrl": "http://127.0.0.1:5173"
   },
   "activation": "accessory",
+  "mainWindow": true,
   "update": { "url": "https://…/manifest.json", "auto": "launch" },
   "notarize": { "profile": "my-notary-profile" }
 }</pre>
@@ -787,9 +806,10 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
 <i>// onMediaKey, onNotificationClick/Action, onUpdateAvailable, onNavigate,</i>
 <i>// onDownload, onWindowOpen</i></pre>
     <p>The <code>app</code> handle mirrors the frontend surface:
-    <code>setTitle</code>, <code>setSize</code>, <code>setMenu</code>,
-    <code>setContextMenu</code>, <code>eval(js)</code>, <code>reload()</code>,
-    <code>quit()</code>, <code>notify({title, body})</code>,
+    <code>setTitle</code>, <code>setSize</code>, <code>menu.set/update/get/setContext</code>,
+    <code>win.*</code> (the main window) and <code>win.open(id, opts)</code>,
+    <code>audio.filters/filter/balance/clear</code>, <code>eval(js)</code>, <code>reload()</code>,
+    <code>quit()</code>, <code>notify(title, body, opts)</code>,
     <code>hide/show/center/minimize/fullscreen</code>,
     <code>setPosition</code>, <code>setAlwaysOnTop</code>,
     <code>setResizable</code>, <code>setHideOnClose</code>,
@@ -1041,7 +1061,7 @@ await <b>tiny.win.windows</b>();     <i>// ['main', 'settings', …]</i>
 <b>tiny.win.open</b>('about', { page: 'about.html', size: '360x420', parent: true });
 
 <i>// every window runs the full tiny.* bridge; win.* targets its own window.</i>
-<i>// backend: app.openWindow(id, opts), app.window(id).setTitle/push/close/…,</i>
+<i>// backend: app.win.open(id, opts), app.window(id).setTitle/push/close/…,</i>
 <i>// app.push broadcasts to all windows, export onWindowClosed(id, app);</i>
 <i>// api handlers: (params, app, meta) — meta.window = caller's window id</i></pre>
   </section>
@@ -1377,8 +1397,8 @@ await <b>tiny.app.shell.trash</b>(path);    <i>// recoverable — prefer over de
 <i>// standard per-app directories — no hardcoded ~/Library paths</i>
 await <b>tiny.app.paths</b>();  <i>// { home, data, cache, logs, temp, downloads,</i>
                          <i>//   desktop, documents } — data/cache/logs are per</i>
-                         <i>//   app id; create on first write. Backend twin</i>
-                         <i>//   app.paths is a plain object (no await).</i>
+                         <i>//   app id; create on first write. Backend: the</i>
+                         <i>//   same, await app.paths().</i>
 
 <i>// become the default opener for an extension (or 'folder') — only because</i>
 <i>// the user asked. Linux today; macOS/Windows answer 'unsupported'</i>
@@ -1732,7 +1752,7 @@ if (available) await <b>tiny.api.call</b>('update.install');
   </section>
 
   <section id="portability">
-    <h2>portability <span class="tag">mac-first, Windows + Linux in beta</span></h2>
+    <h2>portability <span class="tag">mac-first, tested on Windows + Linux</span></h2>
     <p class="note">All three run the same runtime and the same protocol; only
     the launcher and the transport differ.</p>
     <pre>              launcher source            webview               transport
@@ -1747,6 +1767,7 @@ Linux         launcher-linux.cc         GTK3 + WebKitGTK 4.1  unix socket</pre>
 <i>// -&gt; { os: 'macos' | 'windows' | 'linux', badge: true, progress: true, … }</i>
 <i>// Anything ABSENT from the answer is supported on that platform.</i>
 if (caps.badge) <b>tiny.app.badge</b>('3');
+<i>// the backend asks the same questions: app.system.capabilities(), .os(), …</i>
 
 <i>// synchronous, safe during page setup (the webview's own UA is decisive)</i>
 <b>tiny.system.os</b>();  <b>tiny.system.isMacOS</b>();  <b>tiny.system.isWindows</b>();  <b>tiny.system.isLinux</b>();
@@ -1767,8 +1788,10 @@ const gaps = await <b>tiny.system.missing</b>();  <i>// just the ones that faile
 audio.addEventListener('error', () =&gt; <b>tiny.system.promptMissing</b>(['media.aac']));</pre>
     <p class="note">Some things are not "not ported yet" but concepts the other
     OSes don't have — AppleScript, Quick Look. Those live in
-    <code>tiny.macos.*</code> and reject elsewhere, so the split is visible in
-    the call itself. Everything that <em>could</em> exist on another OS stays
+    <code>tiny.macos.*</code> and reject elsewhere (except
+    <code>ai.availability()</code>, which answers <code>'unsupported'</code>,
+    since it's the check you make first), so the split is visible in the call
+    itself. Everything that <em>could</em> exist on another OS stays
     on <code>tiny.app</code> and answers <code>'unsupported'</code> until it
     does. The full per-OS breakdown is in the
     <a href="https://github.com/tarwin/tinyjsapp#portability">README's
@@ -1813,6 +1836,7 @@ tjs.spawn(argv, { stdout: <b>'ignore'</b> });
   <footer>
     <a href="./index.html">home</a>
     <a href="./docs.html">docs</a>
+    <a href="./api-map.html">api map</a>
     <a href="./changelog.html">changelog</a>
     <a href="https://github.com/tarwin/tinyjsapp-examples">examples</a>
     <a href="https://github.com/tarwin/tinyjsapp/releases">releases</a>

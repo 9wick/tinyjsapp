@@ -3,6 +3,8 @@
 // window.__emit is how the backend pushes events into the page.
 (() => {
   const call = (method, params) => window.__invoke(JSON.stringify({ method, params }));
+  // tiny.clipboard.onChange starts a watch only if this page hasn't one.
+  let clipWatching = false;
   const handlers = {};
 
   // tiny.fetch: like window.fetch, but the request runs in the backend (a
@@ -240,10 +242,10 @@
         // Nothing installable would fix it (Wayland's setPosition, say) — then
         // there is no command to copy, so just say what's up.
         if (!cmd) {
-          await call('win.alert', { message: title, detail });
+          await call('dialog.alert', { message: title, detail });
           return { missing, copied: false };
         }
-        const yes = await call('win.confirm', {
+        const yes = await call('dialog.confirm', {
           message: title, detail,
           ok: opts.ok ?? 'Copy install command',
           cancel: opts.cancel ?? 'Not now',
@@ -307,7 +309,7 @@
       setAllSpaces: (enabled) => call('win.setAllSpaces', { enabled }),
       // Top-left origin. Wayland forbids a client from placing its own
       // toplevels, so this (and center()) do nothing there — check
-      // getWinState().canPosition and fall back to startDrag() for dragging.
+      // getState().canPosition and fall back to startDrag() for dragging.
       setPosition: (x, y) => call('win.setPosition', { x, y }),
       // Clamp this window onto the nearest screen if nobody could see or
       // grab it (less than a sliver visible on any display). One-shot manual
@@ -506,7 +508,8 @@
       // chain (filters() with at least one entry); amp keeps a flat chain up
       // for exactly this.
       balance: (v) => call('audio.balance', { value: v }),
-      clear: () => call('audio.filters', { filters: [] }),
+      // No filters and a centred balance — same as pageChain's clear().
+      clear: async () => { await call('audio.balance', { value: 0 }); return call('audio.filters', { filters: [] }); },
       // The same chain, built from Web Audio nodes IN THE PAGE — for where the
       // native chain doesn't exist. On Windows it can't (silencing the direct
       // path means session volume, which Windows persists on a key every
@@ -547,7 +550,7 @@
         gL.connect(merge, 0, 0);
         gR.connect(merge, 0, 1);
         merge.connect(output);
-        let nodes = [];
+        let nodes = [], specs = [];
         // Retunes ramp over ~15ms (a bare .value write zippers audibly on a
         // slider drag); a NEW node gets its values outright — ramping there
         // would sweep in from Web Audio's defaults instead.
@@ -567,7 +570,8 @@
           filters(list) {
             input.disconnect();
             for (const n of nodes) n.disconnect();
-            nodes = (list ?? []).map((f) => {
+            specs = (list ?? []).map((f) => ({ ...f }));
+            nodes = specs.map((f) => {
               let n;
               if (f.type === 'gain') n = ctx.createGain();
               else { n = ctx.createBiquadFilter(); n.type = f.type ?? 'peaking'; }
@@ -579,8 +583,15 @@
             prev.connect(balIn);
             return true;
           },
+          // A real patch: merged onto what filters() set for that slot, so
+          // filter(0, { gain: -3 }) leaves freq and q where they were.
+          // A new `type` needs a different node, so that one rebuilds.
           filter(i, patch) {
-            if (nodes[i]) apply(nodes[i], patch ?? {});
+            if (!nodes[i]) return true;
+            const prevType = specs[i].type;
+            specs[i] = { ...specs[i], ...patch };
+            if (patch?.type != null && patch.type !== prevType) return chain.filters(specs);
+            apply(nodes[i], specs[i]);
             return true;
           },
           balance(v) {
@@ -675,10 +686,15 @@
       // { text?, html?, paths?, image? (png path/data-url/base64), color? }
       write: (data) => call('clip.write', data),
       changeCount: () => call('clip.changeCount'),
-      watch: (intervalMs) => call('clip.watch', { intervalMs }),
-      unwatch: () => call('clip.unwatch'),
-      // fn({ changeCount, self }) after watch(); self = our own write().
-      onChange(fn) { return window.tiny.api.on('clipboard-change', fn); },
+      watch(intervalMs) { clipWatching = true; return call('clip.watch', { intervalMs }); },
+      unwatch() { clipWatching = false; return call('clip.unwatch'); },
+      // fn({ changeCount, self }); self = our own write(). Starts watching
+      // (500ms) if this page isn't already, like the backend's
+      // onClipboardChange export does — a handler alone used to hear nothing.
+      onChange(fn) {
+        if (!clipWatching) window.tiny.clipboard.watch();
+        return window.tiny.api.on('clipboard-change', fn);
+      },
     },
 
     // Calls with no equivalent anywhere else — not "not ported yet", but
@@ -710,7 +726,12 @@
         // 'available' | 'unavailable' | 'unsupported'
         availability: () => call('macos.ai.availability'),
         // generate(prompt, { instructions }) -> completion text; throws.
-        generate: (prompt, opts) => call('macos.ai.generate', { prompt, ...(opts ?? {}) }),
+        // `tools` is backend-only (each one's run() has to stay in scope;
+        // functions can't cross the bridge) — say so rather than drop it.
+        generate: (prompt, opts) => {
+          if (opts?.tools) console.warn('tiny.macos.ai.generate: `tools` only works from the backend (app.macos.ai.generate) — ignored here');
+          return call('macos.ai.generate', { prompt, instructions: opts?.instructions });
+        },
       },
       // Text selected in the frontmost app (Accessibility) — null if none.
       selectedText: () => call('macos.selectedText'),
@@ -758,6 +779,13 @@
       // fn({ id, action, reply }): a notification action button / reply field
       // was used (tiny.notify(t, b, { actions: [{ id, title, reply? }] })).
       onNotificationAction(fn) { return window.tiny.api.on('notification-action', fn); },
+      // Self-update for built apps ("update" in tinyjs.json) — app.update on
+      // the backend. check() -> { available, current, latest, notes };
+      // install() downloads, swaps the bundle and relaunches.
+      update: {
+        check: () => call('update.check'),
+        install: () => call('update.install'),
+      },
       // Post a native keystroke (e.g. 'cmd+v') -> { ok, trusted }; needs the
       // Accessibility permission (which names your app, not osascript).
       keystroke: (combo) => call('app.keystroke', { combo }),
@@ -780,7 +808,7 @@
       // when it leaves). start() arms live global coords there via the
       // ScreenCast portal: one system consent dialog (remembered across
       // runs), and the screen-sharing indicator shows while armed. Resolves
-      // true, or throws an Error with .code: 'unsupported'|'denied'|'failed'.
+      // { ok: true }, or throws an Error with .code: 'unsupported'|'denied'|'failed'.
       mouseTracking: {
         async start() {
           const r = await call('app.mouseTracking.start');
@@ -789,7 +817,7 @@
             e.code = r?.code || 'failed';
             throw e;
           }
-          return true;
+          return { ok: true };
         },
         stop: () => call('app.mouseTracking.stop'),
       },

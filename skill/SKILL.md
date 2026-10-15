@@ -1,6 +1,6 @@
 ---
 name: tinyjs
-description: Build and modify tinyjs desktop apps — tiny macOS (and beta Windows/Linux) apps with a txiki.js JavaScript backend and a native webview window. Use when working in a project with a tinyjs.json, when the user mentions tinyjs, tiny.api, or tinyjs dev/build, or when porting an Electron app to tinyjs.
+description: Build and modify tinyjs desktop apps — tiny macOS, Windows and Linux apps with a txiki.js JavaScript backend and a native webview window. Use when working in a project with a tinyjs.json, when the user mentions tinyjs, tiny.api, or tinyjs dev/build, or when porting an Electron app to tinyjs.
 ---
 
 # Building tinyjs apps
@@ -8,7 +8,7 @@ description: Build and modify tinyjs desktop apps — tiny macOS (and beta Windo
 tinyjs (https://tinyjs.app, repo tarwin/tinyjsapp) makes ~6 MB desktop apps:
 a **txiki.js backend** (full system access: files, sockets, processes, FFI)
 + a **native webview window** — WKWebView on macOS, WebView2 on Windows,
-WebKitGTK 4.1 on Linux (both beta). They talk over a private socket — no
+WebKitGTK 4.1 on Linux. They talk over a private socket — no
 HTTP server, no ports. The page has no direct system access: everything
 privileged crosses `tiny.api` (which the tinyjs.json `"api"` gate can
 narrow), which is why anything interpolated into `innerHTML` must be
@@ -110,9 +110,9 @@ assets/              files the OS reads, by name: icon.png (1024×1024 app
                      icon), Credits.html|rtf|rtfd (macOS About), help book
                      folder (macOS Help menu). Older projects: icon.png and
                      Credits.html at the root still work
-resources/           data the backend reads at runtime → app.paths.resources
+resources/           data the backend reads at runtime → (await app.paths()).resources
                      (the folder in dev, bundled copy in builds; null if none)
-executables/         sidecar binaries → app.paths.executables (flat). Ships
+executables/         sidecar binaries → (await app.paths()).executables (flat). Ships
                      this OS's binaries from the top, overridden by name from
                      <os>/ then <os>-arm64|-x86_64/; signed into
                      Contents/Helpers on macOS
@@ -135,10 +135,10 @@ export const api = {
 };
 export function init(app) {
   app.push('event-name', data);            // page: tiny.api.on('event-name')
-  // app mostly mirrors the page: app.window(id).*, app.openWindow,
+  // app mirrors the page: app.window(id).*, app.win.open, app.menu.*,
   // app.tray.*, app.audio.sampler.*, app.clipboard.*, app.store.*,
-  // app.paths (plain object), notify, quit, … — but some names differ
-  // (app.setMenu, app.setChrome, …): name map in references/api.md
+  // app.paths(), app.system.*, notify, quit, … — main-window ops also sit at
+  // the top level (app.setTitle, app.setChrome, …); see references/api.md
 }
 // other exports the scaffold wires, each (info, app): onMenu, onTray (id
 // null = bare icon click), onContextMenu, onHotkey, onWindowState,

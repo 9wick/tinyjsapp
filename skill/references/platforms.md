@@ -1,6 +1,6 @@
 # Platforms — what runs where, and the per-OS truths
 
-macOS is the primary platform; Windows and Linux are in beta. Same project,
+macOS is the primary platform; Windows and Linux are tested too. Same project,
 same tinyjs.json, same `tiny.*` api, same commands on all three.
 
 | | macOS | Windows | Linux |

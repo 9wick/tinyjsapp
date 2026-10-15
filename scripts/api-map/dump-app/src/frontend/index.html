@@ -1,0 +1,18 @@
+<!doctype html><html><body><script>
+// Walks `tiny` and hands it, plus the backend's walk, to the backend to save.
+const walk = (obj, path, out, depth = 0, seen = new Set()) => {
+  if (!obj || seen.has(obj) || depth > 4) return out;
+  seen.add(obj);
+  for (const k of Object.keys(obj)) {
+    let v; try { v = obj[k]; } catch { continue; }
+    const p = path + '.' + k;
+    if (typeof v === 'function') out.push(p);
+    else if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const before = out.length; walk(v, p, out, depth + 1, seen);
+      if (out.length === before) out.push(p);
+    } else out.push(p);
+  }
+  return out;
+};
+setTimeout(async () => tiny.api.call('report', { page: walk(tiny, 'tiny', []), backend: await tiny.api.call('backend') }), 1500);
+</script></body></html>

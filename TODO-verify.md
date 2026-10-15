@@ -8,6 +8,61 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Backend `app` speaks the page's names; old ones warn (unreleased, 2026-10-14)
+
+`app.menu.*`, `app.win.*` / `app.win.open`, `app.window(id).menu.*`,
+`app.audio.filters/filter/balance/clear`, `app.notify(title, body, opts)`;
+the old names log one deprecation line each. Behaviour changes riding along:
+`app.window('main').close()` quits (was a no-op), `app.mouseTracking.start()`
+throws on failure (was `{ ok: false }`), `audio.filter(i, patch)` merges
+onto the slot (backend and `pageChain`), `promptMissing` uses `dialog.*`
+(was calling non-existent `win.alert`/`win.confirm`). All bridge/tiny.js,
+no launcher change — but the Wayland failure path and the dialog path were
+never exercised.
+
+- [x] **macOS** — scratch app driving every new and old name: new names
+  work, each old name warned exactly once (`setMenu` called twice → one
+  line), page calls never warned, `app.window('main').close()` quit, wire
+  showed `filter(0, { gain: -3 })` → `AUDIOFILTERSET 0 60 1.1 -3` after
+  `filters([{ freq: 60, q: 1.1, gain: 4 }])`. *(2026-10-14)*
+- [x] **Linux (Wayland)** — `app.mouseTracking.start()` with the portal
+  denied throws an Error with `.code === 'denied'`; `tiny.app.mouseTracking`
+  still does too. `tiny.system.promptMissing()` with something actually
+  missing shows its confirm dialog instead of rejecting. Seen on the arm64
+  GNOME VM: Cancel on the ScreenCast dialog → backend and page both threw
+  `screen share not granted` with `.code 'denied'`; Share (before the token
+  was cleared) → backend resolved `{ ok: true }`. `promptMissing()` with
+  plocate absent put up the confirm, resolved `{ missing: [spotlight.index,
+  windowPosition], copied: true }`. *(2026-10-14)*
+- [x] **Windows** — `app.window('main').close()` quits; `app.win.menu.set`
+  draws main's own bar and `app.win.menu.reset()` puts the app bar back.
+  *(2026-10-14, Windows 11 arm64, `tinyjs dev` (rebuilt the launcher for
+  the new tiny.js); scratch app on a timeline, main's real bar read with
+  GetMenu/GetMenuStringW every 250 ms. `app.menu.set` → `AppBar`;
+  `app.win.menu.set` → `MainOwn`; `app.win.menu.reset()` → `AppBar` again;
+  `app.window('main').close()` → window gone, dev exited 0, no
+  launcher-win/tjs left running. Two runs, same result.)*
+- [x] **macOS, second pass** — `app.win.close('second')` closed only that
+  window, `app.win.close()` quit; backend `system.*` / `theme.get` /
+  `info()` / `paths()` answered (old `app.paths.cache` read warned once);
+  page `unwatch()` left the backend's `onClipboardChange` firing (one
+  `CLIPWATCH 500` on the wire, no `0`); `filter(0, { type })` and
+  `{ gainR }` resent `AUDIOFILTERS`; `clear()` sent `AUDIOBALANCE 0` first.
+  *(2026-10-14)*
+- [x] **Windows** — `app.macos.quickLook()` / `selectedText()`
+  throw; `tiny.macos.ai.availability()` and `app.macos.ai.availability()`
+  both resolve `'unsupported'`. *(2026-10-14, same run as above: backend
+  threw "app.macos.X is macOS-only (this is windows) — guard with
+  app.system.isMacOS()"; page `tiny.macos.quickLook()` / `selectedText()`
+  rejected with the `tiny.` wording; both `ai.availability()` resolved
+  `'unsupported'`. The page rejections are plain strings, not Errors,
+  because that is how WebView2's `__invoke` binding rejects every page call
+  — it was like that before this branch.)*
+- [x] **Linux** — the same: quickLook / selectedText threw "macOS-only (this
+  is linux) — guard with app.system.isMacOS()", both `ai.availability()`s
+  resolved `'unsupported'`; `app.system.info()` → `{ os: 'linux', arch:
+  'arm64', session: 'wayland', desktop: 'ubuntu:GNOME' }`. *(2026-10-14)*
+
 ## `dialog.saveFile({ name })` pre-fills the file name (#59, 2026-10-14)
 
 The bridge now forwards `name` (basename only; any folder part is dropped,

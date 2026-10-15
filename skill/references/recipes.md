@@ -159,7 +159,7 @@ Two options:
   `tiny.win.show()` only when there's something to show. A hidden window
   isn't composited, but WebKit still runs, at ~50 MiB on macOS.
 - `{ "mainWindow": false, "activation": "accessory" }`: there's no main
-  window or WebView at all; WebKit starts only when `app.openWindow` opens a
+  window or WebView at all; WebKit starts only when `app.win.open` opens a
   named window. Idle cost on macOS is ~17 MiB instead of ~65 MiB (Linux:
   ~110 MiB instead of ~330 MiB).
   `app.windows()` starts as `[]`, and no `index.html` is needed. Anything

@@ -3,12 +3,21 @@
 The `tiny` global is injected into every page automatically (no script tag);
 TypeScript definitions ship in types/tiny.d.ts. Backend handlers receive the
 `app` object with a mirrored surface (`app.window(id).*`, `app.audio.sampler`,
-`app.clipboard.*` …). Where backend names differ from the page's:
-`tiny.menu.set` → `app.setMenu`, `menu.update/get` → `app.updateMenuItem/
-getMenuItem`, `menu.setContext` → `app.setContextMenu`, `win.setChrome` →
-`app.setChrome`, `tiny.audio.filters/filter/balance` →
-`app.setAudioFilters/setAudioFilter/setAudioBalance` (`app.audio` holds only
-`sampler`). There is no `app.menu.*` / `app.audio.filters`.
+`app.clipboard.*` …). Since 0.57.0 the backend uses the page's names:
+`app.menu.set/update/get/setContext`, `app.audio.filters/filter/balance/clear`,
+`app.win.*` (the main window, plus `app.win.open(id, opts)`),
+`app.window(id).menu.*`, `app.system.*` (all of tiny.system's
+os/isX/info/architecture/capabilities/requirements/missing too),
+`app.theme.get()`, `app.info()` / `app.paths()` (functions, as in a page), and
+`app.notify(title, body, opts)`. Main-window ops
+also stay at the top level (`app.setTitle`, `app.setChrome`, …). The old
+backend names (`app.setMenu`, `app.updateMenuItem`, `app.getMenuItem`,
+`app.setContextMenu`, `app.openWindow`, `app.getWinState`,
+`app.setAudioFilters/setAudioFilter/setAudioBalance`,
+`app.window(id).setMenu/resetMenu/updateMenuItem/getMenuItem`,
+`app.notify({ title, body })`, reading `app.info.x` / `app.paths.x` as
+objects) still work but log a deprecation warning —
+don't write new code with them.
 
 ## Bridge basics
 
@@ -120,9 +129,9 @@ tiny.win.open('settings', { page: 'settings.html', title: 'Settings',
 // with the parent. Open-time only.
 // page: an http(s) URL or a file INSIDE the frontend dir — from a page,
 // anything else (../ walks, other absolute paths, file:) is refused;
-// backend app.openWindow takes any path.
+// backend app.win.open takes any path.
 // chrome + x/y + minSize apply BEFORE first paint. win.* calls target the
-// caller's window; backend: app.openWindow(...), app.window(id).eval/push/
+// caller's window; backend: app.win.open(...), app.window(id).eval/push/
 // close/setTitle/…, app.push broadcasts; export onWindowClosed(id, app).
 tiny.win.id; tiny.win.close(); await tiny.win.windows();
 ```
@@ -384,12 +393,12 @@ audio.src = tiny.fileURL(path);  // file:// URL for a disk path — ALWAYS this,
 // "readAccess": true | "/path" in tinyjs.json.
 await tiny.app.paths();   // { home, data, cache, logs, temp, downloads,
                           //   desktop, documents, resources, executables } — per-OS correct; backend
-                          //   twin app.paths is a plain object (no await)
+                          //   twin: await app.paths() (same shape)
 // resources: the project's resources/ folder in dev, its bundled copy in
-// builds, null without one. Backend: app.paths.resources.
+// builds, null without one. Backend: (await app.paths()).resources.
 // executables: this OS's sidecars from executables/, flat (.build/executables
 // in dev, a .app's Contents/Helpers in builds), null without any — tjs.spawn
-// app.paths.executables + '/<name>'.
+// (await app.paths()).executables + '/<name>'.
 await tiny.app.shell.open('https://x.com');  // URL or path; resolves true/rejects
 await tiny.app.shell.reveal(path); await tiny.app.shell.trash(path);
 await tiny.app.thumbnail(path, size?);  // png for ANY path (macOS/Windows:
@@ -561,8 +570,8 @@ tiny.app.onOpenFiles((paths) => ...);  // "fileExtensions": ["md"]; also argv
 // tinyjs.json: "update": { "url": "https://…/manifest.json", "auto": "launch"|"daily" }
 tiny.api.on('update-available', ({ current, latest, notes }) => ...);
 // backend: export onUpdateAvailable(info, app)
-const { available, latest } = await tiny.api.call('update.check');
-await tiny.api.call('update.install');   // verify sha256 + swap + relaunch
+const { available, latest } = await tiny.app.update.check();
+await tiny.app.update.install();   // verify sha256 + swap + relaunch
 ```
 
 Full packaging/manifests: references/release.md.
