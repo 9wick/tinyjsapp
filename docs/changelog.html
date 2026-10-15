@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.4 <span class="date">2026-10-15</span></h2>
+      <ul>
+        <li><b>macOS: <code>vibrancy: false</code> no longer paints a transparent secondary window.</b> A window opened with <code>{ transparent: true, vibrancy: false }</code> came up solid white or black (following light/dark mode) instead of see-through, because <code>vibrancy: false</code> turned the page background back on for every window except main. Leaving <code>vibrancy</code> out was the workaround. Thanks to <a href="https://github.com/Blatman">@Blatman</a> for the report (<a href="https://github.com/tarwin/tinyjsapp/issues/68">#68</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.3 <span class="date">2026-10-15</span></h2>
       <ul>
         <li><b><code>tinyjs update</code> gets through on networks where it kept failing.</b> On some connections txiki's fetch drops the request to GitHub (“closed before established”) while curl and browsers get through, and the update failed with “could not reach GitHub to check the latest release”. It now tries twice, then asks the system curl (macOS, Linux, Windows 10 1803+). If everything fails, the message says what each attempt hit instead of only “could not reach GitHub”. A redirect to a non-http(s) URL is refused instead of crashing the CLI. Thanks to <a href="https://github.com/lionel-rowe">@lionel-rowe</a> for the report and for tracking down the underlying error (<a href="https://github.com/tarwin/tinyjsapp/issues/67">#67</a>).</li>
