@@ -23,8 +23,19 @@ case (a)'s "no curl on PATH" still prints a clean error.
 - [x] **macOS** — (a) all six cases pass, tarpit gave up at 32.0 s; (b)
   20/20; the daily notice still prints and caches, and stays silent on
   failure. *(2026-10-15, macOS arm64)*
-- [ ] **Windows** — (a), (b), (c). The reporter's network is the real test
-  (#67): ask for 30× `tinyjs update --check` on the build with the fix.
+- [x] **Windows** — (a), (b), (c). *(2026-10-15, Windows 11 arm64.)* (a)
+  `bin\tjs.exe run test/update-fetch/check.js`: all six cases `ok`; tarpit
+  gave up at 32.2 s (fetch 8 s ×2, then curl's 15 s); no-curl case printed
+  `curl: ENOENT: no such file or directory` in the clean error, exit 1. (b)
+  throwaway install (cli.js + `VERSION` v0.56.0), 20× `update --check`
+  against real GitHub from PowerShell: 20/20 "v0.57.2 is available",
+  ~0.2 s each (native fetch, no fallback needed here). (c) the curl
+  `tjs.spawn(['curl', …])` really runs, read off the child's pid, is
+  `C:\WINDOWS\system32\curl.exe`. Note: from a Git Bash shell PATH puts
+  Git's `/mingw64/bin/curl` first, so that's the curl there — not checked.
+- [ ] **Windows, the reporter's network (#67)** — the real test, since the
+  failure never reproduced here: ask for 30× `tinyjs update --check` on the
+  build with the fix.
 - [x] **Linux** — (a) all six cases pass, tarpit gave up at 32.1 s (36 s
   total); (b) 20/20 against real GitHub from a throwaway install
   (`VERSION` v0.57.1 → "v0.57.2 is available", exit 0). *(2026-10-15,
