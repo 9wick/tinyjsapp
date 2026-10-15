@@ -1,6 +1,6 @@
 ---
 name: tinyjs
-description: Build and modify tinyjs desktop apps — tiny macOS (and beta Windows/Linux) apps with a txiki.js JavaScript backend and a native webview window. Use when working in a project with a tinyjs.json, when the user mentions tinyjs, tiny.api, or tinyjs dev/build, or when porting an Electron app to tinyjs.
+description: Build and modify tinyjs desktop apps — tiny macOS, Windows and Linux apps with a txiki.js JavaScript backend and a native webview window. Use when working in a project with a tinyjs.json, when the user mentions tinyjs, tiny.api, or tinyjs dev/build, or when porting an Electron app to tinyjs.
 ---
 
 # Building tinyjs apps
@@ -8,7 +8,7 @@ description: Build and modify tinyjs desktop apps — tiny macOS (and beta Windo
 tinyjs (https://tinyjs.app, repo tarwin/tinyjsapp) makes ~6 MB desktop apps:
 a **txiki.js backend** (full system access: files, sockets, processes, FFI)
 + a **native webview window** — WKWebView on macOS, WebView2 on Windows,
-WebKitGTK 4.1 on Linux (both beta). They talk over a private socket — no
+WebKitGTK 4.1 on Linux. They talk over a private socket — no
 HTTP server, no ports. The page has no direct system access: everything
 privileged crosses `tiny.api` (which the tinyjs.json `"api"` gate can
 narrow), which is why anything interpolated into `innerHTML` must be

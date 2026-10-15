@@ -842,9 +842,8 @@ async function loadConfig() {
 // Backend entry: cfg.backend, or the first of src/backend/main.js|ts (the
 // vanilla layout: backend and frontend side by side under src/), src/main.js|ts
 // (the vanilla layout before 0.52, frontend nested in the backend's folder),
-// backend/main.js|ts (the Vite templates). .ts entries (or any entry with
-// cfg.backendBundle) are bundled with esbuild — which also makes npm packages
-// usable in the backend.
+// backend/main.js|ts (the Vite templates). .ts entries are bundled with
+// esbuild — which also makes npm packages usable in the backend.
 async function resolveBackendEntry(cfg) {
   if (cfg.backend) {
     if (!(await exists(cfg.backend))) fail('backend entry not found: ' + cfg.backend);
@@ -2514,7 +2513,8 @@ async function cmdBuild() {
   if (cfg.chrome) {
     const bit = (v) => (v === undefined ? '' : v ? '1' : '0');
     const ch = cfg.chrome;
-    const vib = ch.vibrancy === undefined ? '' : (ch.vibrancy === null ? 'none' : ch.vibrancy);
+    // null and false both mean none, as chromeWire treats them on the socket
+    const vib = ch.vibrancy === undefined ? '' : (ch.vibrancy === null || ch.vibrancy === false ? 'none' : ch.vibrancy);
     const wcp = ch.windowControlsPos;
     // windowControls: same tokens the bridge's controlsWire sends over the
     // socket — '' keep, 'all', 'none', or a comma list. This field read

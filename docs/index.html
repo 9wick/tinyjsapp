@@ -437,7 +437,7 @@
         <code><b>curl</b> -fsSL https://tinyjs.app/install | <b>sh</b></code>
         <button onclick="copyCmd(this)">copy</button>
       </div>
-      <div class="platform r r5">linux (beta) · x86_64 + arm64 · same script as macOS, detects Linux · glibc 2.35+ (Ubuntu 22.04 / Debian 12 and newer) · needs libwebkit2gtk-4.1-0 (<code style="font-size:11px">sudo apt install libwebkit2gtk-4.1-0</code> · <code style="font-size:11px">sudo zypper install libwebkit2gtk-4_1-0</code>) · MIT</div>
+      <div class="platform r r5">linux · x86_64 + arm64 · same script as macOS, detects Linux · glibc 2.35+ (Ubuntu 22.04 / Debian 12 and newer) · needs libwebkit2gtk-4.1-0 (<code style="font-size:11px">sudo apt install libwebkit2gtk-4.1-0</code> · <code style="font-size:11px">sudo zypper install libwebkit2gtk-4_1-0</code>) · MIT</div>
     </div>
   </header>
 
@@ -832,9 +832,10 @@ tiny.menu.set([…]);
       <details>
         <summary>Is it production ready?</summary>
         <div class="ans">
-          <p>macOS is the primary platform and is stable. <strong>Windows and
-          Linux are beta</strong> — same runtime, same wire protocol, same API,
-          with a short list of unported calls (mostly the genuinely macOS-only
+          <p>macOS is the primary platform, and <strong>everything is tested
+          on Windows and Linux too</strong> — same runtime, same wire protocol,
+          same API, with per-OS handling where a system needs it and a short
+          list of unported calls (mostly the genuinely macOS-only
           ones: Quick Look, OCR, AppleScript, on-device AI). MIT licensed, and
           the whole thing is two native files plus your code, so there isn't
           much to be surprised by.</p>

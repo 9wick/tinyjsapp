@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## 0.57.0 — unreleased
+## 0.57.0 — 2026-10-14
 
 The backend `app` and the page's `tiny` had drifted into two dialects of
 the same API: `app.setMenu` against `tiny.menu.set`, `app.notify({ title,
@@ -12,7 +12,8 @@ body })` against `tiny.notify(title, body)`, `app.paths.data` against
 `await tiny.app.paths()`, and a handful of calls that quietly did something
 different on one side. This release makes the backend speak the page's
 API. Code moves between the two without translating, and one set of docs
-covers both.
+covers both. The [API map](https://tinyjs.app/api-map.html) lists every
+backend call beside its page twin.
 
 > Tarwin: An apology for the big change. I hope not to do this kind of big change again, but wanted to get it right now. 25 years ago I did a lot of PHP, and I'd always have to look at the docs to know if it was `func(needle, haystack)` or `func(haystack, needle)` because it was different per function. So I know the pain of inconsistent APIs.
 
@@ -80,6 +81,26 @@ covers both.
 - Fix: `tiny.system.promptMissing()` rejected with "unknown method:
   win.alert" whenever something was actually missing. It shows its dialog
   again.
+- **The docs have been gone through end to end.** Every page now matches
+  the code as it is, checked call by call rather than by eye:
+  - **A new [API map](https://tinyjs.app/api-map.html)** lists every backend
+    `app` call beside its page `tiny` twin, with full signatures. It's
+    generated from `tiny.d.ts` and checked against the live objects, so it
+    can't drift (`scripts/api-map/run.sh` rebuilds it).
+  - **README, docs site and the agent skill** use the new names throughout,
+    including `await app.paths()` / `app.info()` and `tiny.app.update`.
+  - **The tinyjs.json reference is complete.** `mainWindow`,
+    `audioTapReason`, `"activation": "regular"`, `urlScheme` arrays, the
+    other `api` forms and every `chrome` key were missing; the
+    `contextMenu` comment had its default backwards.
+  - **Portability is accurate again**: what's unported on Windows and Linux
+    is checked against each platform's capability table (Linux does have
+    `app.badge`; Windows is missing `wifi`, `share` and the native audio
+    chain). **Windows and Linux are no longer called beta.** Everything is
+    tested on all three, with per-OS handling where a system needs it.
+- Fix: `"chrome": { "vibrancy": false }` in tinyjs.json means no vibrancy in a
+  built macOS app, as it does everywhere else. The build passed it on as a
+  material named "false".
 - Fix: `app.say(text, null)` threw; `app.playSound('')` sent an empty sound
   name where the page beeps. Backend `clipboard.watch()` / `unwatch()`
   return `true`, like the page's.
@@ -91,7 +112,12 @@ covers both.
   Linux have no locale reader yet); `promptMissing` resolves `{ missing,
   copied }`; page `store.set` / `delete` resolve `boolean`; `app.hide()`
   takes `{ app: false }`; the `mouseTracking` types match the runtime; a
-  duplicate `onNotificationClick` is gone.
+  duplicate `onNotificationClick` is gone. Calls that only acknowledge
+  (window setters, menus, tray, audio, …) resolve `Promise<void>` instead
+  of `Promise<any>`; `win.getState()` can be `null`; `windowControlsPos` is
+  in the chrome options and window state; `playSound()`'s argument is
+  optional; `app.done` is never `null`; `app.clipboard.watch()` returns
+  `true`.
 - `tiny.d.ts`, added: `tiny.system.battery` / `wifi` / `idleTime`,
   `tiny.api.off`, `tiny.win.setMinSize` / `ensureOnScreen` /
   `startResize` / `onState`, the window handle's `setMinSize` /

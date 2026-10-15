@@ -9,7 +9,9 @@ global app handle.
 
 Releases are git tags (`vX.Y.Z` on main); a tag push builds macOS + Windows
 + linux-x86_64 + linux-arm64 in CI. Update CHANGELOG.md AND
-docs/changelog.html before tagging. Linux legs build on ubuntu-22.04
+docs/changelog.html before tagging. If the API changed (tiny.d.ts, bridge.js's
+`app`, tiny.js), also regenerate docs/api-map.html with
+`scripts/api-map/run.sh` — never hand-edit it. Linux legs build on ubuntu-22.04
 runners ON PURPOSE — the linker bakes the build image's glibc floor into
 tjs and the launcher, and 24.04-built binaries refuse to load on Ubuntu
 22.04 / Debian 12 (shipped broken through v0.32.0). A verify step asserts

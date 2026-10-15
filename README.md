@@ -2,7 +2,7 @@
 
 ![tinyjs — desktop apps ~6mb](docs/images/rakali-og.jpg)
 
-Tiny desktop apps for macOS — and, in beta, Windows and Linux: a
+Tiny desktop apps for macOS, Windows and Linux: a
 [txiki.js](https://txikijs.org/) backend + a native
 [webview](https://github.com/webview/webview) window.
 
@@ -56,7 +56,7 @@ WebKit). It
 downloads a prebuilt `tjs` from the tinyjsapp releases, or builds txiki.js
 from source (`TJS_BUILD=1 ./setup.sh`, needs cmake + ninja).
 
-**Windows (beta):**
+**Windows:**
 
 ```powershell
 irm https://tinyjs.app/install.ps1 | iex
@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 # `tinyjs dev` auto-rebuilds the launcher whenever the native sources change
 ```
 
-**Linux (beta):**
+**Linux:**
 
 Runs on X11 and Wayland sessions — Ubuntu 24.04+ and current distros with
 `webkit2gtk-4.1`. Use the same install command above (it detects Linux) or
@@ -190,14 +190,15 @@ A project is just:
 ```
 myapp/
   tinyjs.json            # { name, title, size, id, version, icon?, signIdentity?,
-                         #   urlScheme?, fileExtensions?, chrome?, update?, notarize?,
-                         #   permissions? ({ microphone: "why", camera: "why" } for getUserMedia),
+                         #   urlScheme? (string or array), fileExtensions?, chrome?, update?, notarize?,
+                         #   permissions? ({ microphone, camera, speechRecognition: "why" }),
+                         #   audioTap? ("app" | "system"), audioTapReason? (macOS prompt text),
                          #   contextMenu? (false suppresses WebKit's default right-click menu),
                          #   debug? (true = F12 opens devtools (⌥⌘I also works on macOS),
                          #   "open" = every window auto-opens them; default off — `tinyjs dev` always has F12),
                          #   browserAccelerators? (true re-enables the engine's own keys —
                          #   Ctrl+F find, Ctrl+R reload…; default suppressed, Windows only),
-                         #   activation? ("accessory" = menu-bar agent: no Dock, starts hidden),
+                         #   activation? ("regular" default | "accessory" = menu-bar agent: no Dock, starts hidden),
                          #   mainWindow? (false = no main window/WebView at all — tray agents),
                          #   macos?/windows?/linux? (merged on top for that OS),
                          #   minTinyjsVersion? (refuse to run on an older tinyjs) }
@@ -221,7 +222,8 @@ picks the backend entry (default: the first of `src/backend/main.js|ts`,
 `backend/main.js|ts`), and the folder it sits in is the
 backend's root: a plain-JS backend ships that whole folder, and a `.ts`
 entry is bundled from it. Separately, `"frontend": { "dir": "web" }`
-picks the plain page folder. A bundler project uses `"frontend": { "build",
+picks the plain page folder (add `"reload": false` to leave page reloads
+in `tinyjs dev` to your own watcher). A bundler project uses `"frontend": { "build",
 "dist", "dev", "devUrl" }` instead, as the `--template` scaffolds do. Its
 packages must be installed before `tinyjs dev` or `build` (the scaffolds do
 that unless `--no-install`; otherwise the build stops and says so).
@@ -457,6 +459,11 @@ tiny.win.setChrome({ acceptsFirstMouse: true });
 // and Linux. Also in tinyjs.json "chrome" so it applies before first paint.
 tiny.win.setChrome({ windowControlsPos: { x: 12, y: 24 } });
 
+// hide this window's menu bar (Windows/Linux draw one per window; macOS has
+// one bar for the app, so it's ignored there). Also tinyjs.json
+// "chrome": { "menu": false }, or win.open's chrome, to start without one.
+tiny.win.setChrome({ menu: false });
+
 // read the window back
 const s = await tiny.win.getState();
 // { x, y, width, height, outer: { width, height },
@@ -556,8 +563,9 @@ s.master(0.5); s.stopAll(); s.unload('coo');
 
 // tiny.audioTap — read the app's rendered audio OUTPUT as PCM (VU meters,
 // visualizers) — including audio that bypasses Web Audio (native HLS,
-// CORS-tainted streams). Read-only; needs "audioTap": "app" in tinyjs.json.
-await tiny.audioTap.start({ scope: 'app', interval: 80 }); // 'system' also possible
+// CORS-tainted streams). Read-only; needs "audioTap": "app" in tinyjs.json
+// ("system" for scope: 'system'; "audioTapReason" sets macOS's prompt text).
+await tiny.audioTap.start({ scope: 'app', interval: 80 });
 tiny.audioTap.on(({ pcm, sampleRate, channels, frames }) => {
   const bin = atob(pcm), n = bin.length >> 1;   // base64 -> interleaved LE Int16
   let peak = 0;
@@ -1996,9 +2004,10 @@ step having shipped a launcher that just answers `'unsupported'`.
 
 ### Portability
 
-macOS is the primary platform. **Windows and Linux support are both in
-beta.** All three run the same runtime and speak the identical wire
-protocol — only the launcher and the transport differ:
+macOS is the primary platform, and everything is tested on Windows and
+Linux too, with per-OS handling where a system needs it. All three run the
+same runtime and speak the identical wire protocol — only the launcher
+and the transport differ:
 
 |         | launcher source            | webview              | transport                 | bootstrap    | CLI          |
 | ------- | -------------------------- | -------------------- | ------------------------- | ------------ | ------------ |
@@ -2010,10 +2019,12 @@ Windows and Linux use the same vendored webview library as macOS;
 `tjs.listen('pipe', …)`/libuv abstracts the socket-vs-named-pipe split.
 
 **Anything unported fails cleanly, so cross-platform code can
-feature-detect.** Capability calls reject with a specific reason (e.g.
-"screen recording isn't supported on Linux yet"), query calls (`wifi`,
-`frontmostApp`, `selectedText`, `otherWindows`, `tray.position`) resolve
-`null`, and fire-and-forget ones are silent no-ops.
+feature-detect.** Capability calls reject with a specific reason, query
+calls (`wifi`, `frontmostApp`, `system.locale`, `tray.position`) resolve
+`null`, and fire-and-forget ones are silent no-ops. `tiny.macos.*` /
+`app.macos.*` throw off macOS, except `ai.availability()`, which answers
+`'unsupported'`. `tiny.system.capabilities()` (or `app.system.capabilities()`
+on the backend) lists what this machine can't do.
 
 #### Windows
 
@@ -2045,9 +2056,13 @@ Works:
 Not yet ported:
 
 - `nowPlaying` / media keys — wants the WinRT `SystemMediaTransportControls`
-- `otherWindows` / `moveWindow`, `pickColor`, `spotlight`, `system.locale`
-- the genuinely macOS-only APIs: Quick Look, OCR, AppleScript, `proxyURL`
-  media proxy, Now Playing on the lock screen, Spaces, `tiny.macos.*`
+- `pickColor`, `spotlight`, `system.locale`, `wifi`, `share`, the `proxyURL`
+  media proxy
+- the native `audio.filters` chain — use `tiny.audio.pageChain(ctx)`, the
+  same chain in Web Audio (`capabilities().audioFilters` is false)
+- the macOS-only `tiny.macos.*` family (Quick Look, OCR, AppleScript,
+  recorder, selectedText, otherWindows/moveWindow, on-device AI) and
+  Spaces
 
 Burn-down list with implementation notes:
 [TODO-windows.md](TODO-windows.md).
@@ -2102,11 +2117,10 @@ Works:
 
 Not (yet) supported:
 
-- `recorder`, `ocr`, `quickLook`, `applescript`
-- `app.badge` (no freedesktop standard) and `attention({critical: true})`,
-  `share`
-- `wifi`, `selectedText`, `otherWindows`, `moveWindow`, `frontmostApp`
-- `authenticate`, `tiny.macos.ai`
+- the macOS-only `tiny.macos.*` family (recorder, OCR, Quick Look,
+  AppleScript, selectedText, otherWindows/moveWindow, on-device AI)
+- `attention({critical: true})`, `share`
+- `wifi`, `frontmostApp`, `system.locale`, `authenticate`
 - `setAllSpaces` — maps onto sticky windows rather than true per-Space
   follow
 
