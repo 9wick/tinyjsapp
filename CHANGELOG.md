@@ -4,6 +4,18 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.3 — 2026-10-15
+
+- **Fix: `tinyjs update` gets through on networks where it kept failing.**
+  On some connections txiki's fetch drops the request to GitHub ("closed
+  before established") while curl and browsers get through, and the update
+  failed with "could not reach GitHub to check the latest release". It now
+  tries twice, then asks the system curl (macOS, Linux, Windows 10 1803+).
+  If everything fails, the message says what each attempt hit instead of
+  only "could not reach GitHub". A redirect to a non-http(s) URL is refused
+  instead of crashing the CLI. Thanks to @lionel-rowe for the report and for
+  tracking down the underlying error (#67).
+
 ## 0.57.2 — 2026-10-15
 
 - **Fix: `win.open('main')` behaves the same on every platform.** It now

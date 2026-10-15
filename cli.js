@@ -579,17 +579,102 @@ function withTimeout(promise, ms) {
 // The tag comes off github.com's /releases/latest redirect (→ /releases/tag/
 // vX.Y.Z), not the REST API: unauthenticated API calls are capped at 60 an
 // hour per IP, which shared CI runners hit constantly (#51).
-async function fetchLatestVersion() {
-  try {
-    const res = await fetch(`https://github.com/${REPO}/releases/latest`, {
-      method: 'HEAD', headers: { 'user-agent': 'tinyjs-cli' },
-    });
-    if (!res.ok) return null;
-    const tag = res.url.replace(/\/+$/, '').split('/').pop();
-    return typeof tag === 'string' && parseVer(tag) ? tag : null;
-  } catch {
-    return null;
+// TINYJS_UPDATE_URL is a test hook (point it at a listener that drops
+// connections); only a tag that parses as a version is ever used.
+const LATEST_URL = tjs.env.TINYJS_UPDATE_URL || `https://github.com/${REPO}/releases/latest`;
+
+function tagFromUrl(url) {
+  const tag = String(url || '').replace(/\/+$/, '').split('/').pop();
+  return parseVer(tag) ? tag : null;
+}
+
+// Rejects after ms instead of resolving null, so the reason can be reported.
+function rejectAfter(promise, ms) {
+  let t;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { t = setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms); }),
+  ]).finally(() => clearTimeout(t));
+}
+
+// Redirects are followed by hand: txiki follows a Location to file:// itself
+// and throws outside the promise, killing the CLI. Usually one hop — the tag
+// is already in /releases/latest's Location.
+async function latestViaFetch(ms) {
+  let url = LATEST_URL;
+  for (let hop = 0; hop < 5; hop++) {
+    const res = await rejectAfter(fetch(url, {
+      method: 'HEAD', redirect: 'manual', headers: { 'user-agent': 'tinyjs-cli' },
+    }), ms);
+    if (res.status >= 300 && res.status < 400) {
+      const next = new URL(res.headers.get('location') || '', url);
+      if (next.protocol !== 'https:' && next.protocol !== 'http:') {
+        throw new Error(`refusing redirect to ${next.protocol}`);
+      }
+      url = next.href;
+      if (tagFromUrl(url)) return tagFromUrl(url);
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const tag = tagFromUrl(url);
+    if (!tag) throw new Error(`no version in ${url}`);
+    return tag;
   }
+  throw new Error('too many redirects');
+}
+
+// txiki's fetch drops connections on some networks where curl and browsers
+// don't ("closed before established", #67), and the CLI runs on bare tjs —
+// bridge.js's fetch repair shim never loads here. curl ships with macOS,
+// Linux distros and Windows 10 1803+. --proto keeps every hop http(s); the
+// URL sits after -- so it can't parse as a flag.
+async function latestViaCurl() {
+  const p = tjs.spawn(['curl', '-sS', '-I', '-L', '--max-redirs', '5',
+    '--proto', '=http,https', '--proto-redir', '=http,https',
+    '--connect-timeout', '10', '--max-time', '15', '-A', 'tinyjs-cli',
+    '-o', IS_WIN ? 'NUL' : '/dev/null',
+    '-w', '%{http_code} %{url_effective}', '--', LATEST_URL],
+    { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+  const readAll = async (s) => {
+    const r = s.getReader();
+    let out = '';
+    for (;;) {
+      const { value, done } = await r.read();
+      if (done) return out;
+      out += dec.decode(value, { stream: true });
+    }
+  };
+  const [out, err] = await Promise.all([readAll(p.stdout), readAll(p.stderr)]);
+  const st = await p.wait();
+  if (st.exit_status !== 0 || st.term_signal) {
+    throw new Error(err.trim().replace(/^curl: /, '') || `exit ${st.exit_status}`);
+  }
+  const [code, url] = out.trim().split(' ');
+  if (!/^2/.test(code)) throw new Error(`HTTP ${code}`);
+  const tag = tagFromUrl(url);
+  if (!tag) throw new Error(`no version in ${url}`);
+  return tag;
+}
+
+// { tag } or { error } — the error names what each attempt hit, so a failed
+// update says why instead of only "could not reach GitHub". `quick` (the
+// background notice) makes one fetch attempt and nothing else.
+async function fetchLatestVersion({ quick = false } = {}) {
+  const errors = [];
+  const attempts = quick
+    ? [['fetch', () => latestViaFetch(4000)]]
+    : [['fetch', () => latestViaFetch(8000)],
+       ['fetch', () => latestViaFetch(8000)],
+       ['curl', latestViaCurl]];
+  for (const [i, [name, attempt]] of attempts.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 500));
+    try {
+      return { tag: await attempt() };
+    } catch (e) {
+      errors.push(`${name}: ${e?.message || e}`);
+    }
+  }
+  return { error: errors.join('; ') };
 }
 
 // Once a day (and never from a source checkout), see if a newer release
@@ -607,7 +692,7 @@ async function maybeNotifyUpdate() {
       console.log(`tinyjs: ${latest} is available (you have ${current}) — run \`tinyjs update\``);
     if (cache?.latest && isNewer(current, cache.latest)) notify(cache.latest);
     if (cache && Date.now() - (cache.checkedAt || 0) < UPDATE_CHECK_INTERVAL) return;
-    const latest = await withTimeout(fetchLatestVersion(), 4000);
+    const latest = (await withTimeout(fetchLatestVersion({ quick: true }), 4000))?.tag;
     if (!latest) return;
     await tjs.writeFile(UPDATE_CHECK_FILE,
       enc.encode(JSON.stringify({ checkedAt: Date.now(), latest })));
@@ -622,8 +707,8 @@ async function cmdUpdate() {
     fail('running from a source checkout — update with `git pull` (+ ' +
          (IS_WIN ? 'setup.ps1' : './setup.sh') + ') instead');
   }
-  const latest = await withTimeout(fetchLatestVersion(), 10000);
-  if (!latest) fail('could not reach GitHub to check the latest release');
+  const { tag: latest, error } = await fetchLatestVersion();
+  if (!latest) fail(`could not reach GitHub to check the latest release (${error})`);
   if (!isNewer(current, latest)) {
     console.log(`already up to date (${current})`);
     tjs.exit(0);

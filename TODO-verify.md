@@ -8,6 +8,39 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `tinyjs update` retries, then falls back to curl (`fix/67-update-fetch`, 2026-10-15)
+
+`fetchLatestVersion()` in cli.js: two native HEAD attempts (8 s each,
+redirects followed by hand, http(s) only), then `curl -I -L`; a failure
+names every attempt's error. The CLI runs on bare tjs, so bridge.js's fetch
+repair shim never covered it. Per OS, from the checkout:
+(a) `bin/tjs run test/update-fetch/check.js` — every case `ok`, tarpit
+included (~32 s; it bounds the worst case); (b) 20× `update --check` against
+real GitHub from a throwaway install (cli.js + a `VERSION` of an older tag):
+20/20; (c) Windows: the curl it finds is `C:\Windows\System32\curl.exe`, and
+case (a)'s "no curl on PATH" still prints a clean error.
+
+- [x] **macOS** — (a) all six cases pass, tarpit gave up at 32.0 s; (b)
+  20/20; the daily notice still prints and caches, and stays silent on
+  failure. *(2026-10-15, macOS arm64)*
+- [x] **Windows** — (a), (b), (c). *(2026-10-15, Windows 11 arm64.)* (a)
+  `bin\tjs.exe run test/update-fetch/check.js`: all six cases `ok`; tarpit
+  gave up at 32.2 s (fetch 8 s ×2, then curl's 15 s); no-curl case printed
+  `curl: ENOENT: no such file or directory` in the clean error, exit 1. (b)
+  throwaway install (cli.js + `VERSION` v0.56.0), 20× `update --check`
+  against real GitHub from PowerShell: 20/20 "v0.57.2 is available",
+  ~0.2 s each (native fetch, no fallback needed here). (c) the curl
+  `tjs.spawn(['curl', …])` really runs, read off the child's pid, is
+  `C:\WINDOWS\system32\curl.exe`. Note: from a Git Bash shell PATH puts
+  Git's `/mingw64/bin/curl` first, so that's the curl there — not checked.
+- [ ] **Windows, the reporter's network (#67)** — the real test, since the
+  failure never reproduced here: ask for 30× `tinyjs update --check` on the
+  build with the fix.
+- [x] **Linux** — (a) all six cases pass, tarpit gave up at 32.1 s (36 s
+  total); (b) 20/20 against real GitHub from a throwaway install
+  (`VERSION` v0.57.1 → "v0.57.2 is available", exit 0). *(2026-10-15,
+  Linux arm64, Ubuntu GNOME VM)*
+
 ## `win.open('main')` shows main, throws when windowless (`fix/win-open-main`, 2026-10-15)
 
 `win.open('main', opts)` (backend `app.win.open` and page `tiny.win.open`)

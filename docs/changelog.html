@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.3 <span class="date">2026-10-15</span></h2>
+      <ul>
+        <li><b><code>tinyjs update</code> gets through on networks where it kept failing.</b> On some connections txiki's fetch drops the request to GitHub (“closed before established”) while curl and browsers get through, and the update failed with “could not reach GitHub to check the latest release”. It now tries twice, then asks the system curl (macOS, Linux, Windows 10 1803+). If everything fails, the message says what each attempt hit instead of only “could not reach GitHub”. A redirect to a non-http(s) URL is refused instead of crashing the CLI. Thanks to <a href="https://github.com/lionel-rowe">@lionel-rowe</a> for the report and for tracking down the underlying error (<a href="https://github.com/tarwin/tinyjsapp/issues/67">#67</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.2 <span class="date">2026-10-15</span></h2>
       <ul>
         <li><b><code>win.open('main')</code> behaves the same on every platform.</b> It now shows and focuses the main window, the way <code>win.open</code> on any open window focuses it, and ignores the options. Under <code>mainWindow: false</code> it throws. Before, macOS focused main, Linux ignored the call, Windows built a half-wired second window, and a windowless app got silence everywhere.</li>
