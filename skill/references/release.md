@@ -10,7 +10,7 @@ message instead of a mystery TypeError (`tinyjs new` stamps it).
 Three project folders ship beside the code, for different readers:
 
 - `resources/` — data the app's own code reads. Ships whole by default;
-  `app.paths.resources` (backend) / `(await tiny.app.paths()).resources`
+  `(await app.paths()).resources` (backend) / `(await tiny.app.paths()).resources`
   (frontend) is the folder itself in dev and the bundled copy in builds
   (`Contents/Resources/app/resources/` in a .app, `resources/` beside the
   executable elsewhere), `null` without one. `"resources": [...]` lists paths
@@ -30,7 +30,7 @@ Three project folders ship beside the code, for different readers:
 
 ```js
 export async function init(app) {
-  const root = app.paths.resources;           // string | null
+  const root = (await app.paths()).resources;   // string | null
   if (root) console.log(new TextDecoder().decode(await tjs.readFile(root + '/dictionary.json')));
 }
 ```
@@ -42,7 +42,7 @@ export async function init(app) {
   `<os>-x86_64/` for that CPU's build; another OS's file at the top is
   skipped with a note, a wrong file in an OS folder fails. `"executables":
   [...]` lists paths inside it instead (a folder = its files; per-OS blocks
-  replace it). Ships FLAT: `app.paths.executables + '/<name>'` — clashing
+  replace it). Ships FLAT: `(await app.paths()).executables + '/<name>'` — clashing
   names in a list fail. Dev: `.build/executables/` (links to the sources;
   copies on Windows); builds: `Contents/Helpers/` in a .app, `executables/`
   beside the exe elsewhere; `null` without any. macOS signs each with the app
@@ -54,7 +54,7 @@ export async function init(app) {
   app that runs on Intel (x86_64-only sidecars run on Apple Silicon via Rosetta).
 
 ```js
-const exe = app.paths.executables + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
+const exe = (await app.paths()).executables + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
 const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
 ```
 

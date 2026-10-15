@@ -279,23 +279,24 @@ export const api = {
 };
 export function init(app) {          // window is up
   setInterval(() => app.push('tick', Date.now()), 1000);
-  // app also has: setTitle(t), setSize(w, h), setMenu(menus), eval(js),
-  // reload(), quit(), notify({title, body}), hide()/show()/center()/
+  // app also has: setTitle(t), setSize(w, h), menu.set(menus), eval(js),
+  // reload(), quit(), notify(title, body, opts), hide()/show()/center()/
   // minimize()/fullscreen(), setPosition(x, y), setAlwaysOnTop(v),
   // setResizable(v), setHideOnClose(v), presence(mode), print(),
-  // restore(), setFullscreen(v), getWinState(), setChrome(opts),
+  // restore(), setFullscreen(v), win.getState(), win.open(id, opts), setChrome(opts),
   // startDrag(), zoom(), tray.set/remove,
-  // updateMenuItem(id, patch), getMenuItem(id), info, store.get/set/delete/all,
-  // hotkey.register(id, combo)/unregister(id), setContextMenu(items),
+  // menu.update(id, patch), menu.get(id), info(), paths(), store.get/set/delete/all,
+  // hotkey.register(id, combo)/unregister(id), menu.setContext(items),
   // update.check()/update.install(),
   // clipboard.read()/write(data)/changeCount()/watch(ms)/unwatch(),
   // keystroke(combo), paste(), permissions.check(name)/request(name),
-  // mousePosition(), screens(), paths, show({ activate: false }),
+  // mousePosition(), screens(), show({ activate: false }),
   // shell.open(target)/reveal(path)/trash(path),
   // launchAtLogin.get()/set(v), badge(text), attention(opts),
   // power.preventSleep(reason, opts)/allowSleep(), frontmostApp(),
   // beep(), playSound(target), window(id).share(opts),
-  // idleTime(), captureScreen(screenId),
+  // system.* (os/info/capabilities/requirements/battery/idleTime/…),
+  // theme.get(), captureScreen(screenId),
   // pickColor(), ocr(path), thumbnail(path, size),
   // secrets.get/set/delete, authenticate(reason),
   // nowPlaying.set/clear, say(text, opts), voices(), stopSpeaking(),
@@ -668,7 +669,7 @@ const screens = await tiny.app.screens();
 const paths = await tiny.app.paths();
 // { home, data, cache, logs, temp, downloads, desktop, documents }
 // data/cache/logs are per app id; create them on first write
-// (backend: app.paths is a plain object, no await)
+// (backend: the same — await app.paths())
 
 // launch at login (built apps on all three OSes; dev mode -> 'unsupported')
 await tiny.app.launchAtLogin.get();       // 'enabled' | 'disabled' |
@@ -1051,7 +1052,7 @@ the role; declare it to add your own items below that one, or with
 "Help" menu of your items, in the slot where you declared it:
 
 ```js
-app.setMenu([
+app.menu.set([
   { title: 'File', items: [/* … */] },
   { role: 'help', items: [
     { id: 'site', label: 'Visit Website' },
@@ -1094,7 +1095,7 @@ Every window runs the full `tiny.*` bridge, and `tiny.win.*` calls from a
 page target *its own* window. Backend side:
 
 ```js
-app.openWindow('settings', { page: 'settings.html' });
+app.win.open('settings', { page: 'settings.html' });
 app.window('settings').setTitle('…');   // eval, push, close, hide/show,
                                         // setSize/Position, chrome, getState…
 app.push('event', data);                // broadcasts to every window
@@ -1202,7 +1203,7 @@ export function init(app) {
 
 export function onTray(id, app) {
   if (id === 'settings') {
-    app.openWindow('settings', { page: 'settings.html', size: '600x400' });
+    app.win.open('settings', { page: 'settings.html', size: '600x400' });
     app.window('settings').show();
   }
   if (id === 'quit') app.quit();
@@ -1212,7 +1213,7 @@ export function onTray(id, app) {
 You don't need a frontend or `index.html` at startup; add pages only for
 the windows you open later. `app.windows()` starts as `[]`. Closing the last
 named window leaves the backend and tray running, and you can open it again.
-Main-window operations don't create a window — use `app.openWindow` and
+Main-window operations don't create a window — use `app.win.open` and
 `app.window(id)`. `app.hide()` / `app.show()` hide and show the whole app.
 `app.reload()` reloads the named windows that are open. Dev watches the
 frontend only if that directory exists. `"url"` can't be combined with
@@ -1439,7 +1440,7 @@ automatically, since that copy is guaranteed stale.)
 
 Data your own code reads at runtime — a dictionary, a database seed, fonts,
 sample files — goes in a `resources/` folder in the project. The whole folder
-ships with the app, and `app.paths.resources` points at it:
+ships with the app, and `app.paths()`'s `resources` points at it:
 
 ```
 my-app/
@@ -1449,9 +1450,8 @@ my-app/
 ```
 
 ```js
-// Backend: app.paths is a plain object.
 export async function init(app) {
-  const root = app.paths.resources;
+  const root = (await app.paths()).resources;
   if (root === null) return;
   const bytes = await tjs.readFile(root + '/dictionary.json');
   console.log(new TextDecoder().decode(bytes));
@@ -1512,7 +1512,7 @@ below.
 Programs your backend launches — a CLI built with Go, Rust, Bun, Deno, pkg or
 PyInstaller, an ffmpeg — go in an `executables/` folder. It works like
 `resources/`: the whole folder ships by default, `"executables": [...]`
-narrows it, and `app.paths.executables` points at what shipped. The one
+narrows it, and `app.paths()`'s `executables` points at what shipped. The one
 difference is that a build only ships its own OS's binaries, so the
 binaries for every OS can sit in the folder together:
 
@@ -1527,7 +1527,7 @@ my-app/
 
 ```js
 export async function init(app) {
-  const dir = app.paths.executables;       // string | null
+  const dir = (await app.paths()).executables;   // string | null
   const exe = dir + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
   const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
   // …read p.stdout, then await p.wait()
@@ -1555,13 +1555,13 @@ with `resources`:
 }
 ```
 
-Everything ships flat — `my-cli` lands at `app.paths.executables + '/my-cli'`
+Everything ships flat — `my-cli` lands at `(await app.paths()).executables + '/my-cli'`
 whichever folder it came from — so two files with the same name in one list
 fail the build. A listed file must be a native binary for that OS. `[]`
 ships nothing. Paths follow the `resources` rules (no `..`, absolute paths
 or symlinks).
 
-In dev, `app.paths.executables` is `.build/executables/`, holding links to
+In dev, `executables` is `.build/executables/`, holding links to
 the files a build would ship (copies on Windows), so a sidecar you rebuild
 is picked up on the next spawn. Run `chmod +x` on a file that isn't
 executable — dev says so; builds mark them. Builds copy the files to
@@ -1711,8 +1711,8 @@ with the arm64 build also in the top-level `url` for apps that predate the
 block). Each installed app downloads the build for its own Mac. In the app:
 
 ```js
-const { available, latest, notes } = await tiny.api.call('update.check');
-if (available) await tiny.api.call('update.install');   // downloads, verifies
+const { available, latest, notes } = await tiny.app.update.check();
+if (available) await tiny.app.update.install();   // downloads, verifies
 // sha256 + code signature, swaps the .app in place, relaunches
 ```
 
@@ -1720,12 +1720,12 @@ Or let tinyjs check for you: `"update": { "url": …, "auto": "launch" }`
 (or `"daily"`) checks in the background (packaged apps only) and fires the
 `update-available` page event / `onUpdateAvailable(info, app)` backend
 export with `{ current, latest, notes }` — show your own prompt, then
-`update.install()`:
+`tiny.app.update.install()`:
 
 ```js
 tiny.api.on('update-available', async ({ latest, notes }) => {
   if (await tiny.dialog.confirm(`Update to ${latest}?`, { detail: notes ?? '' }))
-    await tiny.api.call('update.install');
+    await tiny.app.update.install();
 });
 ```
 
@@ -2073,7 +2073,7 @@ Works:
   `find`).
 - **System** — theme dark/light (+ live changes), sleep/wake events,
   `power.preventSleep` (a logind inhibitor), `launchAtLogin` (autostart
-  `.desktop`, built apps only), `screens`/`mousePosition`/`getWinState`,
+  `.desktop`, built apps only), `screens`/`mousePosition`/`win.getState`,
   `battery`, `idleTime` (GNOME), `pickColor` (portal), `thumbnail` (images
   only), `captureScreen` (X11 sessions only), `app.attention` (a taskbar
   urgency hint), `app.icon` (the window icon), `app.presence` (the

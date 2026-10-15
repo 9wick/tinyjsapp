@@ -8,6 +8,41 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Backend `app` speaks the page's names; old ones warn (unreleased, 2026-10-14)
+
+`app.menu.*`, `app.win.*` / `app.win.open`, `app.window(id).menu.*`,
+`app.audio.filters/filter/balance/clear`, `app.notify(title, body, opts)`;
+the old names log one deprecation line each. Behaviour changes riding along:
+`app.window('main').close()` quits (was a no-op), `app.mouseTracking.start()`
+throws on failure (was `{ ok: false }`), `audio.filter(i, patch)` merges
+onto the slot (backend and `pageChain`), `promptMissing` uses `dialog.*`
+(was calling non-existent `win.alert`/`win.confirm`). All bridge/tiny.js,
+no launcher change — but the Wayland failure path and the dialog path were
+never exercised.
+
+- [x] **macOS** — scratch app driving every new and old name: new names
+  work, each old name warned exactly once (`setMenu` called twice → one
+  line), page calls never warned, `app.window('main').close()` quit, wire
+  showed `filter(0, { gain: -3 })` → `AUDIOFILTERSET 0 60 1.1 -3` after
+  `filters([{ freq: 60, q: 1.1, gain: 4 }])`. *(2026-10-14)*
+- [ ] **Linux (Wayland)** — `app.mouseTracking.start()` with the portal
+  denied throws an Error with `.code === 'denied'`; `tiny.app.mouseTracking`
+  still does too. `tiny.system.promptMissing()` with something actually
+  missing shows its confirm dialog instead of rejecting.
+- [ ] **Windows** — `app.window('main').close()` quits; `app.win.menu.set`
+  draws main's own bar and `app.win.menu.reset()` puts the app bar back.
+- [x] **macOS, second pass** — `app.win.close('second')` closed only that
+  window, `app.win.close()` quit; backend `system.*` / `theme.get` /
+  `info()` / `paths()` answered (old `app.paths.cache` read warned once);
+  page `unwatch()` left the backend's `onClipboardChange` firing (one
+  `CLIPWATCH 500` on the wire, no `0`); `filter(0, { type })` and
+  `{ gainR }` resent `AUDIOFILTERS`; `clear()` sent `AUDIOBALANCE 0` first.
+  *(2026-10-14)*
+- [ ] **Windows / Linux** — `app.macos.quickLook()` / `selectedText()`
+  throw; `tiny.macos.ai.availability()` and `app.macos.ai.availability()`
+  both resolve `'unsupported'`. `app.system.info()` shows the real
+  session/desktop on Linux.
+
 ## `dialog.saveFile({ name })` pre-fills the file name (#59, 2026-10-14)
 
 The bridge now forwards `name` (basename only; any folder part is dropped,

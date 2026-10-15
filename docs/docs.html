@@ -421,16 +421,15 @@
   <section id="resources">
     <h2>Bundled data resources</h2>
     <p>Data your own code reads at runtime goes in a <code>resources/</code>
-    folder. The whole folder ships, and <code>app.paths.resources</code> points
+    folder. The whole folder ships, and <code>(await app.paths()).resources</code> points
     at it — the folder itself in dev, the bundled copy in builds, so the same
     relative paths work in both.</p>
     <pre>my-app/
   resources/
     dictionary.json
     fonts/</pre>
-    <pre><i>// Backend: app.paths is an object.</i>
-export async function init(app) {
-  const root = app.paths.resources;
+    <pre>export async function init(app) {
+  const root = (await app.paths()).resources;
   if (root === null) return;
   const bytes = await tjs.readFile(root + '/dictionary.json');
   console.log(new TextDecoder().decode(bytes));
@@ -467,7 +466,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
     <p>Programs your backend launches — a CLI built with Go, Rust, Bun, Deno,
     pkg or PyInstaller, ffmpeg — go in <code>executables/</code>. It works like
     <code>resources/</code>: the whole folder ships by default, a list narrows
-    it, and <code>app.paths.executables</code> points at what shipped. A build
+    it, and <code>(await app.paths()).executables</code> points at what shipped. A build
     only ships its own OS's binaries, so every OS's can sit there together.</p>
     <pre>my-app/
   executables/
@@ -476,7 +475,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
     linux/my-cli          <i>// Linux's own, since the name clashes</i>
     linux-arm64/my-cli    <i>// …and the arm64 one, for arm64 builds</i></pre>
     <pre>export async function init(app) {
-  const dir = app.paths.executables;   <i>// string | null</i>
+  const dir = (await app.paths()).executables;   <i>// string | null</i>
   const exe = dir + '/my-cli' + (tjs.env.OS === 'Windows_NT' ? '.exe' : '');
   const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
   <i>// …read p.stdout, await p.wait()</i>
@@ -493,7 +492,7 @@ console.log(paths.resources); <i>// string | null</i></pre>
     <pre>{ "executables": ["my-cli.exe"],
   "macos": { "executables": ["mac/my-cli", "mac/helper"] },
   "linux": { "executables": ["linux/"] } }</pre>
-    <p>Everything ships flat, so <code>app.paths.executables + '/my-cli'</code>
+    <p>Everything ships flat, so <code>(await app.paths()).executables + '/my-cli'</code>
     is the program wherever it came from, and two listed files with one name
     fail the build. Builds put them in <code>Contents/Helpers/</code> in a
     macOS .app, or <code>executables/</code> beside a bare/Windows/Linux
@@ -787,9 +786,10 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
 <i>// onMediaKey, onNotificationClick/Action, onUpdateAvailable, onNavigate,</i>
 <i>// onDownload, onWindowOpen</i></pre>
     <p>The <code>app</code> handle mirrors the frontend surface:
-    <code>setTitle</code>, <code>setSize</code>, <code>setMenu</code>,
-    <code>setContextMenu</code>, <code>eval(js)</code>, <code>reload()</code>,
-    <code>quit()</code>, <code>notify({title, body})</code>,
+    <code>setTitle</code>, <code>setSize</code>, <code>menu.set/update/get/setContext</code>,
+    <code>win.*</code> (the main window) and <code>win.open(id, opts)</code>,
+    <code>audio.filters/filter/balance/clear</code>, <code>eval(js)</code>, <code>reload()</code>,
+    <code>quit()</code>, <code>notify(title, body, opts)</code>,
     <code>hide/show/center/minimize/fullscreen</code>,
     <code>setPosition</code>, <code>setAlwaysOnTop</code>,
     <code>setResizable</code>, <code>setHideOnClose</code>,
@@ -1041,7 +1041,7 @@ await <b>tiny.win.windows</b>();     <i>// ['main', 'settings', …]</i>
 <b>tiny.win.open</b>('about', { page: 'about.html', size: '360x420', parent: true });
 
 <i>// every window runs the full tiny.* bridge; win.* targets its own window.</i>
-<i>// backend: app.openWindow(id, opts), app.window(id).setTitle/push/close/…,</i>
+<i>// backend: app.win.open(id, opts), app.window(id).setTitle/push/close/…,</i>
 <i>// app.push broadcasts to all windows, export onWindowClosed(id, app);</i>
 <i>// api handlers: (params, app, meta) — meta.window = caller's window id</i></pre>
   </section>
@@ -1377,8 +1377,8 @@ await <b>tiny.app.shell.trash</b>(path);    <i>// recoverable — prefer over de
 <i>// standard per-app directories — no hardcoded ~/Library paths</i>
 await <b>tiny.app.paths</b>();  <i>// { home, data, cache, logs, temp, downloads,</i>
                          <i>//   desktop, documents } — data/cache/logs are per</i>
-                         <i>//   app id; create on first write. Backend twin</i>
-                         <i>//   app.paths is a plain object (no await).</i>
+                         <i>//   app id; create on first write. Backend: the</i>
+                         <i>//   same, await app.paths().</i>
 
 <i>// become the default opener for an extension (or 'folder') — only because</i>
 <i>// the user asked. Linux today; macOS/Windows answer 'unsupported'</i>

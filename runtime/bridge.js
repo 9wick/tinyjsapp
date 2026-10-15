@@ -537,11 +537,16 @@ const aiToolCalls = [];
 // tiny.macos.* is the "no equivalent anywhere else" namespace, so calling it
 // off macOS is a bug in the app rather than a missing feature — say so with
 // the real reason instead of a silent no-op.
-function macosOnly(name) {
+// The builtins check with the page's names before calling through; app.macos
+// checks again with the backend's, so both sides fail the same way (it used
+// to answer true/null off macOS from the backend — a quickLook that "worked",
+// a selectedText that looked like "nothing selected").
+function macosOnly(name, side = 'tiny') {
   if (OS !== 'macos')
-    throw new Error('tiny.macos.' + name + ' is macOS-only (this is ' + OS +
-                    ') — guard with tiny.system.isMacOS()');
+    throw new Error(side + '.macos.' + name + ' is macOS-only (this is ' + OS +
+                    ') — guard with ' + side + '.system.isMacOS()');
 }
+const appMacosOnly = (name) => macosOnly(name, 'app');
 
 // What this machine can actually do, so an app can degrade on purpose
 // instead of calling something that quietly does nothing. true = works,
@@ -1434,7 +1439,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   // access) — so an absolute path, or a ../ walk out of the frontend, let a
   // hostile page open a file it planted (a download, say) as a privileged
   // file:// window that reads the disk. Pages get http(s) URLs and files
-  // INSIDE the frontend dir; backend app.openWindow stays unrestricted.
+  // INSIDE the frontend dir; backend app.win.open stays unrestricted.
   const normPath = (p) => {
     const parts = String(p).replace(/\\/g, '/').split('/');
     const out = [];
@@ -1588,13 +1593,64 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     return [one(id), one(patch.label ?? ''), bit(patch.checked), bit(patch.enabled)].join('\t');
   }
 
+  // The launcher polls the clipboard with ONE timer, but the backend and every
+  // window can each ask for it. Each owner ('backend', 'win:<id>') keeps its
+  // own interval and the launcher runs the fastest one, so a page's unwatch()
+  // no longer silences the backend's onClipboardChange (or another window).
+  // ms <= 0 drops that owner; a closed window drops itself.
+  const clipWatchers = new Map();
+  let clipWatchSent = 0;
+  function clipWatch(owner, ms) {
+    ms = Number(ms) | 0;
+    if (ms > 0) clipWatchers.set(owner, ms); else clipWatchers.delete(owner);
+    const eff = clipWatchers.size ? Math.min(...clipWatchers.values()) : 0;
+    if (eff !== clipWatchSent) { clipWatchSent = eff; send('CLIPWATCH ' + eff); }
+  }
+
+  // DEPRECATED backend names and shapes. The backend `app` grew its own names
+  // for things the page API calls differently (app.setMenu vs tiny.menu.set,
+  // app.notify({ title, body }) vs tiny.notify(title, body), …). The page's
+  // names won: `app` now speaks them too, and the old spellings still work
+  // but log once per process, naming the replacement. Every call site is
+  // marked "DEPRECATED (0.57.0)" — grep that when it's time to remove them.
+  const deprecatedSeen = new Set();
+  function deprecated(old, use) {
+    if (deprecatedSeen.has(old)) return;
+    deprecatedSeen.add(old);
+    console.log(`tinyjs: ${old} is deprecated and will be removed in a future release — use ${use}`);
+  }
+
+  // app.mouseTracking.start() without the throw: { ok: true } or { ok: false,
+  // code, message }. The page's CALL wants this shape (tiny.js does its own
+  // throwing); backend code gets the throwing wrapper on app.
+  async function mouseTrackingStart() {
+    if (!IS_LINUX) return { ok: true };
+    const KEY = '__tinyjs.mouseTracking.restoreToken';
+    const saved = await app.store.get(KEY);
+    const r = await ask('MOUSETRACK', one(saved ?? ''));
+    if (r?.ok && r.restoreToken && r.restoreToken !== saved) {
+      await app.store.set(KEY, r.restoreToken);
+    }
+    return r ?? { ok: false, code: 'failed' };
+  }
+
   // Desktop notification. Packaged apps (attach mode: the launcher is the
   // bundle executable) get real Notification Center banners — the app's own
   // icon, permission prompt on first use, and clicks back as the
   // 'notification-click' event (opts: { id, subtitle, sound }). Dev has no
   // bundle for UNUserNotificationCenter, so it falls back to osascript
   // (banner appears under "Script Editor").
-  async function notify({ title, body, subtitle, id: nid, sound, actions } = {}) {
+  // app.notify(title, body?, opts?) — the same shape as tiny.notify.
+  function notify(title, body, opts) {
+    // DEPRECATED (0.57.0): the object form app.notify({ title, body, ...opts }).
+    if (title !== null && typeof title === 'object') {
+      deprecated('app.notify({ title, body })', 'app.notify(title, body, opts)');
+      return sendNotify(title);
+    }
+    return sendNotify({ ...opts, title, body });
+  }
+  // The 'notify' CALL from a page arrives as one object, so it comes here.
+  async function sendNotify({ title, body, subtitle, id: nid, sound, actions } = {}) {
     // Windows (tray balloon / toast) and Linux (org.freedesktop.Notifications
     // over DBus) notify from the launcher in every mode — no bundle
     // requirement — so the osascript fallback below stays macOS-only.
@@ -1719,19 +1775,35 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // This is the APP menu: every window shows it, including windows opened
     // later. macOS has one bar for the whole app and always did; Windows and
     // Linux draw a copy of it inside each window. One window can say
-    // something different with app.window(id).setMenu(), or show no bar at
+    // something different with app.window(id).menu.set(), or show no bar at
     // all with chrome.menu:false — neither disturbs the others.
-    setMenu(menus) { sendMenuBlock(menus, null); },
-    // Patch a live item without redeclaring the menu: { label?, checked?, enabled? }.
-    // Every copy of that id moves, in every window carrying it — which is what
-    // one shared macOS bar already did. To move a single window's tick, use
-    // app.window(id).updateMenuItem().
-    updateMenuItem(id, patch = {}) { send('MENUUPD ' + menuUpdWire(id, patch)); },
-    // { exists, label, checked, enabled } for a menu/tray/context item.
-    getMenuItem(id) { return query('item:' + one(id)); },
-    // { x, y, width, height, fullscreen, minimized, visible, focused,
-    //   alwaysOnTop, resizable, screen: { width, height, scale } }
-    getWinState() { return query('win'); },
+    //
+    // Same names as tiny.menu.* in a page.
+    menu: {
+      set(menus) { sendMenuBlock(menus, null); },
+      // Patch a live item without redeclaring the menu: { label?, checked?, enabled? }.
+      // Every copy of that id moves, in every window carrying it — which is what
+      // one shared macOS bar already did. To move a single window's tick, use
+      // app.window(id).menu.update().
+      update(id, patch = {}) { send('MENUUPD ' + menuUpdWire(id, patch)); },
+      // { exists, label, checked, enabled } for a menu/tray/context item.
+      get(id) { return query('item:' + one(id)); },
+      // Replace the right-click menu: [{ id, label } | { separator: true }].
+      // null/empty restores WebKit's default menu. Clicks: 'contextmenu' event.
+      setContext(items) {
+        if (!items || !items.length) { send('CTXCLEAR'); return; }
+        send('CTXBEGIN');
+        sendItems(items);
+        send('CTXEND');
+      },
+    },
+    // DEPRECATED (0.57.0): the pre-tiny.menu names.
+    setMenu(menus) { deprecated('app.setMenu()', 'app.menu.set()'); app.menu.set(menus); },
+    updateMenuItem(id, patch) { deprecated('app.updateMenuItem()', 'app.menu.update()'); app.menu.update(id, patch); },
+    getMenuItem(id) { deprecated('app.getMenuItem()', 'app.menu.get()'); return app.menu.get(id); },
+    setContextMenu(items) { deprecated('app.setContextMenu()', 'app.menu.setContext()'); app.menu.setContext(items); },
+    // DEPRECATED (0.57.0): use app.win.getState(), as a page says tiny.win.getState().
+    getWinState() { deprecated('app.getWinState()', 'app.win.getState()'); return query('win'); },
     restore() { send('WINOP restore'); },
     setFullscreen(v) { send('WINOP fullscreen ' + (v ? 1 : 0)); },
     notify,
@@ -1771,7 +1843,15 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     ensureOnScreen() { send('WINOP onscreen'); },
     // 'menubar': no Dock icon / taskbar button / app-switcher entry;
     // 'normal': a normal app. Same name on both sides of the bridge.
-    presence(mode) { send('WINOP presence ' + (mode === 'menubar' ? 0 : 1)); },
+    presence(mode) {
+      // DEPRECATED (0.57.0): any other value quietly meant 'normal' (so a
+      // 'menuBar' typo gave a Dock icon). A page call already throws on it;
+      // this will too once the grace period ends.
+      if (mode !== 'normal' && mode !== 'menubar') {
+        deprecated(`app.presence(${JSON.stringify(mode)})`, "'normal' or 'menubar' (anything else will throw)");
+      }
+      send('WINOP presence ' + (mode === 'menubar' ? 0 : 1));
+    },
     // true: the close button hides the window instead of quitting.
     // A macOS idea — there the app outlives its last window and the Dock icon
     // brings it back. Windows and Linux have nowhere to put that, so the flag
@@ -1856,29 +1936,20 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     setChrome(opts = {}) {
       send('CHROME ' + chromeWire(opts));
     },
-    // Native DSP on this app's own output — see tiny.audio.filters. The chain
-    // is rebuilt only when its SHAPE changes; moving a control goes through
-    // setAudioFilter, which retunes in place.
-    setAudioFilters(list) {
-      const spec = (list ?? []).map((f) => {
-        const row = [FILTER_LABELS[f.type] ?? 'bq_peaking',
-          Number(f.freq ?? 1000), Number(f.q ?? 1), Number(f.gain ?? 0)];
-        // gainR only rides along when the channels actually differ, so the
-        // common symmetric case stays a 4-field row
-        if (f.gainR != null && Number(f.gainR) !== Number(f.gain ?? 0)) row.push(Number(f.gainR));
-        return row.join(',');
-      });
-      send('AUDIOFILTERS' + (spec.length ? ' ' + spec.join('\t') : ''));
+    // Native DSP on this app's own output: app.audio.filters / filter /
+    // balance / clear, defined with app.audio below. These were the names
+    // before the backend spoke tiny.audio's.
+    // DEPRECATED (0.57.0)
+    setAudioFilters(list) { deprecated('app.setAudioFilters()', 'app.audio.filters()'); app.audio.filters(list); },
+    setAudioBalance(v) { deprecated('app.setAudioBalance()', 'app.audio.balance()'); app.audio.balance(v); },
+    setAudioFilter(i, f) { deprecated('app.setAudioFilter()', 'app.audio.filter()'); app.audio.filter(i, f); },
+    // Drags the WINDOW (frameless chrome). Dragging files out is page-only —
+    // tiny.win.startDrag({ files }) has to run inside the page's mousedown,
+    // while the button is held, which a backend call can never be.
+    startDrag(opts) {
+      if (opts?.files) console.log('tinyjs: app.startDrag() drags the window and ignores { files } — drag files out from the page: tiny.win.startDrag({ files })');
+      send('DRAGWIN');
     },
-    setAudioBalance(v) {
-      const b = Math.max(-1, Math.min(1, Number(v) || 0));
-      send('AUDIOBALANCE ' + b);
-    },
-    setAudioFilter(i, f) {
-      send('AUDIOFILTERSET ' + [Number(i) | 0, Number(f.freq ?? 1000),
-        Number(f.q ?? 1), Number(f.gain ?? 0)].join('\t'));
-    },
-    startDrag() { send('DRAGWIN'); },
     // edge: 'n'|'ne'|'e'|'se'|'s'|'sw'|'w'|'nw' — frameless windows have no
     // WM resize border, so the page supplies the grip.
     startResize(edge) { send('RESIZEWIN ' + String(edge || 'se')); },
@@ -1904,8 +1975,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // Poll changeCount in the launcher (in-process, ~free); changes arrive
       // as the 'clipboard-change' event / onClipboardChange option with
       // { changeCount, self } — self: our own write() caused it.
-      watch(intervalMs = 500) { send('CLIPWATCH ' + (intervalMs | 0)); },
-      unwatch() { send('CLIPWATCH 0'); },
+      // The launcher has ONE watcher, shared: see clipWatch below.
+      watch(intervalMs = 500) { clipWatch('backend', intervalMs); return true; },
+      unwatch() { clipWatch('backend', 0); return true; },
     },
     // Post a real CGEvent keystroke (combo like 'cmd+v') from the launcher —
     // one Accessibility grant that names your app, no osascript spawn.
@@ -1934,18 +2006,21 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // start() arms the one sanctioned route — the ScreenCast portal's
     // cursor-metadata stream — which shows a consent dialog on first use
     // (remembered: the grant's restore token is kept in the store) and the
-    // system's screen-sharing indicator while armed. Resolves { ok: true }
-    // or { ok: false, code: 'unsupported' | 'denied' | 'failed', message }.
+    // system's screen-sharing indicator while armed. Resolves { ok: true },
+    // or throws an Error with .code: 'unsupported' | 'denied' | 'failed' —
+    // the same contract as tiny.app.mouseTracking.start() in a page.
+    //
+    // Until 0.57.0 this one resolved { ok: false, code, message } instead of
+    // throwing. That can't warn (nothing to see at the call site), so it's a
+    // CHANGELOG note: `if (!r.ok)` code still works on success, and a failure
+    // now lands in its catch.
     mouseTracking: {
       async start() {
-        if (!IS_LINUX) return { ok: true };
-        const KEY = '__tinyjs.mouseTracking.restoreToken';
-        const saved = await app.store.get(KEY);
-        const r = await ask('MOUSETRACK', one(saved ?? ''));
-        if (r?.ok && r.restoreToken && r.restoreToken !== saved) {
-          await app.store.set(KEY, r.restoreToken);
-        }
-        return r ?? { ok: false, code: 'failed' };
+        const r = await mouseTrackingStart();
+        if (r?.ok) return { ok: true };
+        const e = new Error(r?.message || ('mouseTracking: ' + (r?.code || 'failed')));
+        e.code = r?.code || 'failed';
+        throw e;
       },
       stop() {
         if (IS_LINUX) send('MOUSETRACK STOP');
@@ -2022,6 +2097,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // wrong platform is a false, not a throw and not silence.
     async beep() { return (await ask('SOUND'))?.ok === true; },
     async playSound(target) {
+      // no target = the alert beep, as tiny.app.playSound() does
+      if (!target) return app.beep();
       const name = SOUND_ALIASES[OS]?.[target] ?? target;
       return (await ask('SOUND', esc(name)))?.ok === true;
     },
@@ -2037,7 +2114,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // Speak text with a system voice (AVSpeechSynthesizer). voice: a voice
     // id from voices() or a BCP-47 language ('en-AU'); rate 0..1 (~0.5
     // default). Resolves when playback FINISHES (false if interrupted).
-    async say(text, { voice, rate } = {}) {
+    async say(text, opts) {
+      const { voice, rate } = opts ?? {};
       return (await ask('SAY', esc(String(text ?? '')) + '\t' + esc(voice ?? '') +
                         '\t' + (rate ?? 0)))?.ok === true;
     },
@@ -2104,6 +2182,22 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // Machine state rather than things this app does — mirrors
     // tiny.system.* in the page, same names both sides.
     system: {
+      // What the machine is. Sync like the page's (OS is fixed for the run).
+      os: () => OS,
+      isMacOS: () => OS === 'macos',
+      isWindows: () => OS === 'windows',
+      isLinux: () => OS === 'linux',
+      // { os, arch: 'arm64'|'x86_64', session, desktop } — session/desktop
+      // are the Linux display server and desktop name, null elsewhere.
+      info: async () => systemInfo(),
+      architecture: async () => systemInfo().arch,
+      // { <feature>: boolean, … } — anything absent is supported. The page's
+      // copy adds `api` (what the tinyjs.json gate denies it); the backend
+      // isn't gated, so there's none here.
+      capabilities: () => systemCapabilities(query, () => app.macos.ai.availability()),
+      // [{ id, ok, feature, detail, install }] — see tiny.system.requirements.
+      requirements: (ids, opts) => systemRequirements(ids ?? null, !!opts?.refresh),
+      missing: async (ids) => (await systemRequirements(ids ?? null, false)).filter((r) => !r.ok),
       // { percent, charging, plugged, minutesRemaining } | null (on desktops
       // without a battery).
       battery: () => query('battery'),
@@ -2125,7 +2219,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // the BACKEND, which has neither (txiki has no Intl at all) and where
       // reading LANG would be wrong — Windows has no such variable, and an
       // inherited one describes the parent process, not the user.
-      locale: () => query('locale'),
+      // Cached from the last SYSLOCALE (null where the launcher has no
+      // locale reader yet: Windows, Linux).
+      locale: async () => lastLocale ?? query('locale'),
     },
     // macOS-only: concepts the other OSes don't have at all, so they live in
     // their own namespace instead of pretending to be portable. Same shape
@@ -2136,6 +2232,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // covers. Resolves the script result as a string (null if it isn't
       // text); throws with the script error message.
       async applescript(source) {
+        appMacosOnly('applescript');
         const r = await ask('OSA', esc(source));
         if (!r?.ok) throw new Error(r?.error ?? 'script error');
         return r.result ?? null;
@@ -2143,6 +2240,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // Quick Look (the Finder-spacebar preview panel, no qlmanage spawn).
       // Path or array of paths (arrow keys page through); quickLook() closes.
       quickLook(paths) {
+        appMacosOnly('quickLook');
         const list = paths == null ? [] : [].concat(paths);
         send('QUICKLOOK' + (list.length ? ' ' + list.map(esc).join('\t') : ''));
         return true;
@@ -2151,6 +2249,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // confidence, box }] }; box is normalized 0..1, top-left origin.
       // Pairs with captureScreen() for screenshot-to-text.
       async ocr(path) {
+        appMacosOnly('ocr');
         const r = await ask('OCR', esc(path));
         if (!r?.ok) throw new Error(r?.error ?? 'ocr failed');
         return { text: r.text, blocks: r.blocks };
@@ -2162,12 +2261,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // recording at a time.
       recorder: {
         async start({ screenId, path } = {}) {
+          appMacosOnly('recorder.start');
           if (!path) throw new Error('recorder.start needs a { path }');
           const r = await ask('RECORD', 'start ' + (screenId ?? 0) + '\t' + esc(path));
           if (!r?.ok) throw new Error(r?.error ?? 'record failed');
           return true;
         },
         async stop() {
+          appMacosOnly('recorder.stop');
           const r = await ask('RECORD', 'stop');
           if (!r?.ok) throw new Error(r?.error ?? 'record failed');
           return { path: r.path, duration: r.duration };
@@ -2179,8 +2280,13 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // against an SDK that didn't carry the framework.
       ai: {
         // 'available' | 'unavailable' (Apple Intelligence off / not downloaded)
-        // | 'unsupported' (older macOS or a non-AI build).
-        async availability() { return (await ask('AI available'))?.status ?? 'unsupported'; },
+        // | 'unsupported' (older macOS, a non-AI build, or not macOS at all —
+        // the one macos.* call that answers off macOS instead of throwing,
+        // since it IS the check you make first).
+        async availability() {
+          if (OS !== 'macos') return 'unsupported';
+          return (await ask('AI available'))?.status ?? 'unsupported';
+        },
         // generate(prompt, { instructions, tools }) -> the completion text;
         // throws with the reason (incl. 'not built in' where the shim wasn't
         // compiled).
@@ -2199,6 +2305,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         // run out of four — and claimed all three in its prose EVERY time,
         // including the runs where it silently skipped one.
         async generate(prompt, { instructions, tools } = {}) {
+          appMacosOnly('ai.generate');
           aiTools.clear();
           aiToolCalls.length = 0;
           const specs = [];
@@ -2221,15 +2328,16 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // The text currently selected in the frontmost app (PopClip-style
       // popovers) — needs the Accessibility permission. null if nothing is
       // selected or the app doesn't expose it.
-      selectedText: () => query('selectedtext'),
+      selectedText: () => (appMacosOnly('selectedText'), query('selectedtext')),
       // Every on-screen window of OTHER apps (Rectangle/Magnet territory):
       // [{ app, bundleId, pid, title, index, x, y, width, height }] in
       // top-left screen coords. Needs Accessibility; null if not granted.
-      otherWindows: () => query('otherwindows'),
+      otherWindows: () => (appMacosOnly('otherWindows'), query('otherwindows')),
       // Move + resize another app's frontmost window (pid from otherWindows()
       // or frontmostApp()), top-left screen coords. Needs Accessibility;
       // resolves true or throws.
       async moveWindow(pid, { x, y, width, height } = {}) {
+        appMacosOnly('moveWindow');
         const r = await ask('WINCTRL', [pid | 0, x | 0, y | 0, width | 0, height | 0].join('\t'));
         if (!r?.ok) throw new Error(r?.error ?? 'move failed');
         return true;
@@ -2315,17 +2423,11 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       register(hid, combo) { send('HKREG ' + one(hid) + '\t' + one(combo)); },
       unregister(hid) { send('HKUNREG ' + one(hid)); },
     },
-    // Replace the right-click menu: [{ id, label } | { separator: true }].
-    // null/empty restores WebKit's default menu. Clicks: 'contextmenu' event.
-    setContextMenu(items) {
-      if (!items || !items.length) { send('CTXCLEAR'); return; }
-      send('CTXBEGIN');
-      sendItems(items);
-      send('CTXEND');
-    },
     quit() { send('QUIT'); },
     // --- multi-window ---------------------------------------------------
-    // Open (or focus) a secondary window. `page` is an html file in your
+    // Open (or focus) a secondary window — app.win.open(id, opts), as a page
+    // says tiny.win.open(). (DEPRECATED (0.57.0): the app.openWindow name,
+    // rewrapped with a warning after this object.) `page` is an html file in your
     // frontend dir (e.g. 'settings.html') or an absolute path. Each window
     // runs the same tiny.* bridge; win.* calls from its page target itself.
     // `size` is the page's box: a frameless window is exactly that big, a
@@ -2375,10 +2477,13 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         ? cmd + (rest != null ? ' ' + rest : '')
         : cmd + '@' + id + (rest != null ? ' ' + rest : ''));
       return {
+        id,
         eval: (js) => t('EVAL', esc(js)),
         push: (event, data) =>
           t('EVAL', esc('window.__emit && window.__emit(' + JSON.stringify({ event, data }) + ')')),
-        close: () => { if (id !== 'main') send('WINCLOSE ' + one(id)); },
+        // Closing main quits, the way tiny.win.close() does from main's page.
+        // (Until 0.57.0 this was a silent no-op for 'main'.)
+        close: () => { if (id === 'main') app.quit(); else send('WINCLOSE ' + one(id)); },
         setTitle: (v) => t('TITLE', one(v)),
         setSize: (w2, h2) => t('SIZE', `${w2 | 0} ${h2 | 0}`),
         setPosition: (x, y) => { t('WINOP', `pos ${x | 0} ${y | 0}`); rescueNote(id, 'pos'); },
@@ -2399,7 +2504,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         setZoom: (f) => t('WINOP', 'zoomfactor ' + Number(f || 1)),
         // Both must name the window: a bare DRAGWIN/RESIZEWIN means 'main', so
         // a satellite's grip would have moved/resized the deck instead.
-        startDrag: () => t('DRAGWIN'),
+        startDrag: (opts) => {
+          if (opts?.files) console.log('tinyjs: app.window(id).startDrag() drags the window and ignores { files } — drag files out from the page: tiny.win.startDrag({ files })');
+          t('DRAGWIN');
+        },
         startResize: (edge) => t('RESIZEWIN', String(edge || 'se')),
         setClickThrough: (v) => t('WINOP', 'clickthrough ' + (v ? 1 : 0)),
         setLevel: (level) => t('WINOP', 'level ' + one(level ?? 'normal')),
@@ -2407,24 +2515,34 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         setChrome(opts = {}) {
           t('CHROME', chromeWire(opts));
         },
-        // This window's OWN menu bar, overriding the app menu for it alone.
-        // Same spec shape as app.setMenu, clicks arrive the same way (a plain
-        // `MENU <id>`), so a handler doesn't have to care which bar it came
-        // from. Always addressed as '@<id>' — a bare MENUBEGIN is the app
-        // menu, so 'main' has to name itself to declare a menu of its own.
+        // This window's OWN menu bar, overriding the app menu for it alone —
+        // the same names as tiny.win.menu.* in a page. Same spec shape as
+        // app.menu.set, clicks arrive the same way (a plain `MENU <id>`), so
+        // a handler doesn't have to care which bar it came from. Always
+        // addressed as '@<id>' — a bare MENUBEGIN is the app menu, so 'main'
+        // has to name itself to declare a menu of its own.
         //
         // macOS has one bar for the whole app, so it swaps this one in while
         // the window is key and puts the app menu back when it isn't.
-        setMenu: (menus) => sendMenuBlock(menus, id),
-        // Drop the override: back to showing the app menu.
-        resetMenu: () => send('MENURESET@' + id),
-        // Patch an item in THIS window's bar only, leaving other windows'
-        // copies of the same id where they are.
-        updateMenuItem: (mid, patch = {}) => send('MENUUPD@' + id + ' ' + menuUpdWire(mid, patch)),
-        // item@<win>:<id> — this window's copy. (Bare `item:<id>` answers from
-        // whichever window happens to hold one, which is what app.getMenuItem
-        // and the tray/context items still want.)
-        getMenuItem: (mid) => query('item@' + one(id) + ':' + one(mid)),
+        menu: {
+          set: (menus) => sendMenuBlock(menus, id),
+          // Drop the override: back to showing the app menu.
+          reset: () => send('MENURESET@' + id),
+          // Patch an item in THIS window's bar only, leaving other windows'
+          // copies of the same id where they are.
+          update: (mid, patch = {}) => send('MENUUPD@' + id + ' ' + menuUpdWire(mid, patch)),
+          // item@<win>:<id> — this window's copy. (Bare `item:<id>` answers from
+          // whichever window happens to hold one, which is what app.menu.get
+          // and the tray/context items still want.)
+          get: (mid) => query('item@' + one(id) + ':' + one(mid)),
+        },
+        // DEPRECATED (0.57.0): the flat names from before handle.menu.*.
+        setMenu: (menus) => (deprecated('app.window(id).setMenu()', 'app.window(id).menu.set()'), sendMenuBlock(menus, id)),
+        resetMenu: () => (deprecated('app.window(id).resetMenu()', 'app.window(id).menu.reset()'), send('MENURESET@' + id)),
+        updateMenuItem: (mid, patch = {}) => (deprecated('app.window(id).updateMenuItem()', 'app.window(id).menu.update()'),
+          send('MENUUPD@' + id + ' ' + menuUpdWire(mid, patch))),
+        getMenuItem: (mid) => (deprecated('app.window(id).getMenuItem()', 'app.window(id).menu.get()'),
+          query('item@' + one(id) + ':' + one(mid))),
         getState: () => query(id === 'main' ? 'win' : 'win:' + id),
         // This window's own page, on paper or as a PDF file — the print
         // panel is modal to it, and the PDF is of its document, not the
@@ -2626,7 +2744,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
       else if (ArrayBuffer.isView(bytes)) bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       if (!(bytes instanceof Uint8Array)) throw new Error('sampler.load: pass a path or an ArrayBuffer');
-      const dir = app.paths.cache + '/sampler';
+      const dir = pathsRecord.cache + '/sampler';
       await tjs.makeDir(dir, { recursive: true }).catch(() => {});
       path = dir + '/' + encodeURIComponent(name);
       await tjs.writeFile(path, bytes);
@@ -2729,8 +2847,54 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     set: (patch) => (samplerSet(id, patch), true),
     stop: () => (samplerStop(id), true),
   });
+  // Native DSP on this app's own output — the same verbs as tiny.audio in a
+  // page (tiny.audio.filters etc. land here). The chain is rebuilt only when
+  // its SHAPE changes; moving a control goes through filter(), which retunes
+  // in place.
+  //
+  // filter(i, patch) really patches: it merges onto what filters() last set
+  // for that slot. (Until 0.57.0 a missing field fell back to the defaults,
+  // so filter(0, { gain: -3 }) also reset freq and q.) The in-place retune
+  // only carries freq/q/gain, so a patch that changes `type` or `gainR`
+  // resends the whole chain instead — a rebuild, which can click, but it
+  // used to be silently dropped.
+  let audioChain = [];
+  const audioFilterRow = (f) => {
+    const row = [FILTER_LABELS[f.type] ?? 'bq_peaking',
+      Number(f.freq ?? 1000), Number(f.q ?? 1), Number(f.gain ?? 0)];
+    // gainR only rides along when the channels actually differ, so the
+    // common symmetric case stays a 4-field row
+    if (f.gainR != null && Number(f.gainR) !== Number(f.gain ?? 0)) row.push(Number(f.gainR));
+    return row.join(',');
+  };
   // Backend-side surface (same mixer, same state as the pages' calls).
   app.audio = {
+    filters(list) {
+      audioChain = (list ?? []).map((f) => ({ ...f }));
+      const spec = audioChain.map(audioFilterRow);
+      send('AUDIOFILTERS' + (spec.length ? ' ' + spec.join('\t') : ''));
+    },
+    filter(i, patch) {
+      const idx = Number(i) | 0;
+      const old = audioChain[idx];
+      const f = { ...old, ...patch };
+      if (old && ((patch?.type != null && patch.type !== old.type) ||
+                  (patch?.gainR !== undefined && patch.gainR !== old.gainR))) {
+        audioChain[idx] = f;
+        app.audio.filters(audioChain);
+        return;
+      }
+      if (old) audioChain[idx] = f;
+      send('AUDIOFILTERSET ' + [idx, Number(f.freq ?? 1000),
+        Number(f.q ?? 1), Number(f.gain ?? 0)].join('\t'));
+    },
+    balance(v) {
+      const b = Math.max(-1, Math.min(1, Number(v) || 0));
+      send('AUDIOBALANCE ' + b);
+    },
+    // Back to unprocessed output: no filters and a centred balance (what
+    // pageChain(ctx).clear() always did).
+    clear() { app.audio.balance(0); app.audio.filters([]); },
     sampler: {
       load: (name, source) => samplerLoad(name, source),
       play: async (name, opts) => samplerVoice(samplerPlay(name, opts)),
@@ -2740,6 +2904,41 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       unload: (name) => (samplerUnload(name), true),
     },
   };
+
+  // app.win — the main window, under the names a page uses for its own
+  // (tiny.win.*), plus open(). Top-level app.setTitle() & co. still target
+  // main too; this is for code that wants to read like the page side.
+  // app.info() / app.paths() — functions, as tiny.app.info() / paths() are in
+  // a page. DEPRECATED (0.57.0): reading them as plain objects
+  // (app.paths.data). That still works — each field is a getter that warns
+  // once — and JSON.stringify / spread still see the fields.
+  const callableRecord = (name, obj) => {
+    const fn = async () => ({ ...obj });
+    for (const k of Object.keys(obj)) {
+      Object.defineProperty(fn, k, {
+        enumerable: true, configurable: true,
+        get: () => (deprecated(`app.${name}.<field>`, `(await app.${name}()).<field>`), obj[k]),
+      });
+    }
+    Object.defineProperty(fn, 'toJSON', { value: () => ({ ...obj }) });
+    return fn;
+  };
+  const pathsRecord = app.paths;
+  app.info = callableRecord('info', app.info);
+  app.paths = callableRecord('paths', pathsRecord);
+
+  // close/windows/setHideOnClose take tiny.win's shapes: close(id?) closes
+  // that window (no id = main = quit), not "main, whatever you pass".
+  const openWindow = app.openWindow;
+  app.win = {
+    ...app.window('main'),
+    open: openWindow,
+    windows: () => app.windows(),
+    close: (id) => app.window(id ?? 'main').close(),
+    setHideOnClose: (v) => app.setHideOnClose(v),
+  };
+  // DEPRECATED (0.57.0): app.openWindow — use app.win.open.
+  app.openWindow = (id, opts) => (deprecated('app.openWindow()', 'app.win.open()'), openWindow(id, opts));
 
   const builtins = {
     fetch: doFetch,
@@ -2773,14 +2972,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     'system.battery': async () => app.system.battery(),
     'system.wifi': async () => app.system.wifi(),
     'app.spotlight': async ({ query: q }) => app.spotlight(q),
-    'macos.ai.availability': async () => (macosOnly('ai.availability'), app.macos.ai.availability()),
+    'macos.ai.availability': async () => app.macos.ai.availability(),
     // No `tools` here on purpose: a tool's run() is a real function and can't
     // cross the bridge from a page. Backend code calls app.macos.ai.generate
     // directly and keeps its handlers in scope.
     'macos.ai.generate': async ({ prompt, instructions }) => (macosOnly('ai.generate'), app.macos.ai.generate(prompt, { instructions })),
     'win.setPosition': async ({ x, y }, _a, m) => (forWin(m).setPosition(x, y), true),
     'win.open': async ({ id: wid, ...opts }) =>
-      (app.openWindow(wid, { ...opts, page: pageForWindow(opts.page) }), true),
+      (app.win.open(wid, { ...opts, page: pageForWindow(opts.page) }), true),
     'win.close': async ({ id: wid }, _a, m) => {
       const target = wid ?? m?.window ?? 'main';
       if (target === 'main') app.quit();
@@ -2789,14 +2988,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     },
     'win.windows': async () => app.windows(),
     'win.setHideOnClose': async ({ enabled }) => (app.setHideOnClose(enabled), true),
-    'notify': async (params) => notify(params),
+    'notify': async (params) => sendNotify(params),
     'app.presence': async ({ mode }) => {
       if (mode !== 'normal' && mode !== 'menubar')
         throw new Error("app.presence expects 'normal' or 'menubar', got: " + mode);
       app.presence(mode);
       return true;
     },
-    'menu.set': async ({ menus }) => (app.setMenu(menus), true),
+    'menu.set': async ({ menus }) => (app.menu.set(menus), true),
     'tray.set': async (spec) => (app.tray.set(spec), true),
     'tray.remove': async () => (app.tray.remove(), true),
     'update.check': async () => {
@@ -2827,23 +3026,23 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       return r ?? { ok: false, code: 'failed' };
     },
     'audioTap.stop': async () => (stopAudioTap(), true),
-    'menu.setContext': async ({ items }) => (app.setContextMenu(items), true),
-    'menu.update': async ({ id: mid, ...patch }) => (app.updateMenuItem(mid, patch), true),
-    'menu.get': async ({ id: mid }) => app.getMenuItem(mid),
-    // tiny.win.menu.* — the calling window's own bar (see app.window().setMenu).
-    'win.menu.set': async ({ menus }, _a, m) => (forWin(m).setMenu(menus), true),
-    'win.menu.reset': async (_p, _a, m) => (forWin(m).resetMenu(), true),
+    'menu.setContext': async ({ items }) => (app.menu.setContext(items), true),
+    'menu.update': async ({ id: mid, ...patch }) => (app.menu.update(mid, patch), true),
+    'menu.get': async ({ id: mid }) => app.menu.get(mid),
+    // tiny.win.menu.* — the calling window's own bar (see app.window().menu).
+    'win.menu.set': async ({ menus }, _a, m) => (forWin(m).menu.set(menus), true),
+    'win.menu.reset': async (_p, _a, m) => (forWin(m).menu.reset(), true),
     'win.menu.update': async ({ id: mid, ...patch }, _a, m) =>
-      (forWin(m).updateMenuItem(mid, patch), true),
-    'win.menu.get': async ({ id: mid }, _a, m) => forWin(m).getMenuItem(mid),
+      (forWin(m).menu.update(mid, patch), true),
+    'win.menu.get': async ({ id: mid }, _a, m) => forWin(m).menu.get(mid),
     'win.getState': async (_p, _a, m) => forWin(m).getState(),
     'debug.get': async ({ what }) => query(String(what)),
     'win.restore': async (_p, _a, m) => (forWin(m).restore(), true),
     'win.setFullscreen': async ({ enabled }, _a, m) => (forWin(m).setFullscreen(enabled), true),
     'win.setChrome': async (opts, _a, m) => (forWin(m).setChrome(opts), true),
-    'audio.filters': async ({ filters }) => (app.setAudioFilters(filters), true),
-    'audio.filterSet': async ({ index, filter }) => (app.setAudioFilter(index, filter ?? {}), true),
-    'audio.balance': async ({ value }) => (app.setAudioBalance(value), true),
+    'audio.filters': async ({ filters }) => (app.audio.filters(filters), true),
+    'audio.filterSet': async ({ index, filter }) => (app.audio.filter(index, filter ?? {}), true),
+    'audio.balance': async ({ value }) => (app.audio.balance(value), true),
     // tiny.audio.sampler (hub above). Pages send a path or the bytes as
     // base64 — bytes are spilled to the cache dir and loaded by path.
     'sampler.load': async ({ name, path, bytesB64 }) =>
@@ -2883,8 +3082,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     'clip.read': async () => app.clipboard.read(),
     'clip.write': async (data) => app.clipboard.write(data),
     'clip.changeCount': async () => app.clipboard.changeCount(),
-    'clip.watch': async ({ intervalMs }) => (app.clipboard.watch(intervalMs ?? 500), true),
-    'clip.unwatch': async () => (app.clipboard.unwatch(), true),
+    'clip.watch': async ({ intervalMs }, _a, m) => (clipWatch('win:' + (m?.window || 'main'), intervalMs ?? 500), true),
+    'clip.unwatch': async (_p, _a, m) => (clipWatch('win:' + (m?.window || 'main'), 0), true),
     'app.keystroke': async ({ combo }) => app.keystroke(combo),
     'app.paste': async () => app.paste(),
     'perm.check': async ({ name }) => app.permissions.check(name),
@@ -2894,20 +3093,20 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       const win = m?.window || 'main';
       return query(win === 'main' ? 'mouse' : 'mouse:' + win);
     },
-    'theme.get': async () => lastTheme,
+    'theme.get': async () => app.theme.get(),
     // Cached from the last SYSLOCALE, so a page that just wants "what is it
     // now" doesn't pay a round trip; null until the first change.
-    'system.locale': async () => lastLocale ?? query('locale'),
-    'app.info': async () => app.info,
-    'system.info': async () => systemInfo(),
+    'system.locale': async () => app.system.locale(),
+    'app.info': async () => app.info(),
+    'system.info': async () => app.system.info(),
     'system.capabilities': async (_p, _a, m) => ({
       ...(await systemCapabilities(query, () => app.macos.ai.availability())),
       // what the "api" gate denies the CALLING origin (empty when ungated)
       api: gateInfo(m?.origin),
     }),
-    'system.requirements': async ({ ids, refresh } = {}) => systemRequirements(ids, refresh),
+    'system.requirements': async ({ ids, refresh } = {}) => app.system.requirements(ids, { refresh }),
     'app.screens': async () => app.screens(),
-    'app.paths': async () => app.paths,
+    'app.paths': async () => app.paths(),
     'app.setAsDefaultHandler': async ({ ext }) => app.setAsDefaultHandler(ext),
     'shell.open': async ({ target }) => app.shell.open(target),
     'shell.reveal': async ({ path }) => app.shell.reveal(path),
@@ -2920,13 +3119,13 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     'power.prevent': async ({ reason, display }) => app.power.preventSleep(reason, { display }),
     'power.allow': async () => app.power.allowSleep(),
     'app.frontmost': async () => app.frontmostApp(),
-    'sound.play': async ({ target }) => (target ? app.playSound(target) : app.beep()),
+    'sound.play': async ({ target }) => app.playSound(target),
     'win.share': async (p, _a, m) => forWin(m).share(p),
     'system.idleTime': async () => app.system.idleTime(),
     'macos.quickLook': async ({ paths }) => (macosOnly('quickLook'), app.macos.quickLook(paths)),
     'app.captureScreen': async ({ screenId }) => app.captureScreen(screenId),
     'app.pickColor': async () => app.pickColor(),
-    'app.mouseTracking.start': async () => app.mouseTracking.start(),
+    'app.mouseTracking.start': async () => mouseTrackingStart(),
     'app.mouseTracking.stop': async () => app.mouseTracking.stop(),
     'macos.ocr': async ({ path }) => (macosOnly('ocr'), app.macos.ocr(path)),
     'app.thumbnail': async ({ path, size }) => app.thumbnail(path, size ?? 256),
@@ -2958,6 +3157,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   };
   let lastTheme = null; // { dark } once the launcher reports it (at startup)
   let lastLocale = null;   // last SYSLOCALE payload
+  // tiny.theme.get() on the backend: { dark } | null. Changes still arrive
+  // through the onSystem('theme', 'dark'|'light') export.
+  app.theme = { get: async () => lastTheme };
   let markEof;
   const eofDone = new Promise((r) => { markEof = () => r({ exit_status: 0 }); });
 
@@ -3157,6 +3359,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
           for (const [sid, s] of fetchStreams) if (s.win === id) cancelFetchStream(sid);
           // …and the audio tap, if this was the window that started it.
           if (audioTapOwner === id) stopAudioTap();
+          clipWatch('win:' + id, 0);
           push('window-closed', { id });
           fire('onWindowClosed', onWindowClosed, id, app);
         } else if (line.startsWith('WINSTATE ')) {
@@ -3300,7 +3503,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   if (chrome && !attachPath) app.setChrome(chrome);
 
   // contextMenu:false in the manifest suppresses WebKit's default right-click
-  // menu (Reload/Back/Inspect Element…). A custom setContextMenu() still wins.
+  // menu (Reload/Back/Inspect Element…). A custom menu.setContext() still wins.
   if (contextMenu === false) send('CTXSUPPRESS 1');
 
   // about:'menu' turns the macOS About item into a plain menu click — the

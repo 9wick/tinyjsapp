@@ -14,7 +14,7 @@ export function init(app) {
   if (tjs.env.TINYJS_WINDOWLESS_TEST) {
     setTimeout(async () => {
       console.log('BOOT', JSON.stringify(await app.windows()), JSON.stringify(await app.tray.position()));
-      console.log('MENU', JSON.stringify(await app.getMenuItem('open')));
+      console.log('MENU', JSON.stringify(await app.menu.get('open')));
     }, 1000);
     setTimeout(() => onTray('open', app), 7000);
     setTimeout(() => onTray('close', app), 15000);
@@ -28,7 +28,7 @@ export function init(app) {
 
 export function onTray(id, app) {
   if (id === 'open') {
-    app.openWindow('editor', { page: 'editor.html', title: 'Editor', size: '400x300' });
+    app.win.open('editor', { page: 'editor.html', title: 'Editor', size: '400x300' });
     app.window('editor').show();
   }
   if (id === 'close') app.window('editor').close();

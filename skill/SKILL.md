@@ -110,9 +110,9 @@ assets/              files the OS reads, by name: icon.png (1024×1024 app
                      icon), Credits.html|rtf|rtfd (macOS About), help book
                      folder (macOS Help menu). Older projects: icon.png and
                      Credits.html at the root still work
-resources/           data the backend reads at runtime → app.paths.resources
+resources/           data the backend reads at runtime → (await app.paths()).resources
                      (the folder in dev, bundled copy in builds; null if none)
-executables/         sidecar binaries → app.paths.executables (flat). Ships
+executables/         sidecar binaries → (await app.paths()).executables (flat). Ships
                      this OS's binaries from the top, overridden by name from
                      <os>/ then <os>-arm64|-x86_64/; signed into
                      Contents/Helpers on macOS
@@ -135,10 +135,10 @@ export const api = {
 };
 export function init(app) {
   app.push('event-name', data);            // page: tiny.api.on('event-name')
-  // app mostly mirrors the page: app.window(id).*, app.openWindow,
+  // app mirrors the page: app.window(id).*, app.win.open, app.menu.*,
   // app.tray.*, app.audio.sampler.*, app.clipboard.*, app.store.*,
-  // app.paths (plain object), notify, quit, … — but some names differ
-  // (app.setMenu, app.setChrome, …): name map in references/api.md
+  // app.paths(), app.system.*, notify, quit, … — main-window ops also sit at
+  // the top level (app.setTitle, app.setChrome, …); see references/api.md
 }
 // other exports the scaffold wires, each (info, app): onMenu, onTray (id
 // null = bare icon click), onContextMenu, onHotkey, onWindowState,

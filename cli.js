@@ -95,7 +95,7 @@ async function watchTree(dir, cb, skip = () => false, perDir = false) {
 }
 
 // Data the app's own code reads at runtime lives in resources/ and reaches
-// it as app.paths.resources: the whole folder, or only the files and
+// it as app.paths().resources: the whole folder, or only the files and
 // directories inside it that tinyjs.json "resources" lists (per OS through
 // the platform blocks). Files the OS reads (icon, Credits, help book) live
 // in assets/ instead. Reject symlinks at every parent and below selected
@@ -179,7 +179,7 @@ async function stageResources(paths) {
 // the folder instead (per OS through the platform blocks). A .app puts them
 // in Contents/Helpers/, where codesign treats them as nested code and signs
 // each one; Windows/Linux put them in executables/ beside the exe. Either
-// way they land flat, so app.paths.executables + '/<name>' is the program.
+// way they land flat, so app.paths().executables + '/<name>' is the program.
 // Only this OS's native binaries (and the libraries they load) ship:
 // anything else in a .app's code location breaks its signature. A no-list
 // build skips other files at the root with a note (that's where the other
