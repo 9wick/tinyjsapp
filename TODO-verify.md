@@ -34,8 +34,14 @@ never exercised.
   was cleared) → backend resolved `{ ok: true }`. `promptMissing()` with
   plocate absent put up the confirm, resolved `{ missing: [spotlight.index,
   windowPosition], copied: true }`. *(2026-10-14)*
-- [ ] **Windows** — `app.window('main').close()` quits; `app.win.menu.set`
+- [x] **Windows** — `app.window('main').close()` quits; `app.win.menu.set`
   draws main's own bar and `app.win.menu.reset()` puts the app bar back.
+  *(2026-10-14, Windows 11 arm64, `tinyjs dev` (rebuilt the launcher for
+  the new tiny.js); scratch app on a timeline, main's real bar read with
+  GetMenu/GetMenuStringW every 250 ms. `app.menu.set` → `AppBar`;
+  `app.win.menu.set` → `MainOwn`; `app.win.menu.reset()` → `AppBar` again;
+  `app.window('main').close()` → window gone, dev exited 0, no
+  launcher-win/tjs left running. Two runs, same result.)*
 - [x] **macOS, second pass** — `app.win.close('second')` closed only that
   window, `app.win.close()` quit; backend `system.*` / `theme.get` /
   `info()` / `paths()` answered (old `app.paths.cache` read warned once);
@@ -43,9 +49,15 @@ never exercised.
   `CLIPWATCH 500` on the wire, no `0`); `filter(0, { type })` and
   `{ gainR }` resent `AUDIOFILTERS`; `clear()` sent `AUDIOBALANCE 0` first.
   *(2026-10-14)*
-- [ ] **Windows** — `app.macos.quickLook()` / `selectedText()`
+- [x] **Windows** — `app.macos.quickLook()` / `selectedText()`
   throw; `tiny.macos.ai.availability()` and `app.macos.ai.availability()`
-  both resolve `'unsupported'`.
+  both resolve `'unsupported'`. *(2026-10-14, same run as above: backend
+  threw "app.macos.X is macOS-only (this is windows) — guard with
+  app.system.isMacOS()"; page `tiny.macos.quickLook()` / `selectedText()`
+  rejected with the `tiny.` wording; both `ai.availability()` resolved
+  `'unsupported'`. The page rejections are plain strings, not Errors,
+  because that is how WebView2's `__invoke` binding rejects every page call
+  — it was like that before this branch.)*
 - [x] **Linux** — the same: quickLook / selectedText threw "macOS-only (this
   is linux) — guard with app.system.isMacOS()", both `ai.availability()`s
   resolved `'unsupported'`; `app.system.info()` → `{ os: 'linux', arch:
