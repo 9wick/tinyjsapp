@@ -4,6 +4,15 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.4 — 2026-10-15
+
+- **Fix (macOS): `vibrancy: false` no longer paints a transparent secondary
+  window.** A window opened with `{ transparent: true, vibrancy: false }`
+  came up solid white or black (following light/dark mode) instead of
+  see-through, because `vibrancy: false` turned the page background back on
+  for every window except main. Leaving `vibrancy` out was the workaround.
+  Thanks to @Blatman for the report (#68).
+
 ## 0.57.3 — 2026-10-15
 
 - **Fix: `tinyjs update` gets through on networks where it kept failing.**

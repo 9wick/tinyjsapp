@@ -373,6 +373,7 @@ struct TinyWindow {
   NSObject *handler = nil;   // TinyMsgHandler
   NSObject *wdelegate = nil; // TinyWinDelegate
   NSVisualEffectView *effect = nil;
+  bool transparent = false; // CHROME transparent (main: g_chrome_transparent)
 };
 static std::map<std::string, TinyWindow> g_windows;
 #endif
@@ -384,6 +385,14 @@ static bool g_chrome_traffic = true;
 static bool g_chrome_transparent = false;
 static bool g_chrome_square = false;  // borderless: square corners, no titlebar
 static std::string g_chrome_vibrancy; // empty = none
+#ifdef __APPLE__
+static bool *transparent_slot_for(const std::string &id) {
+  if (id.empty() || id == "main")
+    return &g_chrome_transparent;
+  auto it = g_windows.find(id);
+  return it == g_windows.end() ? nullptr : &it->second.transparent;
+}
+#endif
 // Extra directory the page may read file:// assets from (readAccess option) —
 // widens WebKit's default (the page's own folder) so <audio>/<img>/fetch can
 // reach files elsewhere. Empty = default (page dir only).
@@ -5987,8 +5996,8 @@ static void apply_chrome_fields(NSWindow *win, WKWebView *wv,
     }
     if (!req->transparent.empty()) {
       bool tr = req->transparent == "1";
-      if (is_main)
-        g_chrome_transparent = tr;
+      if (bool *slot = transparent_slot_for(req->win))
+        *slot = tr;
       win.opaque = !tr;
       win.backgroundColor = tr ? [NSColor clearColor]
                                : [NSColor windowBackgroundColor];
@@ -6016,7 +6025,10 @@ static void apply_chrome_fields(NSWindow *win, WKWebView *wv,
       if (req->vibrancy == "none") {
         if (is_main)
           g_chrome_vibrancy.clear();
-        if (!is_main || !g_chrome_transparent)
+        // A transparent window keeps a see-through page (#68: secondary
+        // windows used to repaint here even with transparent:true).
+        bool *tr = transparent_slot_for(req->win);
+        if (!tr || !*tr)
           webview_draws_background(wv, true);
       } else {
         if (is_main)
