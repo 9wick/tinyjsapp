@@ -2444,7 +2444,17 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // also minimizes/hides with the parent, closes when the parent closes, and
     // on Windows/Linux gets no taskbar entry of its own. Open-time only, like
     // `transparent` — ownership doesn't retrofit on Windows.
+    // 'main' names the launcher's own window: open('main') shows + focuses
+    // it like open() on any existing id (opts ignored), and throws under
+    // mainWindow: false, where the launchers used to drop it silently
+    // (macOS/Linux) or build a half-wired window (Windows).
     openWindow(id, { page, title, size, minSize, chrome, x, y, parent } = {}) {
+      if (String(id ?? '') === 'main') {
+        if (!mainWindow)
+          throw new Error("win.open: there is no 'main' window under mainWindow: false — open yours under another id");
+        app.show();
+        return;
+      }
       let p = String(page ?? 'index.html');
       if (!isUrl(p) && !isAbs(p)) {
         if (!frontendDir) throw new Error('win.open needs an absolute page path or URL here');

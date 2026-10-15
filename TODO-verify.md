@@ -8,6 +8,39 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `win.open('main')` shows main, throws when windowless (`fix/win-open-main`, 2026-10-15)
+
+`win.open('main', opts)` (backend `app.win.open` and page `tiny.win.open`)
+now runs `app.show()`, which shows and focuses the main window and ignores
+the opts. Under `mainWindow: false` it throws `there is no 'main' window …`.
+Before this, macOS focused main, Linux ignored the call, Windows built a
+half-wired secondary keyed "main", and windowless apps got silence. The
+change is in the bridge, plus a Windows `do_winopen` guard that drops an
+empty or "main" id the way macOS and Linux already did (only a raw
+`WINOPEN main` sent around the bridge can reach it).
+
+Per OS, with a scratch app: (a) main window: `app.win.hide({ app: false })`,
+then `app.win.open('main', { page: 'nope.html', size: '10x10' })`; main
+comes back visible + focused at its old size, `app.windows()` is still
+`["main"]`, and no second window appears. (b) the same from a page
+(`tiny.win.open('main')` from a secondary window) resolves and brings main
+up. (c) `"mainWindow": false`: the call throws (page: rejects) with the
+message, and `win.open('editor', …)` afterwards still opens.
+
+- [x] **macOS** — (a) and (c) via `tinyjs dev` scratch apps: hidden main
+  went `visible:false,focused:false` to `visible:true,focused:true` at
+  960×640, windows `["main"]`; windowless threw, then `["editor"]`.
+  *(2026-10-15)*
+- [x] **macOS (b)** — main hidden, then a secondary page's
+  `await tiny.win.open('main', { size: '10x10' })` resolved; main went
+  `visible:false,focused:false` to `true,true`, still 960×640, windows
+  `["main","sec"]`. *(2026-10-15)*
+- [ ] **Windows** — (a), (b), (c). Rebuild the launcher first (guard in
+  `do_winopen`). Also confirm no stray "main"-titled window ever appears.
+- [ ] **Linux** — (a), (b), (c). Before this, Linux ignored `'main'`
+  outright, so (a) is the first time this path does anything there. Check
+  that a hidden main really comes back on Wayland as well as X11.
+
 ## Backend `app` speaks the page's names; old ones warn (unreleased, 2026-10-14)
 
 `app.menu.*`, `app.win.*` / `app.win.open`, `app.window(id).menu.*`,

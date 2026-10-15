@@ -1047,6 +1047,7 @@ off();                        <i>// every tiny on… returns its own unsubscribe
   <section id="windows">
     <h2>multiple windows</h2>
     <pre><b>tiny.win.open</b>('settings', { page: 'settings.html', title: 'Settings', size: '420x300' });
+<i>// win.open('main') shows + focuses the main window (throws under mainWindow: false)</i>
 <b>tiny.win.id</b>;                  <i>// which window this page lives in</i>
 <b>tiny.win.close</b>();             <i>// the calling window ('main' quits the app)</i>
 await <b>tiny.win.windows</b>();     <i>// ['main', 'settings', …]</i>
