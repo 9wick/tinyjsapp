@@ -35,8 +35,22 @@ message, and `win.open('editor', …)` afterwards still opens.
   `await tiny.win.open('main', { size: '10x10' })` resolved; main went
   `visible:false,focused:false` to `true,true`, still 960×640, windows
   `["main","sec"]`. *(2026-10-15)*
-- [ ] **Windows** — (a), (b), (c). Rebuild the launcher first (guard in
+- [x] **Windows** — (a), (b), (c). Rebuild the launcher first (guard in
   `do_winopen`). Also confirm no stray "main"-titled window ever appears.
+  *(2026-10-15, Windows 11 arm64, `tinyjs dev` rebuilt the launcher;
+  scratch apps on a timeline, and every top-level window the launcher owned
+  logged via EnumWindows every 200 ms.) (a) main went `visible:false,
+  focused:false` to `true,true` (foreground), still 960×640, windows
+  `["main"]`. (b) with `sec` open, the page's `tiny.win.open('main', {
+  size: '10x10' })` resolved `true`; main came back focused at 960×640,
+  windows `["main","sec"]`. (c) `app.win.open('main')` threw the message,
+  `win.open('editor', …)` then opened (`["editor"]`), and the editor page's
+  `tiny.win.open('main')` rejected with the same message. No window other
+  than OpenMain / OpenMainSec / NoWinEditor (and the windowless app's
+  hidden TinyjsHost) appeared at any point. Launcher guard on its own:
+  with the bridge's `'main'` check removed for one run, the raw
+  `WINOPEN main` was dropped (no new window, main stayed hidden); bridge
+  restored after.*
 - [x] **Linux** — (a), (b), (c) on the arm64 GNOME VM, Wayland and X11
   (`windowPlacement: true`), `tinyjs dev` scratch apps. (a) hidden main went
   `visible:false,focused:false` to `true,true` at 960×640, windows
