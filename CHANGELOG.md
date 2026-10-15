@@ -4,6 +4,15 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.1 — 2026-10-15
+
+- **Fix (macOS): `setChrome({ squareCorners })` no longer re-enables
+  resizing.** Switching square corners on or off rebuilt the window's style
+  with the resize bit always set, so a window that had called
+  `setResizable(false)` became resizable again. It hit `app.window(id)` and
+  `tiny.win` in named windows, and turning square corners off on the main
+  window. Windows and Linux weren't affected.
+
 ## 0.57.0 — 2026-10-14
 
 The backend `app` and the page's `tiny` had drifted into two dialects of

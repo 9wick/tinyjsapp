@@ -5895,6 +5895,9 @@ static void apply_square(NSWindow *win, bool square) {
   // frameless toggle, so a squareCorners app is the same size in dev (chrome
   // applied after the window exists) as packaged (applied from the plist).
   NSSize keep_content = [win contentRectForFrameRect:win.frame].size;
+  // Both masks below include Resizable; carry over a setResizable(false)
+  // instead, or a later setChrome({ squareCorners }) re-enables resizing.
+  bool resizable = (win.styleMask & NSWindowStyleMaskResizable) != 0;
   if (square) {
     ensure_window_can_key(object_getClass(win));
     win.styleMask = NSWindowStyleMaskResizable; // no Titled bit → square
@@ -5907,6 +5910,8 @@ static void apply_square(NSWindow *win, bool square) {
     win.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                     NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
   }
+  if (!resizable)
+    win.styleMask &= ~NSWindowStyleMaskResizable;
   NSRect f = win.frame;
   CGFloat top = NSMaxY(f);
   f.size = [win frameRectForContentRect:NSMakeRect(0, 0, keep_content.width,
@@ -6062,14 +6067,16 @@ static void reapply_window_overrides(webview_t w) {
       w, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW);
   if (!win)
     return;
-  // set_size rewrote the styleMask wholesale; a square (borderless) main
-  // window would snap back to titled/rounded — reassert it.
+  // set_size rewrote the styleMask wholesale. Drop Resizable first:
+  // apply_square keeps whatever it finds.
+  if (g_resizable_override == 0)
+    win.styleMask &= ~NSWindowStyleMaskResizable;
+  // A square (borderless) main window would snap back to titled/rounded —
+  // reassert it.
   if (g_chrome_square) {
     apply_square(win, true);
     return;
   }
-  if (g_resizable_override == 0)
-    win.styleMask &= ~NSWindowStyleMaskResizable;
   if (g_chrome_frameless) {
     NSRect keep = win.frame;
     win.styleMask |= NSWindowStyleMaskFullSizeContentView;
