@@ -25,10 +25,15 @@ never exercised.
   line), page calls never warned, `app.window('main').close()` quit, wire
   showed `filter(0, { gain: -3 })` → `AUDIOFILTERSET 0 60 1.1 -3` after
   `filters([{ freq: 60, q: 1.1, gain: 4 }])`. *(2026-10-14)*
-- [ ] **Linux (Wayland)** — `app.mouseTracking.start()` with the portal
+- [x] **Linux (Wayland)** — `app.mouseTracking.start()` with the portal
   denied throws an Error with `.code === 'denied'`; `tiny.app.mouseTracking`
   still does too. `tiny.system.promptMissing()` with something actually
-  missing shows its confirm dialog instead of rejecting.
+  missing shows its confirm dialog instead of rejecting. Seen on the arm64
+  GNOME VM: Cancel on the ScreenCast dialog → backend and page both threw
+  `screen share not granted` with `.code 'denied'`; Share (before the token
+  was cleared) → backend resolved `{ ok: true }`. `promptMissing()` with
+  plocate absent put up the confirm, resolved `{ missing: [spotlight.index,
+  windowPosition], copied: true }`. *(2026-10-14)*
 - [ ] **Windows** — `app.window('main').close()` quits; `app.win.menu.set`
   draws main's own bar and `app.win.menu.reset()` puts the app bar back.
 - [x] **macOS, second pass** — `app.win.close('second')` closed only that
@@ -38,10 +43,13 @@ never exercised.
   `CLIPWATCH 500` on the wire, no `0`); `filter(0, { type })` and
   `{ gainR }` resent `AUDIOFILTERS`; `clear()` sent `AUDIOBALANCE 0` first.
   *(2026-10-14)*
-- [ ] **Windows / Linux** — `app.macos.quickLook()` / `selectedText()`
+- [ ] **Windows** — `app.macos.quickLook()` / `selectedText()`
   throw; `tiny.macos.ai.availability()` and `app.macos.ai.availability()`
-  both resolve `'unsupported'`. `app.system.info()` shows the real
-  session/desktop on Linux.
+  both resolve `'unsupported'`.
+- [x] **Linux** — the same: quickLook / selectedText threw "macOS-only (this
+  is linux) — guard with app.system.isMacOS()", both `ai.availability()`s
+  resolved `'unsupported'`; `app.system.info()` → `{ os: 'linux', arch:
+  'arm64', session: 'wayland', desktop: 'ubuntu:GNOME' }`. *(2026-10-14)*
 
 ## `dialog.saveFile({ name })` pre-fills the file name (#59, 2026-10-14)
 
