@@ -37,9 +37,15 @@ message, and `win.open('editor', …)` afterwards still opens.
   `["main","sec"]`. *(2026-10-15)*
 - [ ] **Windows** — (a), (b), (c). Rebuild the launcher first (guard in
   `do_winopen`). Also confirm no stray "main"-titled window ever appears.
-- [ ] **Linux** — (a), (b), (c). Before this, Linux ignored `'main'`
-  outright, so (a) is the first time this path does anything there. Check
-  that a hidden main really comes back on Wayland as well as X11.
+- [x] **Linux** — (a), (b), (c) on the arm64 GNOME VM, Wayland and X11
+  (`windowPlacement: true`), `tinyjs dev` scratch apps. (a) hidden main went
+  `visible:false,focused:false` to `true,true` at 960×640, windows
+  `["main"]`, no second window. (b) secondary page's `tiny.win.open('main',
+  { size: '10x10' })` resolved, main back `true,true` at 960×640, windows
+  `["main","sec"]`. (c) threw the "no 'main' window" message, then
+  `["editor"]`. One X11 (b) run read `focused:false` at +1.5s; two reruns
+  read `true` at +1.5s and +4.5s — XWayland focus lag, not the call.
+  *(2026-10-15)*
 
 ## Backend `app` speaks the page's names; old ones warn (unreleased, 2026-10-14)
 
