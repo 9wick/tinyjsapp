@@ -4,91 +4,102 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.57.0 — unreleased
 
-- **The backend `app` uses the page's names.** Code that moves between a
-  page and the backend no longer has to translate: `app.menu.set/update/
-  get/setContext`, `app.win.*` (the main window, as `tiny.win.*` is a page's
-  own) with `app.win.open(id, opts)`, `app.window(id).menu.set/reset/update/
-  get`, `app.audio.filters/filter/balance/clear`, and `app.notify(title,
-  body, opts)`. The old names (`app.setMenu`, `app.updateMenuItem`,
-  `app.getMenuItem`, `app.setContextMenu`, `app.openWindow`,
-  `app.getWinState`, `app.setAudioFilters/setAudioFilter/setAudioBalance`,
-  `app.window(id).setMenu/resetMenu/updateMenuItem/getMenuItem`, and
-  `app.notify({ title, body })`) still work, log a one-line deprecation
-  warning the first time each is used, and will be removed in a future
-  release. `tiny.d.ts` marks them `@deprecated`.
-- **`app.window('main').close()` quits**, as `tiny.win.close()` does from
-  the main page. It used to do nothing.
-- **`app.mouseTracking.start()` throws on failure**, like the page's
-  `tiny.app.mouseTracking.start()`: an Error with `.code` `'unsupported'`,
-  `'denied'` or `'failed'`. It used to resolve `{ ok: false, … }`. Both
-  sides now resolve `{ ok: true }` on success, so `if (!r.ok)` code keeps
-  working when tracking starts; a failure now lands in a `catch`. This one
-  can't warn, so check your backend if it calls `start()`.
-- **`tiny.audio.filter(i, patch)` / `app.audio.filter` really patch.** A
-  field you leave out keeps the value `filters()` set for that slot; it used
-  to fall back to the default, so `filter(0, { gain: -3 })` also reset the
-  band's frequency and Q. `pageChain(ctx).filter` is fixed the same way.
+The backend `app` and the page's `tiny` had drifted into two dialects of
+the same API: `app.setMenu` against `tiny.menu.set`, `app.notify({ title,
+body })` against `tiny.notify(title, body)`, `app.paths.data` against
+`await tiny.app.paths()`, and a handful of calls that quietly did something
+different on one side. This release makes the backend speak the page's
+API. Code moves between the two without translating, and one set of docs
+covers both.
+
+> Tarwin: An apology for the big change. I hope not to do this kind of big change again, but wanted to get it right now. 25 years ago I did a lot of PHP, and I'd always have to look at the docs to know if it was `func(needle, haystack)` or `func(haystack, needle)` because it was different per function. So I know the pain of inconsistent APIs.
+
+- **Behaviour change: `app.mouseTracking.start()` throws on failure**, as
+  the page's always did: an Error with `.code` `'unsupported'`, `'denied'`
+  or `'failed'`. It used to resolve `{ ok: false, … }`. Both sides resolve
+  `{ ok: true }` on success, so `if (!r.ok)` code still works when tracking
+  starts, but a failure now lands in your `catch`. Only Linux-Wayland can
+  fail. This one can't warn, so check your backend if it calls `start()`.
+- **Behaviour change: `app.window('main').close()` quits**, as
+  `tiny.win.close()` does from the main page. It used to do nothing.
+- **Behaviour change: `app.macos.*` throws off macOS**, as the page's
+  `tiny.macos.*` does. It used to answer `true` (`quickLook`) or `null`
+  (`selectedText`, `otherWindows`, which looked exactly like "nothing
+  selected"). `macos.ai.availability()` is the exception, on both sides: it
+  resolves `'unsupported'` off macOS. The page's version used to throw,
+  which made the check you're told to make first fail.
+- **Behaviour change: `audio.filter(i, patch)` patches.** A field you leave
+  out keeps the value `filters()` gave that band. It used to fall back to
+  the default, so `filter(0, { gain: -3 })` also reset the frequency and Q.
+  A patch that changes `type` or `gainR` now rebuilds the chain; it used to
+  be dropped. `audio.clear()` also re-centres the balance, as
+  `pageChain(ctx).clear()` always did. Same on both sides, and in
+  `pageChain`.
+- **The backend uses the page's names.** The old ones still work, log a
+  one-line warning the first time each is used, are marked `@deprecated` in
+  `tiny.d.ts`, and will be removed in a future release:
+  - `app.setMenu` / `updateMenuItem` / `getMenuItem` / `setContextMenu` →
+    `app.menu.set` / `update` / `get` / `setContext`
+  - `app.window(id).setMenu` / `resetMenu` / `updateMenuItem` /
+    `getMenuItem` → `app.window(id).menu.set` / `reset` / `update` / `get`
+  - `app.openWindow(id, opts)` → `app.win.open(id, opts)`;
+    `app.getWinState()` → `app.win.getState()`
+  - `app.setAudioFilters` / `setAudioFilter` / `setAudioBalance` →
+    `app.audio.filters` / `filter` / `balance` (and `clear`)
+  - `app.notify({ title, body, … })` → `app.notify(title, body, opts)`
+  - `app.info.version`, `app.paths.data` → `(await app.info()).version`,
+    `(await app.paths()).data`. `JSON.stringify(app.paths)` still gives the
+    fields.
+- **`app.win` is the main window**, under the names a page uses for its own
+  (`tiny.win.*`), plus `open()`, `close(id?)`, `windows()` and
+  `setHideOnClose()`. `close(id)` closes that window; no id closes main,
+  which quits. Every `app.window(id)` handle now has its `id`. The top-level
+  `app.setTitle()` and friends still target main and aren't deprecated.
+- **`app.system` has everything `tiny.system` has**: `os()`, `isMacOS()` /
+  `isWindows()` / `isLinux()`, `info()`, `architecture()`,
+  `capabilities()`, `requirements()` and `missing()`, alongside battery,
+  wifi, idleTime and locale.
+- **`app.theme.get()`** → `{ dark } | null`, like `tiny.theme.get()`.
+- **`tiny.app.update.check()` / `install()`** in the page. They used to need
+  `tiny.api.call('update.check')`, which still works.
+- **The clipboard watcher has one owner per side.** The backend and each
+  window keep their own `watch()` interval, and the launcher polls at the
+  fastest. A page calling `tiny.clipboard.unwatch()` no longer stops the
+  backend's `onClipboardChange` (or another window's watch).
+  `tiny.clipboard.onChange()` starts a watch if the page hasn't, as the
+  backend's export always did; a handler on its own used to hear nothing.
 - **`app.presence()` warns on anything but `'normal'` / `'menubar'`.** A
-  typo like `'menuBar'` silently gave a normal app; it now logs that it will
+  typo like `'menuBar'` used to give a normal app without a word. It will
   throw in a future release, as the page call already does.
-- **`app.startDrag({ files })` says it ignores `files`.** Dragging files out
-  only works from the page (`tiny.win.startDrag({ files })`, inside a
-  mousedown); the backend call drags the window.
-- **`tiny.macos.ai.generate` warns when given `tools`.** Tools only work from
-  the backend, where each one's `run()` stays in scope; the page call used to
-  drop them silently.
+- **Calls that ignored part of what you passed now say so:**
+  `app.startDrag({ files })` drags the window (dragging files out only
+  works from the page, inside a mousedown), and `tiny.macos.ai.generate`
+  can't use `tools` (their `run()` can't leave the backend).
 - Fix: `tiny.system.promptMissing()` rejected with "unknown method:
   win.alert" whenever something was actually missing. It shows its dialog
   again.
-- **`app.win.close(id)` closes that window**, as `tiny.win.close(id)` does;
-  no id closes main (which quits). `app.win` also has `windows()`,
-  `setHideOnClose()` and `id`, and every `app.window(id)` handle has `id`.
-- **`app.system` has everything `tiny.system` has**: `os()`, `isMacOS()` /
-  `isWindows()` / `isLinux()`, `info()`, `architecture()`,
-  `capabilities()`, `requirements()` and `missing()`, next to battery, wifi,
-  idleTime and locale. `locale()` reads the same cache on both sides.
-- **`app.theme.get()`** → `{ dark } | null`, like `tiny.theme.get()`.
-- **`app.info()` and `app.paths()` are functions**, as `tiny.app.info()` /
-  `tiny.app.paths()` are. Reading them as objects (`app.paths.data`) still
-  works, logs a deprecation warning, and `JSON.stringify(app.paths)` still
-  gives the fields.
-- **`tiny.app.update.check()` / `install()`** — the page wrapper for the
-  update builtins that used to need `tiny.api.call('update.check')`.
-- **`app.macos.*` throws off macOS**, as the page's `tiny.macos.*` does. It
-  used to answer `true` (`quickLook`) or `null` (`selectedText`,
-  `otherWindows` — indistinguishable from "nothing selected").
-  `macos.ai.availability()` is the exception on BOTH sides: it resolves
-  `'unsupported'` off macOS (the page's used to throw, though it's the call
-  you're told to make first).
-- **The clipboard watcher has one owner per side.** The backend and each
-  window keep their own `watch()` interval and the launcher polls at the
-  fastest; a page's `tiny.clipboard.unwatch()` no longer silences the
-  backend's `onClipboardChange` (or another window). `tiny.clipboard.onChange()`
-  now starts a watch if the page hasn't, as the backend's export always did.
-  Backend `clipboard.watch()` / `unwatch()` return `true`.
-- **`audio.filter(i, { type })` / `{ gainR }` take effect.** The in-place
-  retune only carries freq/q/gain, so those two now rebuild the chain; they
-  were dropped before. `audio.clear()` also re-centres the balance, as
-  `pageChain(ctx).clear()` always did.
-- `app.say(text, null)` no longer throws; `app.playSound('')` beeps like the
-  page's.
-- `tiny.d.ts`: every `on…()` helper returns its unsubscribe function (they
-  were typed `void`); added `tiny.api.off`, `tiny.win.setMinSize` /
-  `ensureOnScreen` / `startResize` / `onState`, the handle's `setMinSize` /
+- Fix: `app.say(text, null)` threw; `app.playSound('')` sent an empty sound
+  name where the page beeps. Backend `clipboard.watch()` / `unwatch()`
+  return `true`, like the page's.
+- `tiny.d.ts`, removed: `app.setZoom`, `app.battery`, `app.wifi` and
+  `app.idleTime`, which were declared but never existed, so calling them
+  threw. Use `app.window(id).setZoom` and `app.system.*`.
+- `tiny.d.ts`, corrected: every `on…()` helper returns its unsubscribe
+  function (they were typed `void`); `locale()` can be `null` (Windows and
+  Linux have no locale reader yet); `promptMissing` resolves `{ missing,
+  copied }`; page `store.set` / `delete` resolve `boolean`; `app.hide()`
+  takes `{ app: false }`; the `mouseTracking` types match the runtime; a
+  duplicate `onNotificationClick` is gone.
+- `tiny.d.ts`, added: `tiny.system.battery` / `wifi` / `idleTime`,
+  `tiny.api.off`, `tiny.win.setMinSize` / `ensureOnScreen` /
+  `startResize` / `onState`, the window handle's `setMinSize` /
   `ensureOnScreen` / `startDrag` / `startResize`, `app.audio.sampler`,
-  `app.spawnHidden`, `app.setAsDefaultHandler`, `minSize` in window options,
-  `primaryAction` on tray specs, `role` on menu items, `canPosition` on window
-  state; typed requirements and `system.info()`; `locale()` can be `null`;
-  page `store.set/delete` resolve `boolean`; dropped a duplicate
-  `onNotificationClick`.
-- `tiny.d.ts`: removed `app.setZoom`, `app.battery`, `app.wifi` and
-  `app.idleTime`, which never existed at runtime (use `app.window(id).setZoom`
-  and `app.system.*`). Added `tiny.system.battery/wifi/idleTime` and
-  `app.system.locale`, which did. `promptMissing` resolves `{ missing,
-  copied }`, `app.hide()` takes `{ app: false }`, and the `mouseTracking`
-  types match the runtime on both sides.
+  `app.spawnHidden`, `app.setAsDefaultHandler`, `app.system.locale`,
+  `minSize` in window options, `primaryAction` on tray specs, `role` on
+  menu items, `canPosition` on window state, and typed results for
+  `requirements()` and `system.info()`.
 
 ## 0.56.0 — 2026-10-14
 
