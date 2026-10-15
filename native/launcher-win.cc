@@ -5253,6 +5253,12 @@ static void apply_app_icon(HWND hwnd); // below, with app.icon
 
 static void do_winopen(webview_t, void *arg) {
   WinOpenReq *wr = static_cast<WinOpenReq *>(arg);
+  // 'main' is reserved (the bridge throws): a secondary keyed "main" would
+  // have every main-addressed op routed past it to g_wv2.
+  if (wr->id.empty() || wr->id == "main") {
+    delete wr;
+    return;
+  }
   if (TinyWin *ex = win_for_id(wr->id)) {
     ShowWindow(ex->hwnd, SW_SHOW);
     SetForegroundWindow(ex->hwnd);

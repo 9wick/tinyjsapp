@@ -4,6 +4,14 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.2 — 2026-10-15
+
+- **Fix: `win.open('main')` behaves the same on every platform.** It now
+  shows and focuses the main window, the way `win.open` on any open window
+  focuses it, and ignores the options. Under `mainWindow: false` it throws.
+  Before, macOS focused main, Linux ignored the call, Windows built a
+  half-wired second window, and a windowless app got silence everywhere.
+
 ## 0.57.1 — 2026-10-15
 
 - **Fix (macOS): `setChrome({ squareCorners })` no longer re-enables

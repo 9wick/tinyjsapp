@@ -8,6 +8,59 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `win.open('main')` shows main, throws when windowless (`fix/win-open-main`, 2026-10-15)
+
+`win.open('main', opts)` (backend `app.win.open` and page `tiny.win.open`)
+now runs `app.show()`, which shows and focuses the main window and ignores
+the opts. Under `mainWindow: false` it throws `there is no 'main' window …`.
+Before this, macOS focused main, Linux ignored the call, Windows built a
+half-wired secondary keyed "main", and windowless apps got silence. The
+change is in the bridge, plus a Windows `do_winopen` guard that drops an
+empty or "main" id the way macOS and Linux already did (only a raw
+`WINOPEN main` sent around the bridge can reach it).
+
+Per OS, with a scratch app: (a) main window: `app.win.hide({ app: false })`,
+then `app.win.open('main', { page: 'nope.html', size: '10x10' })`; main
+comes back visible + focused at its old size, `app.windows()` is still
+`["main"]`, and no second window appears. (b) the same from a page
+(`tiny.win.open('main')` from a secondary window) resolves and brings main
+up. (c) `"mainWindow": false`: the call throws (page: rejects) with the
+message, and `win.open('editor', …)` afterwards still opens.
+
+- [x] **macOS** — (a) and (c) via `tinyjs dev` scratch apps: hidden main
+  went `visible:false,focused:false` to `visible:true,focused:true` at
+  960×640, windows `["main"]`; windowless threw, then `["editor"]`.
+  *(2026-10-15)*
+- [x] **macOS (b)** — main hidden, then a secondary page's
+  `await tiny.win.open('main', { size: '10x10' })` resolved; main went
+  `visible:false,focused:false` to `true,true`, still 960×640, windows
+  `["main","sec"]`. *(2026-10-15)*
+- [x] **Windows** — (a), (b), (c). Rebuild the launcher first (guard in
+  `do_winopen`). Also confirm no stray "main"-titled window ever appears.
+  *(2026-10-15, Windows 11 arm64, `tinyjs dev` rebuilt the launcher;
+  scratch apps on a timeline, and every top-level window the launcher owned
+  logged via EnumWindows every 200 ms.) (a) main went `visible:false,
+  focused:false` to `true,true` (foreground), still 960×640, windows
+  `["main"]`. (b) with `sec` open, the page's `tiny.win.open('main', {
+  size: '10x10' })` resolved `true`; main came back focused at 960×640,
+  windows `["main","sec"]`. (c) `app.win.open('main')` threw the message,
+  `win.open('editor', …)` then opened (`["editor"]`), and the editor page's
+  `tiny.win.open('main')` rejected with the same message. No window other
+  than OpenMain / OpenMainSec / NoWinEditor (and the windowless app's
+  hidden TinyjsHost) appeared at any point. Launcher guard on its own:
+  with the bridge's `'main'` check removed for one run, the raw
+  `WINOPEN main` was dropped (no new window, main stayed hidden); bridge
+  restored after.*
+- [x] **Linux** — (a), (b), (c) on the arm64 GNOME VM, Wayland and X11
+  (`windowPlacement: true`), `tinyjs dev` scratch apps. (a) hidden main went
+  `visible:false,focused:false` to `true,true` at 960×640, windows
+  `["main"]`, no second window. (b) secondary page's `tiny.win.open('main',
+  { size: '10x10' })` resolved, main back `true,true` at 960×640, windows
+  `["main","sec"]`. (c) threw the "no 'main' window" message, then
+  `["editor"]`. One X11 (b) run read `focused:false` at +1.5s; two reruns
+  read `true` at +1.5s and +4.5s — XWayland focus lag, not the call.
+  *(2026-10-15)*
+
 ## Backend `app` speaks the page's names; old ones warn (unreleased, 2026-10-14)
 
 `app.menu.*`, `app.win.*` / `app.win.open`, `app.window(id).menu.*`,
