@@ -25,7 +25,10 @@ case (a)'s "no curl on PATH" still prints a clean error.
   failure. *(2026-10-15, macOS arm64)*
 - [ ] **Windows** — (a), (b), (c). The reporter's network is the real test
   (#67): ask for 30× `tinyjs update --check` on the build with the fix.
-- [ ] **Linux** — (a), (b).
+- [x] **Linux** — (a) all six cases pass, tarpit gave up at 32.1 s (36 s
+  total); (b) 20/20 against real GitHub from a throwaway install
+  (`VERSION` v0.57.1 → "v0.57.2 is available", exit 0). *(2026-10-15,
+  Linux arm64, Ubuntu GNOME VM)*
 
 ## `win.open('main')` shows main, throws when windowless (`fix/win-open-main`, 2026-10-15)
 
