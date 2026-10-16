@@ -60,6 +60,9 @@ tinyjs notarize     # macOS: notarytool submit + staple (--dmg re-makes dmg)
 tinyjs doctor       # find why tinyjs or the project won't run (read-only;
                     #   exit 1 on any FAIL) — run it first when things break
 tinyjs update       # update tinyjs itself (--check); also: uninstall, version
+tinyjs update-project  # then, in the project: refresh THIS skill and the
+                    #   types from the installed tinyjs (names every file
+                    #   it changes; overwrites edits to them)
 TINYJS_DEBUG=1 tinyjs dev   # trace every bridge message
 ```
 

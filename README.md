@@ -32,7 +32,9 @@ The same script now handles Linux too (it detects the OS). Installs to
 `TINYJS_VERSION=vX.Y.Z`. Later, `tinyjs update` runs the copy of the
 installer that came with your install if a newer release exists (`--check`
 only reports, `--dry-run` shows what it would run); `tinyjs dev`
-also mentions new releases, checking at most once a day. Linux needs the
+also mentions new releases, checking at most once a day. After updating,
+run `tinyjs update-project` in each project to refresh its types and
+coding-agent skill (see below). Linux needs the
 system WebKitGTK runtime: `sudo apt install libwebkit2gtk-4.1-0` on
 Debian/Ubuntu, `sudo zypper install libwebkit2gtk-4_1-0` on openSUSE.
 Prebuilt binaries ship for Linux x86_64 and arm64 with the
