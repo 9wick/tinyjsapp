@@ -189,6 +189,12 @@ scaffold is unchanged.
 
 The `tiny` global is injected into every page by the launcher — no script
 tag needed — and ships with full TypeScript definitions (`types/tiny.d.ts`).
+New projects also get a tinyjs reference skill for coding agents
+(`.claude/skills/tinyjs/` and `.agents/skills/tinyjs/`). Both are copied
+in when the project is made, so after updating tinyjs, run
+`tinyjs update-project` in the project to bring them up to date
+(`tinyjs doctor` says when they're behind). It overwrites edits to those
+files, and adds the skill to a project that doesn't have one.
 
 A project is just:
 

@@ -455,15 +455,107 @@ const shellArgv = (cmdline) => IS_WIN ? ['cmd', '/c', cmdline] : ['sh', '-c', cm
 // npm/npx-style argv: pass through on POSIX, hop through cmd /c on Windows.
 const nodeToolArgv = (argv) => IS_WIN ? ['cmd', '/c', ...argv] : argv;
 
+const SKILL_DIRS = ['.claude/skills/tinyjs', '.agents/skills/tinyjs'];
+
 // Give coding agents working in a scaffolded project the tinyjs reference
 // skill — in .claude/skills/ (Claude Code) and .agents/skills/ (the
 // tool-agnostic location other agents read).
 async function writeAgentSkill(dir) {
   // The whole skill dir: SKILL.md plus references/ (loaded on demand by the
   // agent, so the core stays small while the deep material rides along).
-  for (const base of ['/.claude/skills/tinyjs', '/.agents/skills/tinyjs']) {
-    await copyTree(TOOL_DIR + 'skill', dir + base);
+  for (const rel of SKILL_DIRS) await copyTree(TOOL_DIR + 'skill', dir + '/' + rel);
+}
+
+// Files `tinyjs new` copies into a project from the install: the agent skill
+// folders and the ambient types (types/ for the plain template, src/ and
+// backend/ for the Vite ones). Only those the project still has: a deleted
+// skill folder or types file stays deleted.
+async function projectToolFiles(dir = '.') {
+  const items = [];
+  for (const rel of SKILL_DIRS)
+    if (await exists(dir + '/' + rel)) items.push({ rel, src: TOOL_DIR + 'skill', isDir: true });
+  for (const sub of ['types', 'src', 'backend'])
+    for (const f of ['tiny.d.ts', 'tjs.d.ts'])
+      if (await exists(`${dir}/${sub}/${f}`))
+        items.push({ rel: `${sub}/${f}`, src: TOOL_DIR + 'template/types/' + f, isDir: false });
+  return items;
+}
+
+async function filesUnder(root, rel = '', out = new Map()) {
+  for await (const e of await tjs.readDir(root + (rel ? '/' + rel : ''))) {
+    const r = (rel ? rel + '/' : '') + e.name;
+    if (e.isDirectory) await filesUnder(root, r, out);
+    else out.set(r, await tjs.readFile(root + '/' + r));
   }
+  return out;
+}
+
+const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+// True when the project's copy matches the install's, file for file.
+async function toolFileCurrent(item, dir = '.') {
+  try {
+    if (!item.isDir) return sameBytes(await tjs.readFile(dir + '/' + item.rel), await tjs.readFile(item.src));
+    const [mine, theirs] = await Promise.all([filesUnder(dir + '/' + item.rel), filesUnder(item.src)]);
+    return mine.size === theirs.size &&
+      [...theirs].every(([r, bytes]) => mine.has(r) && sameBytes(mine.get(r), bytes));
+  } catch { return false; }
+}
+
+// Bring a project's skill and types up to this tinyjs. Explicit, never run by
+// dev or build: someone may have edited these files.
+async function cmdUpdateProject() {
+  if (args.length) fail('usage: tinyjs update-project (no arguments)');
+  if (!(await exists('tinyjs.json'))) fail('no tinyjs.json here — run this from a tinyjs project');
+  const items = await projectToolFiles();
+  // File by file, so every change is named: a skill folder is made to match
+  // this tinyjs's exactly, and a leftover (a reference since renamed or
+  // dropped, or a file someone added) is deleted out loud, never silently.
+  const changes = [];
+  for (const item of items) {
+    if (!item.isDir) {
+      if (!(await toolFileCurrent(item))) {
+        await copyFile(item.src, item.rel);
+        changes.push('updated ' + item.rel);
+      }
+      continue;
+    }
+    const [mine, theirs] = await Promise.all([filesUnder(item.rel), filesUnder(item.src)]);
+    for (const [r, bytes] of theirs) {
+      if (mine.has(r) && sameBytes(mine.get(r), bytes)) continue;
+      const dest = item.rel + '/' + r;
+      await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true }).catch(() => {});
+      await tjs.writeFile(dest, bytes);
+      changes.push((mine.has(r) ? 'updated ' : 'added   ') + dest);
+    }
+    for (const r of mine.keys()) {
+      if (theirs.has(r)) continue;
+      await tjs.remove(item.rel + '/' + r);
+      changes.push('removed ' + item.rel + '/' + r);
+      // Drop folders the removal left empty. Check first: txiki's remove()
+      // deletes a folder WITH its contents even without { recursive }.
+      for (let d = r.replace(/\/?[^/]*$/, ''); d; d = d.replace(/\/?[^/]*$/, '')) {
+        const path = item.rel + '/' + d;
+        let empty = true;
+        try { for await (const _ of await tjs.readDir(path)) { empty = false; break; } } catch { break; }
+        if (!empty) break;
+        await tjs.remove(path).catch(() => {});
+      }
+    }
+  }
+  if (!items.some((item) => item.isDir)) {
+    await writeAgentSkill('.');
+    changes.push(...SKILL_DIRS.map((d) => 'added   ' + d + '/'));
+  }
+  const version = await toolVersion();
+  if (!changes.length) {
+    console.log(`already up to date with tinyjs ${version}`);
+    return;
+  }
+  console.log(`from tinyjs ${version}:`);
+  for (const c of changes) console.log('  ' + c);
+  if (changes.some((c) => !c.startsWith('added')))
+    console.log('edits to updated or removed files are gone; git has the old versions.');
 }
 
 async function run(argv, opts = {}) {
@@ -3213,7 +3305,7 @@ async function cmdDoctor() {
   // Colour the labels only in a terminal (never when piped or redirected),
   // honouring NO_COLOR and TERM=dumb. libuv translates the codes on Windows.
   const tint = tjs.stdout.isTerminal && !tjs.env.NO_COLOR && tjs.env.TERM !== 'dumb'
-    ? (code, text) => `\x1b[${code}m${text}\x1b[0m` : (code, text) => text;
+    ? (code, text) => `\x1b[${code}m${text}\x1b[0m` : (_code, text) => text;
   const ok = (msg) => console.log(tint('32', 'OK:  ') + ' ' + msg);
   const warn = (msg) => console.log(tint('33', 'WARN:') + ' ' + msg);
   const note = (msg) => console.log(tint('2', 'NOTE:') + ' ' + msg);
@@ -3371,6 +3463,11 @@ async function cmdDoctor() {
       // Editor help only, so a note; a $schema pointing elsewhere was chosen.
       if (raw.$schema === undefined)
         note(`add "$schema": "${CONFIG_SCHEMA}" to tinyjs.json for completion and checks in your editor`);
+      const stale = [];
+      for (const item of await projectToolFiles())
+        if (!(await toolFileCurrent(item))) stale.push(item.rel + (item.isDir ? '/' : ''));
+      if (stale.length)
+        note(`not from this tinyjs: ${stale.join(', ')} — \`tinyjs update-project\` refreshes them`);
     }
   }
 
@@ -3412,6 +3509,7 @@ switch (cmd) {
   case 'notarize': await cmdNotarize(); break;
   case 'version': case '--version': case '-v': await cmdVersion(); break;
   case 'update': await cmdUpdate(); break;
+  case 'update-project': await cmdUpdateProject(); break;
   case 'uninstall': await cmdUninstall(); break;
   default:
     console.log(`tinyjs — tiny desktop apps with txiki.js + webview
@@ -3445,6 +3543,8 @@ usage:
                       after a build --arch, pass the same --arch)
   tinyjs update       update the tinyjs CLI itself (--check: only report,
                       --dry-run: print what it would run)
+  tinyjs update-project  refresh this project's agent skill and types from
+                      this tinyjs (overwrites edits to them)
   tinyjs uninstall    remove ~/.tinyjs and the PATH symlink (--yes: no prompt)
   tinyjs doctor       find why tinyjs or this project won't run (read-only)
   tinyjs version      print version`);

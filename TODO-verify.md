@@ -8,6 +8,31 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `tinyjs update-project` + doctor's stale-files note (`feat/update-project`, 2026-10-16)
+
+`cmdUpdateProject()` / `projectToolFiles()` in cli.js. Per OS, in a fresh
+`tinyjs new` project: (a) `tinyjs update-project` says already up to date,
+and doctor has no "not from this tinyjs" note; (b) append to
+`.claude/skills/tinyjs/SKILL.md`, delete a file under
+`.agents/skills/tinyjs/references/`, add a stray file to the skill folder,
+overwrite `types/tiny.d.ts`: doctor names all three, `update-project` names
+every file it updated, added or removed, the stray file is gone, the
+deleted one is back, and doctor is clean again. Put the stray file INSIDE
+`references/` (next to real files): only it may go — txiki's `tjs.remove`
+deletes a non-empty folder even without `recursive`, which once took all of
+`references/` with it; (c) move both skill folders away: `update-project` adds both;
+(d) delete `types/tjs.d.ts`: it is not recreated; (e) outside a project,
+and with an extra argument: an error, exit 1. Windows: the folder replace
+(rmTree + copyTree) with Explorer or an editor holding the skill folder open.
+
+- [x] **macOS** — (a)–(e), plus a Vite-style layout (old `src/` and
+  `backend/` tiny.d.ts + tjs.d.ts: all four named and updated).
+  File-by-file version: stray `references/my-notes.md` and
+  `extra/deep/old.md` removed by name, `references/` kept, both skill
+  folders `diff -rq` identical to `skill/`. *(2026-10-16)*
+- [ ] **Windows**
+- [ ] **Linux**
+
 ## `tinyjs doctor` (#61, `feat/61-doctor`, 2026-10-16)
 
 `cmdDoctor()` in cli.js, read-only (stat/readFile only). Per OS, from the

@@ -34,7 +34,9 @@ plain, and setting `NO_COLOR` turns colour off.
   `frontend.dev` commands run is on PATH, and a project with a
   `package.json` has its `node_modules` installed. A `tinyjs.json` with no
   `"$schema"` line (projects made before 0.57.5) gets a note suggesting it,
-  for editor completion; see [config-schema.md](config-schema.md).
+  for editor completion; see [config-schema.md](config-schema.md). Types
+  (`tiny.d.ts`, `tjs.d.ts`) or a coding-agent skill that differ from this
+  tinyjs's copies get a note to run `tinyjs update-project`.
 
 ## Limits
 
