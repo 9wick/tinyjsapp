@@ -470,29 +470,55 @@ async function writeAgentSkill(dir) {
 // folders and the ambient types (types/ for the plain template, src/ and
 // backend/ for the Vite ones). Only those the project still has: a deleted
 // skill folder or types file stays deleted.
+//
+// Symbolic links are never followed. A cloned project can ship
+// .claude/skills/tinyjs -> ~/Documents or types/tiny.d.ts -> ~/.zshrc; syncing
+// through those would delete or overwrite the user's own files. An item with
+// a link anywhere on its path is reported and left alone (`linked`), and a
+// link INSIDE a skill folder is removed as a link, then replaced by a file.
+async function linkOnPath(rel, dir = '.') {
+  const parts = rel.split('/');
+  for (let i = 1; i <= parts.length; i++) {
+    let st;
+    try { st = await tjs.lstat(dir + '/' + parts.slice(0, i).join('/')); } catch { return false; }
+    if (st.isSymbolicLink) return true;
+  }
+  return false;
+}
+const lexists = (p) => tjs.lstat(p).then(() => true, () => false);
+
 async function projectToolFiles(dir = '.') {
   const items = [];
   for (const rel of SKILL_DIRS)
-    if (await exists(dir + '/' + rel)) items.push({ rel, src: TOOL_DIR + 'skill', isDir: true });
+    if (await lexists(dir + '/' + rel))
+      items.push({ rel, src: TOOL_DIR + 'skill', isDir: true, linked: await linkOnPath(rel, dir) });
   for (const sub of ['types', 'src', 'backend'])
-    for (const f of ['tiny.d.ts', 'tjs.d.ts'])
-      if (await exists(`${dir}/${sub}/${f}`))
-        items.push({ rel: `${sub}/${f}`, src: TOOL_DIR + 'template/types/' + f, isDir: false });
+    for (const f of ['tiny.d.ts', 'tjs.d.ts']) {
+      const rel = `${sub}/${f}`;
+      if (await lexists(dir + '/' + rel))
+        items.push({ rel, src: TOOL_DIR + 'template/types/' + f, isDir: false, linked: await linkOnPath(rel, dir) });
+    }
   return items;
 }
 
+// Every entry under root by relative path: a regular file's bytes, or NOT_FILE
+// for anything else that isn't a folder (link, fifo, socket), which is never
+// read or descended into.
+const NOT_FILE = Symbol('not a regular file');
 async function filesUnder(root, rel = '', out = new Map()) {
   for await (const e of await tjs.readDir(root + (rel ? '/' + rel : ''))) {
     const r = (rel ? rel + '/' : '') + e.name;
     if (e.isDirectory) await filesUnder(root, r, out);
-    else out.set(r, await tjs.readFile(root + '/' + r));
+    else out.set(r, e.isFile ? await tjs.readFile(root + '/' + r) : NOT_FILE);
   }
   return out;
 }
 
-const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const sameBytes = (a, b) => a !== NOT_FILE && b !== NOT_FILE &&
+  a.length === b.length && a.every((v, i) => v === b[i]);
 
-// True when the project's copy matches the install's, file for file.
+// True when the project's copy matches the install's, file for file. Not
+// meaningful for a linked item (callers skip those).
 async function toolFileCurrent(item, dir = '.') {
   try {
     if (!item.isDir) return sameBytes(await tjs.readFile(dir + '/' + item.rel), await tjs.readFile(item.src));
@@ -511,8 +537,12 @@ async function cmdUpdateProject() {
   // File by file, so every change is named: a skill folder is made to match
   // this tinyjs's exactly, and a leftover (a reference since renamed or
   // dropped, or a file someone added) is deleted out loud, never silently.
-  const changes = [];
+  const changes = [], skipped = [];
   for (const item of items) {
+    if (item.linked) {
+      skipped.push(item.rel + (item.isDir ? '/' : ''));
+      continue;
+    }
     if (!item.isDir) {
       if (!(await toolFileCurrent(item))) {
         await copyFile(item.src, item.rel);
@@ -521,17 +551,13 @@ async function cmdUpdateProject() {
       continue;
     }
     const [mine, theirs] = await Promise.all([filesUnder(item.rel), filesUnder(item.src)]);
-    for (const [r, bytes] of theirs) {
-      if (mine.has(r) && sameBytes(mine.get(r), bytes)) continue;
-      const dest = item.rel + '/' + r;
-      await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true }).catch(() => {});
-      await tjs.writeFile(dest, bytes);
-      changes.push((mine.has(r) ? 'updated ' : 'added   ') + dest);
-    }
-    for (const r of mine.keys()) {
-      if (theirs.has(r)) continue;
+    // Removals first: a link or other non-file is unlinked before anything
+    // is written at (or under) its name, so no write can go through it.
+    for (const [r, bytes] of mine) {
+      if (theirs.has(r) && bytes !== NOT_FILE) continue;
       await tjs.remove(item.rel + '/' + r);
-      changes.push('removed ' + item.rel + '/' + r);
+      mine.delete(r);
+      changes.push('removed ' + item.rel + '/' + r + (bytes === NOT_FILE ? ' (not a regular file)' : ''));
       // Drop folders the removal left empty. Check first: txiki's remove()
       // deletes a folder WITH its contents even without { recursive }.
       for (let d = r.replace(/\/?[^/]*$/, ''); d; d = d.replace(/\/?[^/]*$/, '')) {
@@ -542,14 +568,27 @@ async function cmdUpdateProject() {
         await tjs.remove(path).catch(() => {});
       }
     }
+    for (const [r, bytes] of theirs) {
+      if (mine.has(r) && sameBytes(mine.get(r), bytes)) continue;
+      const dest = item.rel + '/' + r;
+      await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true }).catch(() => {});
+      await tjs.writeFile(dest, bytes);
+      changes.push((mine.has(r) ? 'updated ' : 'added   ') + dest);
+    }
   }
   if (!items.some((item) => item.isDir)) {
-    await writeAgentSkill('.');
-    changes.push(...SKILL_DIRS.map((d) => 'added   ' + d + '/'));
+    for (const rel of SKILL_DIRS) {
+      // .claude or .claude/skills may itself be a link, possibly a dangling one.
+      if (await linkOnPath(rel)) { skipped.push(rel + '/'); continue; }
+      await copyTree(TOOL_DIR + 'skill', rel);
+      changes.push('added   ' + rel + '/');
+    }
   }
   const version = await toolVersion();
+  for (const s of skipped)
+    console.log(`skipped ${s}: it is, or is inside, a symbolic link — tinyjs won't write through one`);
   if (!changes.length) {
-    console.log(`already up to date with tinyjs ${version}`);
+    console.log(`${skipped.length ? 'nothing else to update' : 'already up to date'} with tinyjs ${version}`);
     return;
   }
   console.log(`from tinyjs ${version}:`);
@@ -3465,7 +3504,7 @@ async function cmdDoctor() {
         note(`add "$schema": "${CONFIG_SCHEMA}" to tinyjs.json for completion and checks in your editor`);
       const stale = [];
       for (const item of await projectToolFiles())
-        if (!(await toolFileCurrent(item))) stale.push(item.rel + (item.isDir ? '/' : ''));
+        if (!item.linked && !(await toolFileCurrent(item))) stale.push(item.rel + (item.isDir ? '/' : ''));
       if (stale.length)
         note(`not from this tinyjs: ${stale.join(', ')} — \`tinyjs update-project\` refreshes them`);
     }

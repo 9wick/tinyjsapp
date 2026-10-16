@@ -22,14 +22,24 @@ deleted one is back, and doctor is clean again. Put the stray file INSIDE
 deletes a non-empty folder even without `recursive`, which once took all of
 `references/` with it; (c) move both skill folders away: `update-project` adds both;
 (d) delete `types/tjs.d.ts`: it is not recreated; (e) outside a project,
-and with an extra argument: an error, exit 1. Windows: the folder replace
+and with an extra argument: an error, exit 1; (f) SYMLINKS, hostile-clone
+style, with a "victim" folder of real files outside the project that must
+come through untouched: `.claude/skills/tinyjs` and `.claude` linking to it
+→ skipped by name; `types/tiny.d.ts` linking to a victim file → skipped; a
+link INSIDE the skill (a references/ file, and references/ itself) →
+removed as a link and replaced by a real file, victim untouched; no skill
+plus a dangling `.claude/skills/tinyjs` link → skipped, nothing created at
+its target. Windows: the same with `mklink /D` symlinks AND `mklink /J`
+junctions (does readDir/lstat report a junction as a link?). Windows: the folder replace
 (rmTree + copyTree) with Explorer or an editor holding the skill folder open.
 
 - [x] **macOS** — (a)–(e), plus a Vite-style layout (old `src/` and
   `backend/` tiny.d.ts + tjs.d.ts: all four named and updated).
   File-by-file version: stray `references/my-notes.md` and
   `extra/deep/old.md` removed by name, `references/` kept, both skill
-  folders `diff -rq` identical to `skill/`. *(2026-10-16)*
+  folders `diff -rq` identical to `skill/`. (f) all symlink cases, victim
+  intact each time; a FIFO in the skill folder is removed without being
+  read. *(2026-10-16)*
 - [ ] **Windows**
 - [ ] **Linux**
 
