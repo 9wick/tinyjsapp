@@ -57,6 +57,8 @@ tinyjs build        # dist/<name> binary + dist/<Name>.app (codesigned)
 tinyjs publish      # build + dist/publish/<name>-<ver>.zip|tarball + manifest
 tinyjs notarize     # macOS: notarytool submit + staple (--dmg re-makes dmg)
                     # publish/notarize take --arch too — repeat the build's
+tinyjs doctor       # find why tinyjs or the project won't run (read-only;
+                    #   exit 1 on any FAIL) — run it first when things break
 tinyjs update       # update tinyjs itself (--check); also: uninstall, version
 TINYJS_DEBUG=1 tinyjs dev   # trace every bridge message
 ```
