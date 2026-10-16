@@ -8,6 +8,95 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `tinyjs doctor` (#61, `feat/61-doctor`, 2026-10-16)
+
+`cmdDoctor()` in cli.js, read-only (stat/readFile only). Per OS, from the
+checkout and from a release install: (a) `tinyjs doctor` in an empty folder
+and in a project folder — no false `FAIL`, exit 0; (b) the PATH line names
+the right install, including a second install added later on PATH; (c) a
+project with a missing `name`, `"minTinyjsVersion": "99.0.0"` (release
+install) and `frontend.build: "pnpm run build"` with pnpm off PATH — each a
+`FAIL`, exit 1. Windows: (d) `OK: WebView2 Runtime <version>`; the PATH line
+recognises `tinyjs.cmd` (PATHEXT) as this install; `node`/`npm` are found
+as `.exe`/`.cmd`. Linux: (d) `OK: WebKitGTK 4.1` with the runtime package
+installed (read from `/etc/ld.so.cache`), and the `DISPLAY` warning over
+plain ssh.
+
+- [x] **macOS** — (a), (b), (c) plus stale, missing and non-executable
+  launcher, a bad `TINYJS_LAUNCHER`, invalid / non-object `tinyjs.json`,
+  a name only in the `macos` block, and `package.json` without
+  `node_modules`. *(2026-10-16, Apple M3 Max, fake release install in a
+  temp dir.)*
+- [x] **Windows** — (a), (b), (c), (d). *(2026-10-16, Windows 11 arm64,
+  PowerShell; the checkout, plus a fake release install in a temp dir
+  (checkout's cli.js/bin/native/runtime, `VERSION` v0.57.5). The real
+  v0.51.1 install in `%LOCALAPPDATA%\tinyjs` sat second on PATH, untouched.)*
+  (a) empty folder and a `{ name, title }` project: exit 0 from both
+  installs, no FAIL; the project got `OK: project "good"` plus the
+  `$schema` NOTE. (b) fake first → `OK: this install` + `WARN: other
+  installs later on PATH: …\AppData\Local\tinyjs\…`; checkout first →
+  `WARN: tinyjs on PATH is …\tinyjsapp\tinyjs, a different install`; no
+  tinyjs on PATH → the NOTE. (c) no `name` + `minTinyjsVersion: "99.0.0"`
+  + `frontend.build: "pnpm run build"` (no pnpm here): three FAILs, exit 1
+  (the checkout skips the version check, as designed: two FAILs). (d) `OK:
+  WebView2 Runtime 154.0.4258.62`; `OK: on PATH: node, npm`; with the
+  extensionless `tinyjs` deleted from the fake install, its `tinyjs.cmd`
+  alone read as this install. **Found and fixed:** `findOnPath` tried the
+  bare name before PATHEXT, so on Windows the extensionless bash `tinyjs`
+  (which cmd and PowerShell can't run) counted as a hit. The "other
+  installs" WARN listed one install twice (`…\tinyjs\tinyjs,
+  …\tinyjs\tinyjs.CMD`), and the PATH line named the bash script. It now
+  looks up PATHEXT extensions only, lowercased. Re-run after the fix, with
+  the bash `tinyjs` left in place everywhere: each install listed once as
+  `…\tinyjs.cmd` (`WARN: other tinyjs installs later on PATH:
+  …\AppData\Local\tinyjs\tinyjs.cmd`; `…\tinyjsapp\tinyjs.cmd, a different
+  install`). Every verdict unchanged; node/npm still found; the pnpm FAIL
+  still fires.
+- [x] **Linux** — (a) empty folder and project folder, from the checkout
+  and a fake release install (`VERSION` v0.57.5 in a temp dir): no FAIL,
+  exit 0. (b) PATH: the `~/.local/bin` symlink reads as this install; a
+  second install later on PATH warns by path; another install first warns
+  "a different install"; none on PATH is a NOTE. (c) no `name`,
+  `minTinyjsVersion: "99.0.0"` (release only — the checkout is `dev` and
+  rightly skips it), `pnpm run build` without pnpm: 3 FAILs, exit 1; stub
+  `node`/`pnpm` on PATH → `OK: on PATH: node, pnpm` and the pnpm FAIL goes.
+  (d) `OK: WebKitGTK 4.1`; `env -u DISPLAY -u WAYLAND_DISPLAY` → the
+  desktop-session WARN, still exit 0. Cosmetic: the header reads `on linux,
+  unknown` on this arm64 VM — libuv's cpus[0].model is "unknown" when
+  /proc/cpuinfo has no model name (normal on ARM); printing the arch there
+  would say more. *(2026-10-16, Linux arm64, Ubuntu GNOME VM)*
+- [x] **Coloured labels** — in a terminal `OK:` green, `WARN:` yellow,
+  `FAIL:` bold red, `NOTE:` dim, verdict line red/green; `tinyjs doctor |
+  more` (or `> out.txt`) and `NO_COLOR=1` stay plain, with no stray escape
+  codes. Windows: PowerShell in Windows Terminal AND the old conhost window
+  (libuv should translate the codes there). macOS ✓ *(2026-10-16, via
+  `script`)*.
+  - [x] Windows — colours seen by the user in both Windows Terminal and
+    the old Command Prompt (conhost) window *(2026-10-16)*. Plain
+    output checked headlessly: `> file`, `| more` and `NO_COLOR=1` (also
+    redirected) have no ESC byte, all 7 labels intact. NO_COLOR in a real
+    terminal rests on the code (`tint` checks it before any colour).
+  - [x] Linux — under a pty (`script -qec "tinyjs doctor"`), bytes
+    checked: `OK` `ESC[32m`, `WARN` `ESC[33m`, `FAIL` `ESC[1;31m`, `NOTE`
+    `ESC[2m`, verdict `ESC[1;31m` (1 problem) / `ESC[32m` (clean), each
+    reset with `ESC[0m`. Zero ESC bytes with `NO_COLOR=1` or `TERM=dumb` in
+    the pty, piped, and redirected to a file (all 9 labels intact).
+    *(2026-10-16, arm64 GNOME VM)*
+- [x] **Header shows the architecture** (follow-up to the Linux note
+  above): `on linux arm64` with no `unknown` on the arm64 VM, and
+  `on windows arm64, <cpu>` on Windows 11 arm64. macOS: `on macos arm64,
+  Apple M3 Max` ✓ *(2026-10-16)*. Windows ✓ *(2026-10-16, after a fix)*:
+  as first pushed it printed `on windows x86_64` on this arm64 machine,
+  because bin\tjs.exe is x64 and Windows on ARM tells an emulated x64
+  process `PROCESSOR_ARCHITECTURE=AMD64`. `PROCESSOR_IDENTIFIER` isn't
+  rewritten (`ARMv8 (64-bit) Family 8 …` inside tjs), so doctor checks it
+  too (and `PROCESSOR_ARCHITEW6432`). Now `on windows arm64, Apple
+  Silicon` (the VM's CPU model). An x64 PC, simulated by env only (AMD64 +
+  `Intel64 Family 6 …`), still reads `x86_64`, as does WOW64 x86 + AMD64.
+  Not tried on real x64 hardware.
+  Linux ✓ *(2026-10-16, arm64 GNOME VM)*: `tinyjs doctor` header reads
+  `tinyjs dev (txiki.js 26.6.0) on linux arm64` — no `unknown`.
+
 ## `tinyjs update` retries, then falls back to curl (`fix/67-update-fetch`, 2026-10-15)
 
 `fetchLatestVersion()` in cli.js: two native HEAD attempts (8 s each,
