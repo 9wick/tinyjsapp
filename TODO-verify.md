@@ -65,6 +65,10 @@ plain ssh.
   unknown` on this arm64 VM — libuv's cpus[0].model is "unknown" when
   /proc/cpuinfo has no model name (normal on ARM); printing the arch there
   would say more. *(2026-10-16, Linux arm64, Ubuntu GNOME VM)*
+- [ ] **Header shows the architecture** (follow-up to the Linux note
+  above): `on linux arm64` with no `unknown` on the arm64 VM, and
+  `on windows arm64, <cpu>` on Windows 11 arm64. macOS: `on macos arm64,
+  Apple M3 Max` ✓ *(2026-10-16)*.
 
 ## `tinyjs update` retries, then falls back to curl (`fix/67-update-fetch`, 2026-10-15)
 

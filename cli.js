@@ -3219,8 +3219,16 @@ async function cmdDoctor() {
     if (fix) console.log('      ' + fix);
   };
 
-  console.log(`tinyjs ${version} (txiki.js ${tjs.version}) on ${EXEC_OS}, ` +
-              (tjs.system?.cpus?.[0]?.model || 'unknown CPU'));
+  // hostArch() asks uname; doctor starts no processes, so read what the OS
+  // already says: the env on Windows, uname via navigator.platform on Linux,
+  // the CPU model on macOS (navigator.platform says MacIntel on Apple Silicon).
+  const model = tjs.system?.cpus?.[0]?.model;
+  const cpu = model && model !== 'unknown' ? model : '';
+  const arch = IS_WIN ? (/arm64/i.test(tjs.env.PROCESSOR_ARCHITECTURE ?? '') ? 'arm64' : 'x86_64')
+    : IS_LINUX ? (/aarch64|arm64/i.test(globalThis.navigator?.platform ?? '') ? 'arm64' : 'x86_64')
+    : /^Apple /.test(cpu) ? 'arm64' : isIntelMac() ? 'x86_64' : '';
+  console.log(`tinyjs ${version} (txiki.js ${tjs.version}) on ${EXEC_OS}` +
+              (arch ? ' ' + arch : '') + (cpu ? ', ' + cpu : ''));
   console.log('Installed at ' + TOOL_DIR);
 
   // The install itself. bin/tjs is running this, so only an odd invocation
