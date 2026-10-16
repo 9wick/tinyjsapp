@@ -144,6 +144,11 @@ speakers (macOS/Windows mute it).
 
 See **Portability** below for what's supported on Windows and Linux.
 
+If something doesn't work, run `tinyjs doctor` (from your project folder,
+if you have one). It checks the install, which `tinyjs` your PATH runs, the
+system webview, Node tooling and the project's `tinyjs.json`, and says how to
+fix what it finds. It only reads files: see [docs/doctor.md](docs/doctor.md).
+
 Full docs: [tinyjs.app/docs](https://tinyjs.app/docs) · release
 history: [tinyjs.app/changelog](https://tinyjs.app/changelog).
 

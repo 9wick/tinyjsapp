@@ -2099,6 +2099,33 @@ async function cmdWrap() {
   tinyjs build    # package it`);
 }
 
+const LAUNCHER_EXE = TOOL_DIR + 'native/' +
+  (IS_WIN ? 'launcher-win.exe' : IS_LINUX ? 'launcher-linux' : 'launcher-macos');
+
+// Launcher sources (and the injected client, compiled into it) newer than the
+// built launcher; every source when there is no launcher yet. Read-only, so
+// `doctor` can report what ensureLauncherFresh would rebuild for.
+async function launcherStaleSources() {
+  const srcs = IS_WIN
+    // win32_edge.hh carries tinyjs patches (env options, origin queue,
+    // per-app profile) — an edit there must rebuild too.
+    ? ['native/launcher-win.cc', 'runtime/tiny.js',
+       'native/include/webview/detail/backends/win32_edge.hh']
+    : IS_LINUX
+      ? ['native/launcher-linux.cc', 'runtime/tiny.js']
+      : ['native/launcher-macos.cc', 'runtime/tiny.js'];
+  const mtime = async (p) => {
+    try { return (await tjs.stat(p)).mtim.getTime(); } catch { return null; }
+  };
+  const built = await mtime(LAUNCHER_EXE);
+  const stale = [];
+  for (const src of srcs) {
+    const m = await mtime(TOOL_DIR + src);
+    if (m !== null && (built === null || m > built)) stale.push(src);
+  }
+  return built === null && !stale.length ? srcs : stale;
+}
+
 // Dev-checkout convenience (Windows + Linux): if the native launcher sources
 // (or the injected client, which is compiled into it) are newer than the
 // built launcher, rebuild via setup.ps1 / setup.sh before starting — so
@@ -2111,25 +2138,8 @@ async function ensureLauncherFresh() {
   // surfaces as an unexplained TypeError rather than anything pointing at a
   // stale binary. Same rule everywhere now.
   if ((await toolVersion()) !== 'dev') return;
-  const exe = TOOL_DIR + 'native/' +
-    (IS_WIN ? 'launcher-win.exe' : IS_LINUX ? 'launcher-linux' : 'launcher-macos');
-  const srcs = IS_WIN
-    // win32_edge.hh carries tinyjs patches (env options, origin queue,
-    // per-app profile) — an edit there must rebuild too.
-    ? ['native/launcher-win.cc', 'runtime/tiny.js',
-       'native/include/webview/detail/backends/win32_edge.hh']
-    : IS_LINUX
-      ? ['native/launcher-linux.cc', 'runtime/tiny.js']
-      : ['native/launcher-macos.cc', 'runtime/tiny.js'];
-  const mtime = async (p) => {
-    try { return (await tjs.stat(p)).mtim.getTime(); } catch { return null; }
-  };
-  const built = await mtime(exe);
-  let stale = built === null;
-  for (const src of srcs) {
-    const m = await mtime(TOOL_DIR + src);
-    if (m !== null && (built === null || m > built)) stale = true;
-  }
+  const exe = LAUNCHER_EXE;
+  const stale = (await launcherStaleSources()).length > 0;
   // `build --arch` / `--universal` may need a slice a checkout's host-only
   // launcher lacks, so rebuild it fat (setup.sh honours TINYJS_UNIVERSAL=1).
   // Once fat, a rebuild for changed sources stays fat — otherwise the next
@@ -3155,50 +3165,198 @@ async function cmdVersion() {
   console.log('tinyjs ' + v + ' (txiki.js ' + tjs.version + ')');
 }
 
-// Availability checks only: never launch a window, rebuild, or contact a server.
-async function cmdDoctor() {
-  if (args.length) fail('usage: tinyjs doctor (no arguments)');
-  await cmdVersion();
-  console.log('Platform: ' + EXEC_OS + ' (' + (globalThis.navigator?.platform ?? 'unknown') + ')');
-  console.log('CPU: ' + (tjs.system?.cpus?.[0]?.model || 'unknown'));
-  console.log('Installation: ' + TOOL_DIR);
-  console.log('Running runtime: ' + tjs.exePath);
-  let errors = 0;
-  async function checkFile(label, path, fix) {
-    try {
-      const st = await tjs.stat(path);
-      if (!st.isFile || !st.size)
-        throw new Error('expected a non-empty regular file');
-      if (!IS_WIN && !(st.mode & 0o111))
-        throw new Error('no executable permission bits; run chmod +x on this file');
-      console.log('OK: ' + label + ': ' + path);
-    } catch (e) {
-      errors++;
-      console.log('FAIL: ' + label + ': ' + path + ' (' + String(e) + ')');
-      console.log('      ' + fix);
+// Every executable called `name` on PATH, in PATH order (on Windows, each
+// PATHEXT extension too). stat only — running a found tool to ask its version
+// is pmVersion's job, and doctor starts no processes.
+async function findOnPath(name) {
+  const exts = IS_WIN
+    ? ['', ...(tjs.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
+    : [''];
+  const found = [];
+  for (const dir of (tjs.env.PATH || '').split(IS_WIN ? ';' : ':')) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const p = dir.replace(/[\\/]+$/, '') + (IS_WIN ? '\\' : '/') + name + ext;
+      try {
+        const st = await tjs.stat(p);
+        if (st.isFile && (IS_WIN || st.mode & 0o111) && !found.includes(p)) found.push(p);
+      } catch {}
     }
   }
-  const restore = 'Release install: reinstall tinyjs using the README installation instructions. ' +
-    'Source checkout: run ' + (IS_WIN ? 'setup.ps1' : './setup.sh') + ' from the installation directory.';
-  await checkFile('Bundled runtime', TOOL_DIR + 'bin/' + (IS_WIN ? 'tjs.exe' : 'tjs'), restore);
-  const launcher = TOOL_DIR + 'native/' + (IS_WIN ? 'launcher-win.exe' : IS_LINUX ? 'launcher-linux' : 'launcher-macos');
-  await checkFile('Bundled launcher', launcher, restore);
-  if (tjs.env.TINYJS_LAUNCHER) {
-    console.log('NOTE: TINYJS_LAUNCHER overrides the launcher for dev; builds still use the bundled launcher.');
-    await checkFile('Dev launcher override', tjs.env.TINYJS_LAUNCHER,
-      'Correct or unset TINYJS_LAUNCHER before running tinyjs dev.');
+  return found;
+}
+
+// Does this `tinyjs` on PATH start THIS install? Yes when it is (a symlink to)
+// the install's own wrapper, or a small wrapper script that names the install
+// directory (Homebrew's bin/tinyjs, tinyjs.cmd).
+async function startsThisInstall(p) {
+  const norm = (s) => s.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const home = norm(await tjs.realPath(TOOL_DIR).catch(() => TOOL_DIR));
+  try {
+    const real = await tjs.realPath(p);
+    if (norm(real).replace(/\/[^/]*$/, '') === home) return true;
+    const st = await tjs.stat(real);
+    if (st.size > 64 * 1024) return false;
+    return norm(dec.decode(await tjs.readFile(real))).includes(home);
+  } catch { return false; }
+}
+
+// Diagnose why tinyjs or an app won't run here. Read-only: it stats and reads
+// files, and never starts a process, opens a window, rebuilds, or touches the
+// network. FAIL lines set exit status 1; WARN and NOTE lines don't.
+async function cmdDoctor() {
+  if (args.length) fail('usage: tinyjs doctor (no arguments)');
+  const version = await toolVersion();
+  let errors = 0;
+  const ok = (msg) => console.log('OK:   ' + msg);
+  const warn = (msg) => console.log('WARN: ' + msg);
+  const note = (msg) => console.log('NOTE: ' + msg);
+  const bad = (msg, fix) => {
+    errors++;
+    console.log('FAIL: ' + msg);
+    if (fix) console.log('      ' + fix);
+  };
+
+  console.log(`tinyjs ${version} (txiki.js ${tjs.version}) on ${EXEC_OS}, ` +
+              (tjs.system?.cpus?.[0]?.model || 'unknown CPU'));
+  console.log('Installed at ' + TOOL_DIR);
+
+  // The install itself. bin/tjs is running this, so only an odd invocation
+  // (another runtime) gets here without it; the launcher is the real check.
+  const restore = version === 'dev'
+    ? 'Run ' + (IS_WIN ? 'setup.ps1' : './setup.sh') + ' in ' + TOOL_DIR + '.'
+    : 'Reinstall tinyjs (see the README\'s install section).';
+  async function checkExe(label, path, fix) {
+    try {
+      const st = await tjs.stat(path);
+      if (!st.isFile || !st.size) throw new Error('not a non-empty file');
+      if (!IS_WIN && !(st.mode & 0o111)) throw new Error('not executable — chmod +x it');
+      ok(label + ' ' + path);
+      return true;
+    } catch (e) {
+      bad(`${label} ${path}: ${e?.message ?? e}`, fix);
+      return false;
+    }
   }
-  if (IS_WIN) {
-    console.log('WARN: WebView2 Runtime is not checked. If windows fail to open, install the Microsoft Edge WebView2 Evergreen Runtime (see README).');
-  } else if (IS_LINUX) {
-    console.log('WARN: WebKitGTK and shared libraries are not checked. Install the WebKitGTK 4.1 runtime (Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-0; openSUSE: sudo zypper install libwebkit2gtk-4_1-0).');
-    if (!tjs.env.DISPLAY && !tjs.env.WAYLAND_DISPLAY)
-      console.log('WARN: neither DISPLAY nor WAYLAND_DISPLAY is set. Run tinyjs dev from a graphical desktop session.');
+  await checkExe('runtime', TOOL_DIR + 'bin/' + (IS_WIN ? 'tjs.exe' : 'tjs'), restore);
+  if (await checkExe('launcher', LAUNCHER_EXE, restore) && version === 'dev') {
+    const stale = await launcherStaleSources();
+    if (stale.length)
+      warn(`launcher is older than ${stale.join(', ')} — tinyjs dev and build rebuild it first`);
+  }
+  if (tjs.env.TINYJS_LAUNCHER)
+    await checkExe('TINYJS_LAUNCHER override', tjs.env.TINYJS_LAUNCHER,
+                   'Fix or unset TINYJS_LAUNCHER (tinyjs dev uses it; builds always use the bundled launcher).');
+  if (isIntelMac())
+    warn('Intel Mac: apps built here are Intel-only unless you pass --arch arm64 or --universal');
+
+  // Which tinyjs a bare `tinyjs` runs. Two installs on PATH is the classic
+  // "I updated but nothing changed".
+  const onPath = await findOnPath('tinyjs');
+  if (!onPath.length) {
+    note('no tinyjs on PATH — run it by full path, or see the README to add it');
   } else {
-    console.log('NOTE: macOS supplies WebKit; no compiler is required for a release install.');
+    const mine = [];
+    for (const p of onPath) mine.push(await startsThisInstall(p));
+    if (!mine[0]) warn(`\`tinyjs\` on PATH is ${onPath[0]}, a different install from this one`);
+    else ok('`tinyjs` on PATH is this install');
+    const others = onPath.filter((_, i) => !mine[i]);
+    if (others.length && mine[0]) warn('other tinyjs installs later on PATH: ' + others.join(', '));
   }
-  console.log('NOTE: file availability does not verify binary architecture, shared libraries, permissions enforced by the OS, or that a window can open.');
-  console.log('doctor: ' + errors + ' error(s). No files changed.');
+
+  // The webview. macOS always has WebKit.
+  if (IS_WIN) {
+    const roots = [tjs.env['ProgramFiles(x86)'], tjs.env.ProgramFiles, tjs.env.LOCALAPPDATA]
+      .filter(Boolean).map((d) => d + '\\Microsoft\\EdgeWebView\\Application');
+    let wv = null;
+    for (const root of roots) {
+      try {
+        for await (const e of await tjs.readDir(root))
+          if (e.isDirectory && /^\d+\.\d+/.test(e.name)) { wv = e.name; break; }
+      } catch {}
+      if (wv) break;
+    }
+    if (wv) ok('WebView2 Runtime ' + wv);
+    else warn('WebView2 Runtime not found in the usual folders — if windows fail to open, ' +
+              'install the Microsoft Edge WebView2 Evergreen Runtime');
+  } else if (IS_LINUX) {
+    const lib = 'libwebkit2gtk-4.1.so.0';
+    let found = false;
+    try { found = dec.decode(await tjs.readFile('/etc/ld.so.cache')).includes(lib); } catch {}
+    for (const d of ['/usr/lib/x86_64-linux-gnu', '/usr/lib/aarch64-linux-gnu', '/usr/lib64', '/usr/lib']) {
+      if (found) break;
+      found = await exists(d + '/' + lib);
+    }
+    if (found) ok('WebKitGTK 4.1');
+    else bad('WebKitGTK 4.1 (' + lib + ') not found',
+             'Install it — Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-0; ' +
+             'Fedora: sudo dnf install webkit2gtk4.1; openSUSE: sudo zypper install libwebkit2gtk-4_1-0');
+    if (!tjs.env.DISPLAY && !tjs.env.WAYLAND_DISPLAY)
+      warn('neither DISPLAY nor WAYLAND_DISPLAY is set — windows need a desktop session');
+  }
+
+  // Node tooling: only the framework templates (tinyjs new --template) need it.
+  const tools = {};
+  for (const t of ['node', 'npm', 'pnpm', 'yarn', 'bun', 'vp']) tools[t] = (await findOnPath(t))[0];
+  const have = Object.keys(tools).filter((t) => tools[t]);
+  if (have.length) ok('on PATH: ' + have.join(', '));
+  else note('no Node.js or package manager on PATH — fine for the plain template; ' +
+            'the React/Vue/Svelte/... templates need one');
+
+  // The project in this directory, when there is one.
+  if (await exists('tinyjs.json')) {
+    let raw;
+    try { raw = JSON.parse(dec.decode(await tjs.readFile('tinyjs.json'))); }
+    catch (e) { bad('tinyjs.json is not valid JSON: ' + (e?.message ?? e)); }
+    if (raw && (typeof raw !== 'object' || Array.isArray(raw))) {
+      bad('tinyjs.json must be a JSON object');
+      raw = null;
+    }
+    if (raw) {
+      const cfg = isPlainObject(raw[EXEC_OS]) ? mergeConfig(raw, raw[EXEC_OS]) : raw;
+      let fine = true;
+      if (!cfg.name) {
+        fine = false;
+        bad(`tinyjs.json has no "name" (for ${EXEC_OS})`, 'Add "name": "myapp".');
+      }
+      if (cfg.minTinyjsVersion && version !== 'dev' && isNewer(version, cfg.minTinyjsVersion)) {
+        fine = false;
+        bad(`this project needs tinyjs ${cfg.minTinyjsVersion} or newer — this is ${version}`,
+            'Run `tinyjs update`.');
+      }
+      for (const key of ['build', 'dev']) {
+        const command = cfg.frontend?.[key];
+        if (typeof command !== 'string' || !command.trim()) continue;
+        const pm = command.trim().split(/\s+/)[0];
+        if (pm in tools && !tools[pm]) {
+          fine = false;
+          bad(`frontend.${key} runs \`${pm}\`, which isn't on PATH`, `Install ${pm}.`);
+        }
+      }
+      if ((cfg.frontend?.build || cfg.frontend?.dev) && (await exists('package.json'))) {
+        let d = tjs.cwd.replace(/\\/g, '/').replace(/\/+$/, ''), installed = false;
+        while (d && !installed) {
+          installed = (await exists(d + '/node_modules')) || (await exists(d + '/.pnp.cjs'));
+          const up = d.replace(/\/[^/]*$/, '');
+          if (up === d) break;
+          d = up;
+        }
+        if (!installed) {
+          fine = false;
+          bad('package.json but no node_modules — the frontend build has no tools',
+              'Run `npm install` (or your package manager\'s install).');
+        }
+      }
+      if (fine) ok(`project "${cfg.name}" in this directory`);
+      // Editor help only, so a note; a $schema pointing elsewhere was chosen.
+      if (raw.$schema === undefined)
+        note(`add "$schema": "${CONFIG_SCHEMA}" to tinyjs.json for completion and checks in your editor`);
+    }
+  }
+
+  note('a pass here can\'t prove a window will open (binary architecture, ' +
+       'shared libraries and OS security settings aren\'t checked)');
+  console.log(errors ? `doctor: ${errors} problem(s)` : 'doctor: no problems found');
   tjs.exit(errors ? 1 : 0);
 }
 
@@ -3206,12 +3364,16 @@ async function cmdDoctor() {
 // on an Intel Mac won't launch on Apple Silicon (and vice-versa). Heads-up for
 // devs — non-fatal, since local dev with the x86_64 build still works. Apple
 // Silicon CPUs report as "Apple M…"; Intel Macs report "Intel(R) …".
-function warnIfIntelMac() {
-  if (IS_WIN || IS_LINUX) return;
+function isIntelMac() {
+  if (IS_WIN || IS_LINUX) return false;
   const model = tjs.system?.cpus?.[0]?.model || '';
-  // Only warn on a positively-identified non-Apple CPU; if detection returns
+  // Only a positively-identified non-Apple CPU counts; if detection returns
   // nothing, stay quiet rather than false-alarm an Apple Silicon user.
-  if (!model || /^Apple /.test(model)) return;
+  return !!model && !/^Apple /.test(model);
+}
+
+function warnIfIntelMac() {
+  if (!isIntelMac()) return;
   console.log('tinyjs: heads-up — tinyjs targets Apple Silicon (M1 and later).');
   console.log('        This looks like an Intel Mac; apps you build here are');
   console.log('        Intel-only (Apple Silicon runs them under Rosetta) unless');
@@ -3264,7 +3426,7 @@ usage:
   tinyjs update       update the tinyjs CLI itself (--check: only report,
                       --dry-run: print what it would run)
   tinyjs uninstall    remove ~/.tinyjs and the PATH symlink (--yes: no prompt)
-  tinyjs doctor       check runtime and launcher availability (read-only)
+  tinyjs doctor       find why tinyjs or this project won't run (read-only)
   tinyjs version      print version`);
     tjs.exit(cmd ? 1 : 0);
 }

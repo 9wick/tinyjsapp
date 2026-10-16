@@ -8,6 +8,28 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `tinyjs doctor` (#61, `feat/61-doctor`, 2026-10-16)
+
+`cmdDoctor()` in cli.js, read-only (stat/readFile only). Per OS, from the
+checkout and from a release install: (a) `tinyjs doctor` in an empty folder
+and in a project folder — no false `FAIL`, exit 0; (b) the PATH line names
+the right install, including a second install added later on PATH; (c) a
+project with a missing `name`, `"minTinyjsVersion": "99.0.0"` (release
+install) and `frontend.build: "pnpm run build"` with pnpm off PATH — each a
+`FAIL`, exit 1. Windows: (d) `OK: WebView2 Runtime <version>`; the PATH line
+recognises `tinyjs.cmd` (PATHEXT) as this install; `node`/`npm` are found
+as `.exe`/`.cmd`. Linux: (d) `OK: WebKitGTK 4.1` with the runtime package
+installed (read from `/etc/ld.so.cache`), and the `DISPLAY` warning over
+plain ssh.
+
+- [x] **macOS** — (a), (b), (c) plus stale, missing and non-executable
+  launcher, a bad `TINYJS_LAUNCHER`, invalid / non-object `tinyjs.json`,
+  a name only in the `macos` block, and `package.json` without
+  `node_modules`. *(2026-10-16, Apple M3 Max, fake release install in a
+  temp dir.)*
+- [ ] **Windows**
+- [ ] **Linux**
+
 ## `tinyjs update` retries, then falls back to curl (`fix/67-update-fetch`, 2026-10-15)
 
 `fetchLatestVersion()` in cli.js: two native HEAD attempts (8 s each,
