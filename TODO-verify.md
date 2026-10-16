@@ -27,7 +27,28 @@ plain ssh.
   a name only in the `macos` block, and `package.json` without
   `node_modules`. *(2026-10-16, Apple M3 Max, fake release install in a
   temp dir.)*
-- [ ] **Windows**
+- [x] **Windows** — (a), (b), (c), (d). *(2026-10-16, Windows 11 arm64,
+  PowerShell; the checkout, plus a fake release install in a temp dir
+  (checkout's cli.js/bin/native/runtime, `VERSION` v0.57.5). The real
+  v0.51.1 install in `%LOCALAPPDATA%\tinyjs` sat second on PATH, untouched.)*
+  (a) empty folder and a `{ name, title }` project: exit 0 from both
+  installs, no FAIL; the project got `OK: project "good"` plus the
+  `$schema` NOTE. (b) fake first → `OK: this install` + `WARN: other
+  installs later on PATH: …\AppData\Local\tinyjs\…`; checkout first →
+  `WARN: tinyjs on PATH is …\tinyjsapp\tinyjs, a different install`; no
+  tinyjs on PATH → the NOTE. (c) no `name` + `minTinyjsVersion: "99.0.0"`
+  + `frontend.build: "pnpm run build"` (no pnpm here): three FAILs, exit 1
+  (the checkout skips the version check, as designed: two FAILs). (d) `OK:
+  WebView2 Runtime 154.0.4258.62`; `OK: on PATH: node, npm`; with the
+  extensionless `tinyjs` deleted from the fake install, its `tinyjs.cmd`
+  alone read as this install. **Cosmetic, not fixed:** `findOnPath` tries
+  the bare name before PATHEXT, so on Windows the extensionless bash
+  `tinyjs` (which cmd and PowerShell can't run) counts as a hit. The
+  "other installs" WARN then lists one install twice
+  (`…\tinyjs\tinyjs, …\tinyjs\tinyjs.CMD`, upper-cased from PATHEXT), and
+  the PATH line names the bash script rather than `tinyjs.cmd`. Verdicts
+  are still right, since both files are in the same folder. Fix: skip `''`
+  on Windows, or dedupe by folder.
 - [x] **Linux** — (a) empty folder and project folder, from the checkout
   and a fake release install (`VERSION` v0.57.5 in a temp dir): no FAIL,
   exit 0. (b) PATH: the `~/.local/bin` symlink reads as this install; a
