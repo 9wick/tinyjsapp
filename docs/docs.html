@@ -1181,7 +1181,16 @@ await <b>tiny.menu.get</b>('mute');   <i>// { exists, label, checked, enabled }<
     Support/&lt;id&gt;</code> on macOS, <code>%APPDATA%\&lt;id&gt;</code> on
     Windows, <code>~/.local/share/&lt;id&gt;</code> on Linux. Reach for SQLite
     when it gets query-shaped.</p>
-    <pre>await <b>tiny.store.set</b>('key', value);
+    <p class="note">Memory is the source of truth, as with
+    <code>localStorage</code>: <code>set</code> and <code>delete</code> take
+    effect at once, then save. They resolve <code>true</code> once on disk
+    and never reject. A failed write (full disk, permissions) resolves
+    <code>false</code>, which <code>localStorage</code> never tells you: the
+    value stays in memory, <code>get</code> returns it, and the next
+    successful save writes it, but it's lost if the app quits first. To retry,
+    set the same value again rather than redoing a read-modify-write, which
+    would apply the change twice.</p>
+    <pre>await <b>tiny.store.set</b>('key', value);     <i>// true | false (see above)</i>
 await <b>tiny.store.get</b>('key');      <i>// value | null</i>
 await <b>tiny.store.delete</b>('key');
 await <b>tiny.store.all</b>();           <i>// { … }</i></pre>

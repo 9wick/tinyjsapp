@@ -410,6 +410,9 @@ await tiny.app.thumbnail(path, size?);  // png for ANY path (macOS/Windows:
 
 ```js
 await tiny.store.set('key', anyJsonValue); await tiny.store.get('key');
+// set/delete resolve false (never reject) when the disk write fails; the value
+// stays in memory and the next good save writes it. Retry = set the same
+// value again, NOT redo a read-modify-write (that applies the change twice).
 await tiny.store.delete('key'); await tiny.store.all();
 // per-app data dir; fine for settings. Query-shaped data -> sqlite (BACKEND
 // ONLY: the page has no tjs global / tjs:* imports; expose api functions):

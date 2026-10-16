@@ -499,7 +499,9 @@ tiny.win.onDrop((paths) => tiny.log(paths.join(', ')));
 tiny.win.print();                      // native print panel for the page
 
 // persistent settings (JSON in ~/Library/Application Support/<app id>/)
-await tiny.store.set('recent', ['/tmp/a.txt']);
+await tiny.store.set('recent', ['/tmp/a.txt']);   // true once on disk; false =
+//   write failed: kept in memory (like localStorage) and written by the next
+//   successful save, lost if the app quits first. Never rejects.
 const recent = await tiny.store.get('recent');      // value | null
 await tiny.store.delete('recent');  await tiny.store.all();
 

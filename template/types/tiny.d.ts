@@ -858,7 +858,13 @@ declare interface Tiny {
 
   store: {
     get(key: string): Promise<any | null>;
+    /** Resolves true once on disk. A failed write (full disk, permissions)
+     *  resolves false and never rejects: like localStorage, the value is
+     *  already in memory (get() returns it) and the next successful save
+     *  writes it, but it is lost if the app quits first. To retry, set the
+     *  same value again rather than redoing a read-modify-write. */
     set(key: string, value: unknown): Promise<boolean>;
+    /** Same result and failure rules as set(). */
     delete(key: string): Promise<boolean>;
     all(): Promise<Record<string, any>>;
   };
@@ -1377,7 +1383,13 @@ declare interface TinyApp {
   };
   store: {
     get(key: string): Promise<any | null>;
+    /** Resolves true once on disk. A failed write (full disk, permissions)
+     *  resolves false and never rejects: like localStorage, the value is
+     *  already in memory (get() returns it) and the next successful save
+     *  writes it, but it is lost if the app quits first. To retry, set the
+     *  same value again rather than redoing a read-modify-write. */
     set(key: string, value: unknown): Promise<boolean>;
+    /** Same result and failure rules as set(). */
     delete(key: string): Promise<boolean>;
     all(): Promise<Record<string, any>>;
   };
