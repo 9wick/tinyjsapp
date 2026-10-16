@@ -69,7 +69,21 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
     Harmless, but not "identical to skill/".
   Suggested fix: catch per file, name it, keep going, print what did
   change, exit 1 if anything failed.
-- [ ] **Linux** — (f) symlinks still owed (added after this run). (a)–(e) in a fresh `tinyjs new` project from the
+- [x] **Linux** — (f) and (g) at 3e98a17, (a)–(e) rerun there and still
+  passing. (f) victim folder md5-checked after every case: skill folder as
+  a link, `.claude` as a link, `types/tiny.d.ts` as a link, and a dangling
+  skill link were each "skipped …: it is, or is inside, a symbolic link",
+  exit 0, victim intact, nothing created at the dangling target. A link
+  for `references/api.md` and for `.agents/…/references/` itself:
+  "removed … (not a regular file)", then real files added, both skill
+  folders `diff -rq` identical, victim intact. A FIFO in the skill: removed
+  without blocking. (g) no Windows locks here, so chmod stood in: SKILL.md
+  444 in a 555 skill folder, plus a stray `extra/deep/old.md` in a 555
+  folder. Both named under "could not update 2 item(s)" with EACCES,
+  tiny.d.ts still updated and listed, exit 1. After restoring permissions
+  the rerun updated SKILL.md and removed old.md, `deep/` and `extra/`;
+  identical, doctor clean. *(2026-10-16, arm64 GNOME VM)*
+  Earlier run: (a)–(e) in a fresh `tinyjs new` project from the
   checkout. (a) "already up to date", doctor clean. (b) appended SKILL.md,
   deleted `references/recipes.md`, stray `references/my-notes.md`,
   overwrote `types/tiny.d.ts`: doctor's NOTE named both skill folders +
