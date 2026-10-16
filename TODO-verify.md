@@ -31,7 +31,17 @@ and with an extra argument: an error, exit 1. Windows: the folder replace
   `extra/deep/old.md` removed by name, `references/` kept, both skill
   folders `diff -rq` identical to `skill/`. *(2026-10-16)*
 - [ ] **Windows**
-- [ ] **Linux**
+- [x] **Linux** — (a)–(e) in a fresh `tinyjs new` project from the
+  checkout. (a) "already up to date", doctor clean. (b) appended SKILL.md,
+  deleted `references/recipes.md`, stray `references/my-notes.md`,
+  overwrote `types/tiny.d.ts`: doctor's NOTE named both skill folders +
+  tiny.d.ts (exit 0); `update-project` listed updated SKILL.md, added
+  recipes.md, removed my-notes.md, updated tiny.d.ts; `references/` kept,
+  both skill folders `diff -rq` identical to `skill/`, doctor clean.
+  (c) both folders moved away → both `added`, identical. (d) `tjs.d.ts`
+  deleted → "already up to date", not recreated. (e) no tinyjs.json and an
+  extra argument → errors, exit 1. Plus `extra/deep/old.md` in the skill:
+  removed by name, folder identical after. *(2026-10-16, arm64 GNOME VM)*
 
 ## `tinyjs doctor` (#61, `feat/61-doctor`, 2026-10-16)
 
