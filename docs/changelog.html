@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.6 <span class="date">2026-10-16</span></h2>
+      <ul>
+        <li><b>New: <code>tinyjs doctor</code> finds what&rsquo;s stopping tinyjs or your project.</b> Run it (from your project folder, if you have one) when something doesn&rsquo;t work. It checks the bundled runtime and launcher; which <code>tinyjs</code> your PATH actually runs, and any second install behind it (the usual cause of &ldquo;I updated but nothing changed&rdquo;); WebView2 on Windows and WebKitGTK on Linux; which Node tools are on PATH; and the project&rsquo;s <code>tinyjs.json</code>: that it parses and has a <code>name</code>, that <code>minTinyjsVersion</code> isn&rsquo;t newer than your tinyjs, that the tool your frontend build runs is installed, and that <code>node_modules</code> exists. Each problem comes with how to fix it, and the exit status is 1 when there are any. It only reads files: it runs nothing, opens no windows and doesn&rsquo;t use the network. In a terminal the labels are coloured (<code>NO_COLOR</code> turns that off). Thanks to <a href="https://github.com/Zulut30">@Zulut30</a> for the first version (<a href="https://github.com/tarwin/tinyjsapp/pull/61">#61</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.5 <span class="date">2026-10-15</span></h2>
       <ul>
         <li><b>Editor completion and checks for <code>tinyjs.json</code>.</b> A JSON Schema for the config now lives at <a href="https://tinyjs.app/schema/tinyjs.schema.json">tinyjs.app/schema/tinyjs.schema.json</a>, and <code>tinyjs new</code> and <code>tinyjs wrap</code> put it in the first line of a new project&rsquo;s <code>tinyjs.json</code> as <code>"$schema"</code>. VS Code, JetBrains IDEs, Zed and most other editors then complete keys, show what each one does, and flag wrong types or values (such as <code>"popups": "tab"</code>) with no setup. tinyjs ignores the key, and the editor fetches the schema, never tinyjs. For an existing project, add the same line. Thanks to <a href="https://github.com/Zulut30">@Zulut30</a> for the schema (<a href="https://github.com/tarwin/tinyjsapp/pull/64">#64</a>).</li>

@@ -4,6 +4,22 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.6 — 2026-10-16
+
+- **New: `tinyjs doctor` finds what's stopping tinyjs or your project.**
+  Run it (from your project folder, if you have one) when something doesn't
+  work. It checks the bundled runtime and launcher; which `tinyjs` your PATH
+  actually runs, and any second install behind it (the usual cause of "I
+  updated but nothing changed"); WebView2 on Windows and WebKitGTK on
+  Linux; which Node tools are on PATH; and the project's `tinyjs.json`:
+  that it parses and has a `name`, that `minTinyjsVersion` isn't newer than
+  your tinyjs, that the tool your frontend build runs is installed, and that
+  `node_modules` exists. Each problem comes with how to fix it, and the
+  exit status is 1 when there are any. It only reads files: it runs
+  nothing, opens no windows and doesn't use the network. In a terminal the
+  labels are coloured (`NO_COLOR` turns that off). See docs/doctor.md.
+  Thanks to @Zulut30 for the first version (#61).
+
 ## 0.57.5 — 2026-10-15
 
 - **Editor completion and checks for `tinyjs.json`.** A JSON Schema for
