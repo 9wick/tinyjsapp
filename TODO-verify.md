@@ -71,7 +71,11 @@ plain ssh.
   codes. Windows: PowerShell in Windows Terminal AND the old conhost window
   (libuv should translate the codes there). macOS ✓ *(2026-10-16, via
   `script`)*.
-  - [ ] Windows
+  - [x] Windows — colours seen in a terminal by the user *(2026-10-16;
+    which host, Windows Terminal or conhost, wasn't recorded)*. Plain
+    output checked headlessly: `> file`, `| more` and `NO_COLOR=1` (also
+    redirected) have no ESC byte, all 7 labels intact. NO_COLOR in a real
+    terminal rests on the code (`tint` checks it before any colour).
   - [ ] Linux
 - [x] **Header shows the architecture** (follow-up to the Linux note
   above): `on linux arm64` with no `unknown` on the arm64 VM, and
