@@ -46,8 +46,8 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
   intact each time; a FIFO in the skill folder is removed without being
   read. *(2026-10-16)*
 - [ ] **Windows** — second pass on 3e98a17 *(2026-10-16)*. (f) junctions
-  pass, symlinks still owed; (g) passes except for a no-sharing lock, so
-  this stays open.
+  pass, symlinks still owed; (g) passes (the no-sharing lock too, after
+  0172809). Open only for the symlink cases.
   - (f) **junctions** (`mklink /J`; tjs's lstat AND readDir both report
     one as `isSymbolicLink`). Every case on a fresh project, with the
     victim folder hashed before and after: byte-identical every time.
@@ -76,7 +76,14 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
       no 0xC0000005. Fix: catch the read per file inside `filesUnder`.
       **Fixed after this run** (an unreadable file is its own failure,
       the rest of the folder syncs; macOS `chmod 000` stand-in passes):
-      rerun this case.
+      rerun this case. **Rerun on 0172809, Windows ✓ (2026-10-16):** a
+      fresh project, edited SKILL.md held with `FileShare.None`, plus a
+      stray, an edited and a deleted reference in the same folder. 3 runs:
+      only `SKILL.md: EBUSY` listed under "could not update"; stray
+      removed, api.md updated, recipes.md re-added, tiny.d.ts updated;
+      exit 1 each time, never 0xC0000005. After release: SKILL.md updated,
+      exit 0, then "already up to date", doctor clean, skill folder
+      hash-identical to `skill/`.
     - **Shell cwd inside a stray `extra/deep`**: named
       (`extra/deep/: EBUSY`), exit 1. After release: both emptied
       folders removed, then "already up to date".
