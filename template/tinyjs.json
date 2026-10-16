@@ -1,4 +1,5 @@
 {
+  "$schema": "https://tinyjs.app/schema/tinyjs.schema.json",
   "name": "__NAME__",
   "title": "__NAME__",
   "size": "960x640",
