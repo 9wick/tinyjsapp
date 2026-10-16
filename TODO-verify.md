@@ -30,7 +30,12 @@ link INSIDE the skill (a references/ file, and references/ itself) →
 removed as a link and replaced by a real file, victim untouched; no skill
 plus a dangling `.claude/skills/tinyjs` link → skipped, nothing created at
 its target. Windows: the same with `mklink /D` symlinks AND `mklink /J`
-junctions (does readDir/lstat report a junction as a link?). Windows: the folder replace
+junctions (does readDir/lstat report a junction as a link?); (g) LOCKED
+files, the Windows run's findings now fixed: hold a file to update and a
+stray to remove open with no sharing, plus a shell cwd inside a stray
+folder — each failure named under "could not update", every other change
+still made and listed, exit 1 (never 0xC0000005); a rerun after releasing
+them finishes the job, emptied folders included, and doctor is clean. Windows: the folder replace
 (rmTree + copyTree) with Explorer or an editor holding the skill folder open.
 
 - [x] **macOS** — (a)–(e), plus a Vite-style layout (old `src/` and

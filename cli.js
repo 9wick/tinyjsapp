@@ -501,30 +501,39 @@ async function projectToolFiles(dir = '.') {
   return items;
 }
 
-// Every entry under root by relative path: a regular file's bytes, or NOT_FILE
-// for anything else that isn't a folder (link, fifo, socket), which is never
-// read or descended into.
+// Every entry under root by relative path: a regular file's bytes, IS_DIR for
+// a folder (descended into), or NOT_FILE for anything else (link, fifo,
+// socket), which is never read or followed. Folders are listed so that an
+// extra empty one counts as a difference too.
+const IS_DIR = Symbol('folder');
 const NOT_FILE = Symbol('not a regular file');
 async function filesUnder(root, rel = '', out = new Map()) {
   for await (const e of await tjs.readDir(root + (rel ? '/' + rel : ''))) {
     const r = (rel ? rel + '/' : '') + e.name;
-    if (e.isDirectory) await filesUnder(root, r, out);
-    else out.set(r, e.isFile ? await tjs.readFile(root + '/' + r) : NOT_FILE);
+    if (e.isDirectory) {
+      out.set(r, IS_DIR);
+      await filesUnder(root, r, out);
+    } else {
+      out.set(r, e.isFile ? await tjs.readFile(root + '/' + r) : NOT_FILE);
+    }
   }
   return out;
 }
 
-const sameBytes = (a, b) => a !== NOT_FILE && b !== NOT_FILE &&
-  a.length === b.length && a.every((v, i) => v === b[i]);
+const sameBytes = (a, b) => {
+  if (a === NOT_FILE || b === NOT_FILE) return false;
+  if (a === IS_DIR || b === IS_DIR) return a === b;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+};
 
-// True when the project's copy matches the install's, file for file. Not
+// True when the project's copy matches the install's, entry for entry. Not
 // meaningful for a linked item (callers skip those).
 async function toolFileCurrent(item, dir = '.') {
   try {
     if (!item.isDir) return sameBytes(await tjs.readFile(dir + '/' + item.rel), await tjs.readFile(item.src));
     const [mine, theirs] = await Promise.all([filesUnder(dir + '/' + item.rel), filesUnder(item.src)]);
     return mine.size === theirs.size &&
-      [...theirs].every(([r, bytes]) => mine.has(r) && sameBytes(mine.get(r), bytes));
+      [...theirs].every(([r, entry]) => mine.has(r) && sameBytes(mine.get(r), entry));
   } catch { return false; }
 }
 
@@ -537,64 +546,96 @@ async function cmdUpdateProject() {
   // File by file, so every change is named: a skill folder is made to match
   // this tinyjs's exactly, and a leftover (a reference since renamed or
   // dropped, or a file someone added) is deleted out loud, never silently.
-  const changes = [], skipped = [];
+  // Each step is caught on its own: a file another program holds open
+  // (EBUSY on Windows) is named and skipped, and the run carries on.
+  const changes = [], skipped = [], failed = [];
+  const step = async (label, path, fn) => {
+    try {
+      await fn();
+      changes.push(label + path);
+      return true;
+    } catch (e) {
+      failed.push(`${path}: ${e?.message ?? e}`);
+      return false;
+    }
+  };
   for (const item of items) {
     if (item.linked) {
       skipped.push(item.rel + (item.isDir ? '/' : ''));
       continue;
     }
     if (!item.isDir) {
-      if (!(await toolFileCurrent(item))) {
-        await copyFile(item.src, item.rel);
-        changes.push('updated ' + item.rel);
-      }
+      if (!(await toolFileCurrent(item)))
+        await step('updated ', item.rel, () => copyFile(item.src, item.rel));
       continue;
     }
-    const [mine, theirs] = await Promise.all([filesUnder(item.rel), filesUnder(item.src)]);
+    let mine, theirs;
+    try {
+      [mine, theirs] = await Promise.all([filesUnder(item.rel), filesUnder(item.src)]);
+    } catch (e) {
+      failed.push(`${item.rel}/: could not read it: ${e?.message ?? e}`);
+      continue;
+    }
     // Removals first: a link or other non-file is unlinked before anything
     // is written at (or under) its name, so no write can go through it.
-    for (const [r, bytes] of mine) {
-      if (theirs.has(r) && bytes !== NOT_FILE) continue;
-      await tjs.remove(item.rel + '/' + r);
-      mine.delete(r);
-      changes.push('removed ' + item.rel + '/' + r + (bytes === NOT_FILE ? ' (not a regular file)' : ''));
-      // Drop folders the removal left empty. Check first: txiki's remove()
-      // deletes a folder WITH its contents even without { recursive }.
-      for (let d = r.replace(/\/?[^/]*$/, ''); d; d = d.replace(/\/?[^/]*$/, '')) {
-        const path = item.rel + '/' + d;
+    // Deepest paths first, so a folder's contents go before the folder.
+    const remove = [...mine]
+      .filter(([r, entry]) => !theirs.has(r) || !sameBytes(entry, theirs.get(r)) &&
+        (entry === NOT_FILE || entry === IS_DIR || theirs.get(r) === IS_DIR))
+      .map(([r]) => r)
+      .sort((a, b) => b.split('/').length - a.split('/').length);
+    for (const r of remove) {
+      const path = item.rel + '/' + r;
+      const entry = mine.get(r);
+      if (entry === IS_DIR) {
+        // Only an emptied folder: txiki's remove() deletes a folder WITH its
+        // contents even without { recursive }, and a non-empty one here means
+        // something inside failed to go and has been reported already.
         let empty = true;
-        try { for await (const _ of await tjs.readDir(path)) { empty = false; break; } } catch { break; }
-        if (!empty) break;
-        await tjs.remove(path).catch(() => {});
+        try { for await (const _ of await tjs.readDir(path)) { empty = false; break; } } catch {}
+        if (!empty) continue;
+        if (await step('removed ', path + '/', () => tjs.remove(path))) mine.delete(r);
+      } else if (await step('removed ', path + (entry === NOT_FILE ? ' (not a regular file)' : ''),
+                            () => tjs.remove(path))) {
+        mine.delete(r);
       }
     }
-    for (const [r, bytes] of theirs) {
-      if (mine.has(r) && sameBytes(mine.get(r), bytes)) continue;
+    for (const [r, entry] of theirs) {
+      if (entry === IS_DIR || (mine.has(r) && sameBytes(mine.get(r), entry))) continue;
       const dest = item.rel + '/' + r;
-      await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true }).catch(() => {});
-      await tjs.writeFile(dest, bytes);
-      changes.push((mine.has(r) ? 'updated ' : 'added   ') + dest);
+      await step(mine.has(r) ? 'updated ' : 'added   ', dest, async () => {
+        // A link whose removal failed above must not be written through.
+        if (await linkOnPath(dest)) throw new Error('a symbolic link that could not be removed is in the way');
+        await tjs.makeDir(dest.replace(/\/[^/]*$/, ''), { recursive: true }).catch(() => {});
+        await tjs.writeFile(dest, entry);
+      });
     }
   }
   if (!items.some((item) => item.isDir)) {
     for (const rel of SKILL_DIRS) {
       // .claude or .claude/skills may itself be a link, possibly a dangling one.
       if (await linkOnPath(rel)) { skipped.push(rel + '/'); continue; }
-      await copyTree(TOOL_DIR + 'skill', rel);
-      changes.push('added   ' + rel + '/');
+      await step('added   ', rel + '/', () => copyTree(TOOL_DIR + 'skill', rel));
     }
   }
   const version = await toolVersion();
   for (const s of skipped)
     console.log(`skipped ${s}: it is, or is inside, a symbolic link — tinyjs won't write through one`);
-  if (!changes.length) {
+  if (changes.length) {
+    console.log(`from tinyjs ${version}:`);
+    for (const c of changes) console.log('  ' + c);
+  } else if (!failed.length) {
     console.log(`${skipped.length ? 'nothing else to update' : 'already up to date'} with tinyjs ${version}`);
-    return;
   }
-  console.log(`from tinyjs ${version}:`);
-  for (const c of changes) console.log('  ' + c);
   if (changes.some((c) => !c.startsWith('added')))
     console.log('edits to updated or removed files are gone; git has the old versions.');
+  if (failed.length) {
+    console.log(`could not update ${failed.length} item(s):`);
+    for (const f of failed) console.log('  ' + f);
+    console.log('check their permissions, close whatever has them open (an editor, Explorer, a terminal');
+    console.log('inside the folder), and run it again.');
+    tjs.exit(1);
+  }
 }
 
 async function run(argv, opts = {}) {
