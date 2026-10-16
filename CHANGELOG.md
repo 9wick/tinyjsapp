@@ -4,6 +4,18 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.5 — 2026-10-15
+
+- **Editor completion and checks for `tinyjs.json`.** A JSON Schema for
+  the config now lives at https://tinyjs.app/schema/tinyjs.schema.json, and
+  `tinyjs new` and `tinyjs wrap` put it in the first line of a new project's
+  `tinyjs.json` as `"$schema"`. VS Code, JetBrains IDEs, Zed and most other
+  editors then complete keys, show what each one does, and flag wrong
+  types or values (such as `"popups": "tab"`) with no setup. tinyjs ignores
+  the key, and the editor fetches the schema, never tinyjs. For an existing
+  project, add the same line. See docs/config-schema.md. Thanks to
+  @Zulut30 for the schema (#64).
+
 ## 0.57.4 — 2026-10-15
 
 - **Fix (macOS): `vibrancy: false` no longer paints a transparent secondary

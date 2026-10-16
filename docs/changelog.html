@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.5 <span class="date">2026-10-15</span></h2>
+      <ul>
+        <li><b>Editor completion and checks for <code>tinyjs.json</code>.</b> A JSON Schema for the config now lives at <a href="https://tinyjs.app/schema/tinyjs.schema.json">tinyjs.app/schema/tinyjs.schema.json</a>, and <code>tinyjs new</code> and <code>tinyjs wrap</code> put it in the first line of a new project&rsquo;s <code>tinyjs.json</code> as <code>"$schema"</code>. VS Code, JetBrains IDEs, Zed and most other editors then complete keys, show what each one does, and flag wrong types or values (such as <code>"popups": "tab"</code>) with no setup. tinyjs ignores the key, and the editor fetches the schema, never tinyjs. For an existing project, add the same line. Thanks to <a href="https://github.com/Zulut30">@Zulut30</a> for the schema (<a href="https://github.com/tarwin/tinyjsapp/pull/64">#64</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.4 <span class="date">2026-10-15</span></h2>
       <ul>
         <li><b>macOS: <code>vibrancy: false</code> no longer paints a transparent secondary window.</b> A window opened with <code>{ transparent: true, vibrancy: false }</code> came up solid white or black (following light/dark mode) instead of see-through, because <code>vibrancy: false</code> turned the page background back on for every window except main. Leaving <code>vibrancy</code> out was the workaround. Thanks to <a href="https://github.com/Blatman">@Blatman</a> for the report (<a href="https://github.com/tarwin/tinyjsapp/issues/68">#68</a>).</li>
