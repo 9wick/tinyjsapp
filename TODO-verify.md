@@ -65,7 +65,7 @@ plain ssh.
   unknown` on this arm64 VM — libuv's cpus[0].model is "unknown" when
   /proc/cpuinfo has no model name (normal on ARM); printing the arch there
   would say more. *(2026-10-16, Linux arm64, Ubuntu GNOME VM)*
-- [ ] **Coloured labels** — in a terminal `OK:` green, `WARN:` yellow,
+- [x] **Coloured labels** — in a terminal `OK:` green, `WARN:` yellow,
   `FAIL:` bold red, `NOTE:` dim, verdict line red/green; `tinyjs doctor |
   more` (or `> out.txt`) and `NO_COLOR=1` stay plain, with no stray escape
   codes. Windows: PowerShell in Windows Terminal AND the old conhost window
@@ -76,7 +76,12 @@ plain ssh.
     output checked headlessly: `> file`, `| more` and `NO_COLOR=1` (also
     redirected) have no ESC byte, all 7 labels intact. NO_COLOR in a real
     terminal rests on the code (`tint` checks it before any colour).
-  - [ ] Linux
+  - [x] Linux — under a pty (`script -qec "tinyjs doctor"`), bytes
+    checked: `OK` `ESC[32m`, `WARN` `ESC[33m`, `FAIL` `ESC[1;31m`, `NOTE`
+    `ESC[2m`, verdict `ESC[1;31m` (1 problem) / `ESC[32m` (clean), each
+    reset with `ESC[0m`. Zero ESC bytes with `NO_COLOR=1` or `TERM=dumb` in
+    the pty, piped, and redirected to a file (all 9 labels intact).
+    *(2026-10-16, arm64 GNOME VM)*
 - [x] **Header shows the architecture** (follow-up to the Linux note
   above): `on linux arm64` with no `unknown` on the arm64 VM, and
   `on windows arm64, <cpu>` on Windows 11 arm64. macOS: `on macos arm64,
