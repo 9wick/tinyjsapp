@@ -45,9 +45,25 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
   folders `diff -rq` identical to `skill/`. (f) all symlink cases, victim
   intact each time; a FIFO in the skill folder is removed without being
   read. *(2026-10-16)*
-- [ ] **Windows** — second pass on 3e98a17 *(2026-10-16)*. (f) junctions
-  pass, symlinks still owed; (g) passes (the no-sharing lock too, after
-  0172809). Open only for the symlink cases.
+- [x] **Windows** — second pass on 3e98a17 *(2026-10-16)*. (f) junctions
+  and symlinks pass; (g) passes (the no-sharing lock too, after 0172809).
+  - (f) **symlinks**, on 4dd12a7 from an elevated shell (`mklink /D` and
+    file `mklink`). tjs's lstat and readDir report both kinds as
+    `isSymbolicLink`. Every case on a fresh project, victim folder
+    byte-identical after each:
+    - Skipped by name, exit 0: `.claude/skills/tinyjs` → victim;
+      `.claude` → victim, absolute and relative (`..\victim`);
+      `types/tiny.d.ts` file link → a victim file, left as a link.
+    - Removed as links and replaced with real files: `references/api.md`
+      file link → victim (now a file matching the install);
+      `references/` → victim\sub (now a real folder, 6 files).
+    - Extra links removed, the victim's files untouched:
+      `references/extra` dir link and `references/notes.md` file link.
+    - Dangling `.claude/skills/tinyjs` with no skill folders: skipped,
+      target not created, and `.agents` not added (as with the junction).
+      A dangling `.claude` link instead: skipped, target not created,
+      `.agents` added.
+    - Doctor skips linked items: clean, exit 0.
   - (f) **junctions** (`mklink /J`; tjs's lstat AND readDir both report
     one as `isSymbolicLink`). Every case on a fresh project, with the
     victim folder hashed before and after: byte-identical every time.
@@ -60,9 +76,8 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
     plus a dangling `.claude/skills/tinyjs` junction: skipped, target not
     created. Side effect: `.agents` isn't added either (the dangling link
     counts as a skill item). Doctor skips linked items silently.
-  - (f) **symlinks** (`mklink /D`, file `mklink`) NOT run: this account
-    has neither admin nor Developer Mode ("You do not have sufficient
-    privilege"). The same lstat path handles them; still owed.
+  - (f) **symlinks**: not possible in the first, unelevated session ("You
+    do not have sufficient privilege"); done since, see above.
   - (g) locks held during the run:
     - **Read-shared** (`FileShare.Read` on a file to update,
       `ReadWrite` on a stray to remove; how editors and Office hold
