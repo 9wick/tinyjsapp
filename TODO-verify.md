@@ -45,8 +45,39 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
   folders `diff -rq` identical to `skill/`. (f) all symlink cases, victim
   intact each time; a FIFO in the skill folder is removed without being
   read. *(2026-10-16)*
-- [ ] **Windows** — (f) symlinks + junctions still owed (added after this run). (a)–(e) pass; the locked-file case does NOT fail
-  cleanly, so this stays open. *(2026-10-16, Windows 11 arm64, fresh
+- [ ] **Windows** — second pass on 3e98a17 *(2026-10-16)*. (f) junctions
+  pass, symlinks still owed; (g) passes except for a no-sharing lock, so
+  this stays open.
+  - (f) **junctions** (`mklink /J`; tjs's lstat AND readDir both report
+    one as `isSymbolicLink`). Every case on a fresh project, with the
+    victim folder hashed before and after: byte-identical every time.
+    `.claude/skills/tinyjs` → victim and `.claude` → victim: "skipped …
+    symbolic link", exit 0. `references/` → victim\sub: "removed
+    references (not a regular file)", a real `references/` re-added (6
+    files). A junction named `references/api.md` was replaced by a real
+    file. An extra `references/extra` junction → victim was removed as a
+    link, and the victim's contents were never touched. No skill folders
+    plus a dangling `.claude/skills/tinyjs` junction: skipped, target not
+    created. Side effect: `.agents` isn't added either (the dangling link
+    counts as a skill item). Doctor skips linked items silently.
+  - (f) **symlinks** (`mklink /D`, file `mklink`) NOT run: this account
+    has neither admin nor Developer Mode ("You do not have sufficient
+    privilege"). The same lstat path handles them; still owed.
+  - (g) locks held during the run:
+    - **Read-shared** (`FileShare.Read` on a file to update,
+      `ReadWrite` on a stray to remove; how editors and Office hold
+      files): both named under "could not update", tiny.d.ts still
+      updated, exit 1. After release: both done, doctor clean.
+    - **No sharing at all** (`FileShare.None`): the whole folder is
+      skipped. `filesUnder` reads every file up front, so one unreadable
+      file gives `.claude/skills/tinyjs/: could not read it: EBUSY`, and
+      nothing else in that folder is synced. The other items (.agents,
+      types) were still updated and named, exit 1 every time (3 runs),
+      no 0xC0000005. Fix: catch the read per file inside `filesUnder`.
+    - **Shell cwd inside a stray `extra/deep`**: named
+      (`extra/deep/: EBUSY`), exit 1. After release: both emptied
+      folders removed, then "already up to date".
+  First pass, below: *(2026-10-16, Windows 11 arm64, fresh
   `tinyjs new` project in a temp dir.)* (a) "already up to date", no
   doctor note. (b) doctor named `.claude/skills/tinyjs/`,
   `.agents/skills/tinyjs/`, `types/tiny.d.ts`; update-project listed
