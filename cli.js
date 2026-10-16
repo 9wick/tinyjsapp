@@ -3165,12 +3165,14 @@ async function cmdVersion() {
   console.log('tinyjs ' + v + ' (txiki.js ' + tjs.version + ')');
 }
 
-// Every executable called `name` on PATH, in PATH order (on Windows, each
-// PATHEXT extension too). stat only — running a found tool to ask its version
-// is pmVersion's job, and doctor starts no processes.
+// Every executable called `name` on PATH, in PATH order (on Windows, only
+// with a PATHEXT extension: cmd and PowerShell never run an extensionless
+// file, so the bash `tinyjs` beside `tinyjs.cmd` would list one install
+// twice). stat only — running a found tool to ask its version is
+// pmVersion's job, and doctor starts no processes.
 async function findOnPath(name) {
   const exts = IS_WIN
-    ? ['', ...(tjs.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
+    ? (tjs.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((e) => e.toLowerCase())
     : [''];
   const found = [];
   for (const dir of (tjs.env.PATH || '').split(IS_WIN ? ';' : ':')) {

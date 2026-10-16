@@ -41,14 +41,17 @@ plain ssh.
   (the checkout skips the version check, as designed: two FAILs). (d) `OK:
   WebView2 Runtime 154.0.4258.62`; `OK: on PATH: node, npm`; with the
   extensionless `tinyjs` deleted from the fake install, its `tinyjs.cmd`
-  alone read as this install. **Cosmetic, not fixed:** `findOnPath` tries
-  the bare name before PATHEXT, so on Windows the extensionless bash
-  `tinyjs` (which cmd and PowerShell can't run) counts as a hit. The
-  "other installs" WARN then lists one install twice
-  (`…\tinyjs\tinyjs, …\tinyjs\tinyjs.CMD`, upper-cased from PATHEXT), and
-  the PATH line names the bash script rather than `tinyjs.cmd`. Verdicts
-  are still right, since both files are in the same folder. Fix: skip `''`
-  on Windows, or dedupe by folder.
+  alone read as this install. **Found and fixed:** `findOnPath` tried the
+  bare name before PATHEXT, so on Windows the extensionless bash `tinyjs`
+  (which cmd and PowerShell can't run) counted as a hit. The "other
+  installs" WARN listed one install twice (`…\tinyjs\tinyjs,
+  …\tinyjs\tinyjs.CMD`), and the PATH line named the bash script. It now
+  looks up PATHEXT extensions only, lowercased. Re-run after the fix, with
+  the bash `tinyjs` left in place everywhere: each install listed once as
+  `…\tinyjs.cmd` (`WARN: other tinyjs installs later on PATH:
+  …\AppData\Local\tinyjs\tinyjs.cmd`; `…\tinyjsapp\tinyjs.cmd, a different
+  install`). Every verdict unchanged; node/npm still found; the pnpm FAIL
+  still fires.
 - [x] **Linux** — (a) empty folder and project folder, from the checkout
   and a fake release install (`VERSION` v0.57.5 in a temp dir): no FAIL,
   exit 0. (b) PATH: the `~/.local/bin` symlink reads as this install; a
