@@ -3222,9 +3222,15 @@ async function cmdDoctor() {
   // hostArch() asks uname; doctor starts no processes, so read what the OS
   // already says: the env on Windows, uname via navigator.platform on Linux,
   // the CPU model on macOS (navigator.platform says MacIntel on Apple Silicon).
+  // Windows on ARM tells an emulated x64 process (bin\tjs.exe is x64)
+  // PROCESSOR_ARCHITECTURE=AMD64; PROCESSOR_IDENTIFIER isn't rewritten
+  // ("ARMv8 (64-bit) Family 8 …"), so it says what the machine really is.
   const model = tjs.system?.cpus?.[0]?.model;
   const cpu = model && model !== 'unknown' ? model : '';
-  const arch = IS_WIN ? (/arm64/i.test(tjs.env.PROCESSOR_ARCHITECTURE ?? '') ? 'arm64' : 'x86_64')
+  const e = tjs.env;
+  const arch = IS_WIN
+    ? (/arm64/i.test((e.PROCESSOR_ARCHITECTURE ?? '') + ' ' + (e.PROCESSOR_ARCHITEW6432 ?? '')) ||
+       /^ARM/i.test(e.PROCESSOR_IDENTIFIER ?? '') ? 'arm64' : 'x86_64')
     : IS_LINUX ? (/aarch64|arm64/i.test(globalThis.navigator?.platform ?? '') ? 'arm64' : 'x86_64')
     : /^Apple /.test(cpu) ? 'arm64' : isIntelMac() ? 'x86_64' : '';
   console.log(`tinyjs ${version} (txiki.js ${tjs.version}) on ${EXEC_OS}` +

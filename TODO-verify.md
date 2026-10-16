@@ -68,7 +68,15 @@ plain ssh.
 - [ ] **Header shows the architecture** (follow-up to the Linux note
   above): `on linux arm64` with no `unknown` on the arm64 VM, and
   `on windows arm64, <cpu>` on Windows 11 arm64. macOS: `on macos arm64,
-  Apple M3 Max` ✓ *(2026-10-16)*.
+  Apple M3 Max` ✓ *(2026-10-16)*. Windows ✓ *(2026-10-16, after a fix)*:
+  as first pushed it printed `on windows x86_64` on this arm64 machine,
+  because bin\tjs.exe is x64 and Windows on ARM tells an emulated x64
+  process `PROCESSOR_ARCHITECTURE=AMD64`. `PROCESSOR_IDENTIFIER` isn't
+  rewritten (`ARMv8 (64-bit) Family 8 …` inside tjs), so doctor checks it
+  too (and `PROCESSOR_ARCHITEW6432`). Now `on windows arm64, Apple
+  Silicon` (the VM's CPU model). An x64 PC, simulated by env only (AMD64 +
+  `Intel64 Family 6 …`), still reads `x86_64`, as does WOW64 x86 + AMD64.
+  Not tried on real x64 hardware.
 
 ## `tinyjs update` retries, then falls back to curl (`fix/67-update-fetch`, 2026-10-15)
 
