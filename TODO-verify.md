@@ -40,8 +40,41 @@ junctions (does readDir/lstat report a junction as a link?). Windows: the folder
   folders `diff -rq` identical to `skill/`. (f) all symlink cases, victim
   intact each time; a FIFO in the skill folder is removed without being
   read. *(2026-10-16)*
-- [ ] **Windows**
-- [ ] **Linux**
+- [ ] **Windows** — (f) symlinks + junctions still owed (added after this run). (a)–(e) pass; the locked-file case does NOT fail
+  cleanly, so this stays open. *(2026-10-16, Windows 11 arm64, fresh
+  `tinyjs new` project in a temp dir.)* (a) "already up to date", no
+  doctor note. (b) doctor named `.claude/skills/tinyjs/`,
+  `.agents/skills/tinyjs/`, `types/tiny.d.ts`; update-project listed
+  updated SKILL.md, removed `references/my-notes.md`, added
+  `references/recipes.md`, updated tiny.d.ts; `references/` kept; both
+  skill folders hash-identical to `skill/` (7 files); doctor clean. (c)
+  both added back. (d) tjs.d.ts not recreated. (e) both errors, exit 1.
+  **Locked files** (held open from PowerShell during the run):
+  - A file to update held with no sharing, or a stray to remove held
+    without delete sharing (how most Windows apps open files): the run
+    stops at that file with only `Error: EBUSY: resource busy or locked`
+    and exit 1. It doesn't name the file, and it doesn't list changes
+    already made before it. Fine after the lock is released. One of four
+    such runs exited `0xC0000005` (access violation) instead of 1. It
+    didn't recur in 3 more runs or in a bare tjs probe (an uncaught EBUSY
+    from writeFile exits 1 every time).
+  - A shell whose cwd is inside a stray subfolder: the file goes, but
+    the emptied folders stay (the removal error is swallowed), and later
+    runs say "already up to date", because filesUnder only sees files.
+    Harmless, but not "identical to skill/".
+  Suggested fix: catch per file, name it, keep going, print what did
+  change, exit 1 if anything failed.
+- [ ] **Linux** — (f) symlinks still owed (added after this run). (a)–(e) in a fresh `tinyjs new` project from the
+  checkout. (a) "already up to date", doctor clean. (b) appended SKILL.md,
+  deleted `references/recipes.md`, stray `references/my-notes.md`,
+  overwrote `types/tiny.d.ts`: doctor's NOTE named both skill folders +
+  tiny.d.ts (exit 0); `update-project` listed updated SKILL.md, added
+  recipes.md, removed my-notes.md, updated tiny.d.ts; `references/` kept,
+  both skill folders `diff -rq` identical to `skill/`, doctor clean.
+  (c) both folders moved away → both `added`, identical. (d) `tjs.d.ts`
+  deleted → "already up to date", not recreated. (e) no tinyjs.json and an
+  extra argument → errors, exit 1. Plus `extra/deep/old.md` in the skill:
+  removed by name, folder identical after. *(2026-10-16, arm64 GNOME VM)*
 
 ## `tinyjs doctor` (#61, `feat/61-doctor`, 2026-10-16)
 
