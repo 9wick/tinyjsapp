@@ -175,6 +175,14 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.7 <span class="date">2026-10-16</span></h2>
+      <ul>
+        <li><b>New: <code>tinyjs update-project</code> brings a project&rsquo;s types and agent skill up to date.</b> <code>tinyjs new</code> copies the TypeScript types (<code>tiny.d.ts</code>, <code>tjs.d.ts</code>) and the coding-agent skill (<code>.claude/skills/tinyjs/</code>, <code>.agents/skills/tinyjs/</code>) into a project once, and nothing updated them after that. Run it in a project after <code>tinyjs update</code>. It goes file by file and names every file it updates, adds or removes, so the skill folders end up identical to your tinyjs&rsquo;s. Types are only updated where the project has them, and a project without the skill gets one. Edits to those files are overwritten (git has the old versions). It never writes through a symbolic link: a linked folder or file is skipped by name, so a cloned project can&rsquo;t point it at files elsewhere. A file it can&rsquo;t change, such as one another program has open, is named and the rest still updates (exit 1). <code>tinyjs doctor</code> now says, in a project, when these files are behind.</li>
+        <li><b>Docs: what <code>store.set</code> resolving <code>false</code> means.</b> As with <code>localStorage</code>, memory is the source of truth: a failed disk write keeps the value in memory, the next successful save writes it, and it&rsquo;s lost if the app quits first. To retry, set the same value again rather than redoing a read-modify-write. In the docs, the types and the agent skill.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.6 <span class="date">2026-10-16</span></h2>
       <ul>
         <li><b>New: <code>tinyjs doctor</code> finds what&rsquo;s stopping tinyjs or your project.</b> Run it (from your project folder, if you have one) when something doesn&rsquo;t work. It checks the bundled runtime and launcher; which <code>tinyjs</code> your PATH actually runs, and any second install behind it (the usual cause of &ldquo;I updated but nothing changed&rdquo;); WebView2 on Windows and WebKitGTK on Linux; which Node tools are on PATH; and the project&rsquo;s <code>tinyjs.json</code>: that it parses and has a <code>name</code>, that <code>minTinyjsVersion</code> isn&rsquo;t newer than your tinyjs, that the tool your frontend build runs is installed, and that <code>node_modules</code> exists. Each problem comes with how to fix it, and the exit status is 1 when there are any. It only reads files: it runs nothing, opens no windows and doesn&rsquo;t use the network. In a terminal the labels are coloured (<code>NO_COLOR</code> turns that off). Thanks to <a href="https://github.com/Zulut30">@Zulut30</a> for the first version (<a href="https://github.com/tarwin/tinyjsapp/pull/61">#61</a>).</li>

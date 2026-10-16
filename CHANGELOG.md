@@ -4,6 +4,28 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.7 — 2026-10-16
+
+- **New: `tinyjs update-project` brings a project's types and agent skill
+  up to date.** `tinyjs new` copies the TypeScript types (`tiny.d.ts`,
+  `tjs.d.ts`) and the coding-agent skill (`.claude/skills/tinyjs/`,
+  `.agents/skills/tinyjs/`) into a project once, and nothing updated them
+  after that. Run it in a project after `tinyjs update`. It goes file by
+  file and names every file it updates, adds or removes, so the skill
+  folders end up identical to your tinyjs's. Types are only updated where
+  the project has them, and a project without the skill gets one. Edits to
+  those files are overwritten (git has the old versions). It never writes
+  through a symbolic link: a linked folder or file is skipped by name, so a
+  cloned project can't point it at files elsewhere. A file it can't change,
+  such as one another program has open, is named and the rest still
+  updates (exit 1). `tinyjs doctor` now says, in a project, when these
+  files are behind.
+- **Docs: what `store.set` resolving `false` means.** As with
+  `localStorage`, memory is the source of truth: a failed disk write keeps
+  the value in memory, the next successful save writes it, and it's lost if
+  the app quits first. To retry, set the same value again rather than
+  redoing a read-modify-write. In the docs, the types and the agent skill.
+
 ## 0.57.6 — 2026-10-16
 
 - **New: `tinyjs doctor` finds what's stopping tinyjs or your project.**
