@@ -840,6 +840,9 @@ async function cmdUninstall() {
 // Plain objects merge (so "macos": { chrome: { vibrancy } } keeps a root
 // chrome.frame); scalars and arrays replace outright.
 const OS_KEYS = ['macos', 'windows', 'linux'];
+// Written as "$schema" into new projects' tinyjs.json for editor completion;
+// served from docs/schema/ by the site. tinyjs itself ignores the key.
+const CONFIG_SCHEMA = 'https://tinyjs.app/schema/tinyjs.schema.json';
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 function mergeConfig(base, over) {
@@ -1341,6 +1344,7 @@ async function scaffoldViteTemplate(dir, name, template, opts) {
   const backendEntry = 'backend/main.' + (ts ? 'ts' : 'js');
 
   await tjs.writeFile(dir + '/tinyjs.json', enc.encode(JSON.stringify({
+    $schema: CONFIG_SCHEMA,
     name,
     title: name,
     size: '960x640',
@@ -1970,6 +1974,7 @@ async function cmdWrap() {
   }
 
   const cfg = {
+    $schema: CONFIG_SCHEMA,
     name,
     title: title ?? name,
     size: '1280x800',

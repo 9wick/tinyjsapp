@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyjs.app/schema/tinyjs.schema.json",
   "title": "tinyjs application configuration",
   "description": "Editor assistance for tinyjs.json. The CLI merges the current OS block over the root, then applies environment overrides. Unknown extension fields are allowed. Filesystem and effective configuration checks remain the CLI's responsibility.",
   "allOf": [{ "$ref": "#/$defs/settings" }],
@@ -52,8 +53,8 @@
         "url": { "$ref": "#/$defs/optionalString", "description": "Remote main page for a site wrapper, instead of a local frontend." },
         "readAccess": { "type": ["boolean", "string", "null"], "description": "macOS file access root for the page; true grants the home folder." },
         "userAgent": { "$ref": "#/$defs/optionalString", "description": "Custom webview User-Agent." },
-        "downloads": { "$ref": "#/$defs/optionalString", "description": "Download policy: auto, ask, or deny." },
-        "popups": { "$ref": "#/$defs/optionalString", "description": "Popup policy: external, window, or deny." },
+        "downloads": { "enum": ["auto", "ask", "deny", null], "description": "Download policy for a site wrapper; auto is the default." },
+        "popups": { "enum": ["external", "window", "deny", null], "description": "window.open policy for a site wrapper; external is the default. onWindowOpen can refine it per popup." },
         "api": { "$ref": "#/$defs/api" },
         "contextMenu": { "$ref": "#/$defs/optionalBoolean", "description": "false suppresses the webview's default context menu." },
         "browserAccelerators": { "$ref": "#/$defs/optionalBoolean", "description": "Keep the browser engine's own keyboard shortcuts." },
@@ -85,7 +86,7 @@
           "type": ["object", "null"],
           "properties": {
             "url": { "$ref": "#/$defs/optionalString", "description": "URL of the application's update manifest." },
-            "auto": { "type": ["string", "boolean", "null"], "description": "launch or daily checks for updates in packaged apps; false disables automatic checking." }
+            "auto": { "enum": ["launch", "daily", false, null], "description": "Automatic update checks in packaged apps: at launch, or at launch and then daily. Omit or false to check only when the app calls tiny.app.update.check()." }
           }
         }
       }

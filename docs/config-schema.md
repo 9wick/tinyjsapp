@@ -1,25 +1,23 @@
 # Editor assistance for tinyjs.json
 
-The [JSON Schema](../schema/tinyjs.schema.json) describes the configuration
+The [JSON Schema](schema/tinyjs.schema.json) describes the configuration
 fields used by the CLI and runtime. It supplies field descriptions, completion,
 and type checks in editors that support JSON Schema Draft 2020-12.
 
-For a local checkout, VS Code can associate the schema without adding a field
-to the application's config. Add this to your user settings, replacing the path
-with your checkout's absolute path (use a `file:///C:/...` URI on Windows):
+Projects made by `tinyjs new` and `tinyjs wrap` already point at it, in the
+first line of `tinyjs.json`:
 
 ```json
 {
-  "json.schemas": [{
-    "fileMatch": ["/tinyjs.json"],
-    "url": "file:///absolute/path/to/tinyjsapp/schema/tinyjs.schema.json"
-  }]
+  "$schema": "https://tinyjs.app/schema/tinyjs.schema.json",
+  "name": "hello"
 }
 ```
 
-Other editors can associate the same local schema file with `tinyjs.json`.
-The template does not add a remote `$schema` URL, so creating a project does
-not depend on network access or on a particular schema having been published.
+VS Code, JetBrains IDEs, Zed and most other editors pick that up with no
+setup. For an older project, add the same line. tinyjs itself ignores the key
+and never fetches the schema: the editor does that, and offline it just shows
+no hints. The URL always serves the schema for the latest tinyjs release.
 
 ## Compatibility and scope
 
@@ -40,21 +38,11 @@ Validation does not grant or audit API capabilities.
 
 ## Verification
 
-Use a separate virtual environment for the test-only validator; tinyjs gains
-no runtime dependency:
+`test/config-schema/coverage.py` needs only the standard library. It fails
+when `cli.js` or the runtime reads a top-level key the schema doesn't
+describe. Nested keys (`chrome.*`, `frontend.*`, ...) aren't covered and have
+to be added by hand:
 
 ```sh
-python3 -m venv /tmp/tinyjs-schema-check
-/tmp/tinyjs-schema-check/bin/python -m pip install 'jsonschema==4.26.0'
-/tmp/tinyjs-schema-check/bin/python test/config-schema/check.py
-```
-
-On Windows, use the environment's `Scripts/python.exe` instead of `bin/python`.
-The check validates the schema itself, tracked `tinyjs.json` files, parseable
-JSON examples in the README, platform overrides, extension fields, and invalid
-nested field types. Annotated JSON snippets containing comments are skipped.
-To also check a newly generated project's config, pass its filename:
-
-```sh
-/tmp/tinyjs-schema-check/bin/python test/config-schema/check.py /path/to/new-app/tinyjs.json
+python3 test/config-schema/coverage.py
 ```
