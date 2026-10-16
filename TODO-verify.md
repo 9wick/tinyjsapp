@@ -28,7 +28,19 @@ plain ssh.
   `node_modules`. *(2026-10-16, Apple M3 Max, fake release install in a
   temp dir.)*
 - [ ] **Windows**
-- [ ] **Linux**
+- [x] **Linux** — (a) empty folder and project folder, from the checkout
+  and a fake release install (`VERSION` v0.57.5 in a temp dir): no FAIL,
+  exit 0. (b) PATH: the `~/.local/bin` symlink reads as this install; a
+  second install later on PATH warns by path; another install first warns
+  "a different install"; none on PATH is a NOTE. (c) no `name`,
+  `minTinyjsVersion: "99.0.0"` (release only — the checkout is `dev` and
+  rightly skips it), `pnpm run build` without pnpm: 3 FAILs, exit 1; stub
+  `node`/`pnpm` on PATH → `OK: on PATH: node, pnpm` and the pnpm FAIL goes.
+  (d) `OK: WebKitGTK 4.1`; `env -u DISPLAY -u WAYLAND_DISPLAY` → the
+  desktop-session WARN, still exit 0. Cosmetic: the header reads `on linux,
+  unknown` on this arm64 VM — libuv's cpus[0].model is "unknown" when
+  /proc/cpuinfo has no model name (normal on ARM); printing the arch there
+  would say more. *(2026-10-16, Linux arm64, Ubuntu GNOME VM)*
 
 ## `tinyjs update` retries, then falls back to curl (`fix/67-update-fetch`, 2026-10-15)
 
