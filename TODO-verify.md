@@ -8,6 +8,149 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `tinyjs update-project` + doctor's stale-files note (`feat/update-project`, 2026-10-16)
+
+`cmdUpdateProject()` / `projectToolFiles()` in cli.js. Per OS, in a fresh
+`tinyjs new` project: (a) `tinyjs update-project` says already up to date,
+and doctor has no "not from this tinyjs" note; (b) append to
+`.claude/skills/tinyjs/SKILL.md`, delete a file under
+`.agents/skills/tinyjs/references/`, add a stray file to the skill folder,
+overwrite `types/tiny.d.ts`: doctor names all three, `update-project` names
+every file it updated, added or removed, the stray file is gone, the
+deleted one is back, and doctor is clean again. Put the stray file INSIDE
+`references/` (next to real files): only it may go — txiki's `tjs.remove`
+deletes a non-empty folder even without `recursive`, which once took all of
+`references/` with it; (c) move both skill folders away: `update-project` adds both;
+(d) delete `types/tjs.d.ts`: it is not recreated; (e) outside a project,
+and with an extra argument: an error, exit 1; (f) SYMLINKS, hostile-clone
+style, with a "victim" folder of real files outside the project that must
+come through untouched: `.claude/skills/tinyjs` and `.claude` linking to it
+→ skipped by name; `types/tiny.d.ts` linking to a victim file → skipped; a
+link INSIDE the skill (a references/ file, and references/ itself) →
+removed as a link and replaced by a real file, victim untouched; no skill
+plus a dangling `.claude/skills/tinyjs` link → skipped, nothing created at
+its target. Windows: the same with `mklink /D` symlinks AND `mklink /J`
+junctions (does readDir/lstat report a junction as a link?); (g) LOCKED
+files, the Windows run's findings now fixed: hold a file to update and a
+stray to remove open with no sharing, plus a shell cwd inside a stray
+folder — each failure named under "could not update", every other change
+still made and listed, exit 1 (never 0xC0000005); a rerun after releasing
+them finishes the job, emptied folders included, and doctor is clean. Windows: the folder replace
+(rmTree + copyTree) with Explorer or an editor holding the skill folder open.
+
+- [x] **macOS** — (a)–(e), plus a Vite-style layout (old `src/` and
+  `backend/` tiny.d.ts + tjs.d.ts: all four named and updated).
+  File-by-file version: stray `references/my-notes.md` and
+  `extra/deep/old.md` removed by name, `references/` kept, both skill
+  folders `diff -rq` identical to `skill/`. (f) all symlink cases, victim
+  intact each time; a FIFO in the skill folder is removed without being
+  read. *(2026-10-16)*
+- [x] **Windows** — second pass on 3e98a17 *(2026-10-16)*. (f) junctions
+  and symlinks pass; (g) passes (the no-sharing lock too, after 0172809).
+  - (f) **symlinks**, on 4dd12a7 from an elevated shell (`mklink /D` and
+    file `mklink`). tjs's lstat and readDir report both kinds as
+    `isSymbolicLink`. Every case on a fresh project, victim folder
+    byte-identical after each:
+    - Skipped by name, exit 0: `.claude/skills/tinyjs` → victim;
+      `.claude` → victim, absolute and relative (`..\victim`);
+      `types/tiny.d.ts` file link → a victim file, left as a link.
+    - Removed as links and replaced with real files: `references/api.md`
+      file link → victim (now a file matching the install);
+      `references/` → victim\sub (now a real folder, 6 files).
+    - Extra links removed, the victim's files untouched:
+      `references/extra` dir link and `references/notes.md` file link.
+    - Dangling `.claude/skills/tinyjs` with no skill folders: skipped,
+      target not created, and `.agents` not added (as with the junction).
+      A dangling `.claude` link instead: skipped, target not created,
+      `.agents` added.
+    - Doctor skips linked items: clean, exit 0.
+  - (f) **junctions** (`mklink /J`; tjs's lstat AND readDir both report
+    one as `isSymbolicLink`). Every case on a fresh project, with the
+    victim folder hashed before and after: byte-identical every time.
+    `.claude/skills/tinyjs` → victim and `.claude` → victim: "skipped …
+    symbolic link", exit 0. `references/` → victim\sub: "removed
+    references (not a regular file)", a real `references/` re-added (6
+    files). A junction named `references/api.md` was replaced by a real
+    file. An extra `references/extra` junction → victim was removed as a
+    link, and the victim's contents were never touched. No skill folders
+    plus a dangling `.claude/skills/tinyjs` junction: skipped, target not
+    created. Side effect: `.agents` isn't added either (the dangling link
+    counts as a skill item). Doctor skips linked items silently.
+  - (f) **symlinks**: not possible in the first, unelevated session ("You
+    do not have sufficient privilege"); done since, see above.
+  - (g) locks held during the run:
+    - **Read-shared** (`FileShare.Read` on a file to update,
+      `ReadWrite` on a stray to remove; how editors and Office hold
+      files): both named under "could not update", tiny.d.ts still
+      updated, exit 1. After release: both done, doctor clean.
+    - **No sharing at all** (`FileShare.None`): the whole folder is
+      skipped. `filesUnder` reads every file up front, so one unreadable
+      file gives `.claude/skills/tinyjs/: could not read it: EBUSY`, and
+      nothing else in that folder is synced. The other items (.agents,
+      types) were still updated and named, exit 1 every time (3 runs),
+      no 0xC0000005. Fix: catch the read per file inside `filesUnder`.
+      **Fixed after this run** (an unreadable file is its own failure,
+      the rest of the folder syncs; macOS `chmod 000` stand-in passes):
+      rerun this case. **Rerun on 0172809, Windows ✓ (2026-10-16):** a
+      fresh project, edited SKILL.md held with `FileShare.None`, plus a
+      stray, an edited and a deleted reference in the same folder. 3 runs:
+      only `SKILL.md: EBUSY` listed under "could not update"; stray
+      removed, api.md updated, recipes.md re-added, tiny.d.ts updated;
+      exit 1 each time, never 0xC0000005. After release: SKILL.md updated,
+      exit 0, then "already up to date", doctor clean, skill folder
+      hash-identical to `skill/`.
+    - **Shell cwd inside a stray `extra/deep`**: named
+      (`extra/deep/: EBUSY`), exit 1. After release: both emptied
+      folders removed, then "already up to date".
+  First pass, below: *(2026-10-16, Windows 11 arm64, fresh
+  `tinyjs new` project in a temp dir.)* (a) "already up to date", no
+  doctor note. (b) doctor named `.claude/skills/tinyjs/`,
+  `.agents/skills/tinyjs/`, `types/tiny.d.ts`; update-project listed
+  updated SKILL.md, removed `references/my-notes.md`, added
+  `references/recipes.md`, updated tiny.d.ts; `references/` kept; both
+  skill folders hash-identical to `skill/` (7 files); doctor clean. (c)
+  both added back. (d) tjs.d.ts not recreated. (e) both errors, exit 1.
+  **Locked files** (held open from PowerShell during the run):
+  - A file to update held with no sharing, or a stray to remove held
+    without delete sharing (how most Windows apps open files): the run
+    stops at that file with only `Error: EBUSY: resource busy or locked`
+    and exit 1. It doesn't name the file, and it doesn't list changes
+    already made before it. Fine after the lock is released. One of four
+    such runs exited `0xC0000005` (access violation) instead of 1. It
+    didn't recur in 3 more runs or in a bare tjs probe (an uncaught EBUSY
+    from writeFile exits 1 every time).
+  - A shell whose cwd is inside a stray subfolder: the file goes, but
+    the emptied folders stay (the removal error is swallowed), and later
+    runs say "already up to date", because filesUnder only sees files.
+    Harmless, but not "identical to skill/".
+  Suggested fix: catch per file, name it, keep going, print what did
+  change, exit 1 if anything failed.
+- [x] **Linux** — (f) and (g) at 3e98a17, (a)–(e) rerun there and still
+  passing. (f) victim folder md5-checked after every case: skill folder as
+  a link, `.claude` as a link, `types/tiny.d.ts` as a link, and a dangling
+  skill link were each "skipped …: it is, or is inside, a symbolic link",
+  exit 0, victim intact, nothing created at the dangling target. A link
+  for `references/api.md` and for `.agents/…/references/` itself:
+  "removed … (not a regular file)", then real files added, both skill
+  folders `diff -rq` identical, victim intact. A FIFO in the skill: removed
+  without blocking. (g) no Windows locks here, so chmod stood in: SKILL.md
+  444 in a 555 skill folder, plus a stray `extra/deep/old.md` in a 555
+  folder. Both named under "could not update 2 item(s)" with EACCES,
+  tiny.d.ts still updated and listed, exit 1. After restoring permissions
+  the rerun updated SKILL.md and removed old.md, `deep/` and `extra/`;
+  identical, doctor clean. *(2026-10-16, arm64 GNOME VM)*
+  Earlier run: (a)–(e) in a fresh `tinyjs new` project from the
+  checkout. (a) "already up to date", doctor clean. (b) appended SKILL.md,
+  deleted `references/recipes.md`, stray `references/my-notes.md`,
+  overwrote `types/tiny.d.ts`: doctor's NOTE named both skill folders +
+  tiny.d.ts (exit 0); `update-project` listed updated SKILL.md, added
+  recipes.md, removed my-notes.md, updated tiny.d.ts; `references/` kept,
+  both skill folders `diff -rq` identical to `skill/`, doctor clean.
+  (c) both folders moved away → both `added`, identical. (d) `tjs.d.ts`
+  deleted → "already up to date", not recreated. (e) no tinyjs.json and an
+  extra argument → errors, exit 1. Plus `extra/deep/old.md` in the skill:
+  removed by name, folder identical after. *(2026-10-16, arm64 GNOME VM)*
+
 ## `tinyjs doctor` (#61, `feat/61-doctor`, 2026-10-16)
 
 `cmdDoctor()` in cli.js, read-only (stat/readFile only). Per OS, from the
