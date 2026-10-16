@@ -74,6 +74,9 @@ them finishes the job, emptied folders included, and doctor is clean. Windows: t
       nothing else in that folder is synced. The other items (.agents,
       types) were still updated and named, exit 1 every time (3 runs),
       no 0xC0000005. Fix: catch the read per file inside `filesUnder`.
+      **Fixed after this run** (an unreadable file is its own failure,
+      the rest of the folder syncs; macOS `chmod 000` stand-in passes):
+      rerun this case.
     - **Shell cwd inside a stray `extra/deep`**: named
       (`extra/deep/: EBUSY`), exit 1. After release: both emptied
       folders removed, then "already up to date".

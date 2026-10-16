@@ -502,26 +502,31 @@ async function projectToolFiles(dir = '.') {
 }
 
 // Every entry under root by relative path: a regular file's bytes, IS_DIR for
-// a folder (descended into), or NOT_FILE for anything else (link, fifo,
-// socket), which is never read or followed. Folders are listed so that an
-// extra empty one counts as a difference too.
+// a folder (descended into), NOT_FILE for anything else (link, fifo,
+// socket), which is never read or followed, or an Unreadable for a file that
+// couldn't be read (on Windows, one held open with no sharing): that file
+// fails on its own instead of taking the whole folder with it. Folders are
+// listed so that an extra empty one counts as a difference too.
 const IS_DIR = Symbol('folder');
 const NOT_FILE = Symbol('not a regular file');
+class Unreadable { constructor(e) { this.message = e?.message ?? String(e); } }
 async function filesUnder(root, rel = '', out = new Map()) {
   for await (const e of await tjs.readDir(root + (rel ? '/' + rel : ''))) {
     const r = (rel ? rel + '/' : '') + e.name;
     if (e.isDirectory) {
       out.set(r, IS_DIR);
       await filesUnder(root, r, out);
+    } else if (!e.isFile) {
+      out.set(r, NOT_FILE);
     } else {
-      out.set(r, e.isFile ? await tjs.readFile(root + '/' + r) : NOT_FILE);
+      out.set(r, await tjs.readFile(root + '/' + r).catch((err) => new Unreadable(err)));
     }
   }
   return out;
 }
 
 const sameBytes = (a, b) => {
-  if (a === NOT_FILE || b === NOT_FILE) return false;
+  if (a === NOT_FILE || b === NOT_FILE || a instanceof Unreadable || b instanceof Unreadable) return false;
   if (a === IS_DIR || b === IS_DIR) return a === b;
   return a.length === b.length && a.every((v, i) => v === b[i]);
 };
@@ -574,6 +579,12 @@ async function cmdUpdateProject() {
       [mine, theirs] = await Promise.all([filesUnder(item.rel), filesUnder(item.src)]);
     } catch (e) {
       failed.push(`${item.rel}/: could not read it: ${e?.message ?? e}`);
+      continue;
+    }
+    // The install's own copy must be whole; a broken install is not synced.
+    const broken = [...theirs].find(([, entry]) => entry instanceof Unreadable);
+    if (broken) {
+      failed.push(`${item.src}/${broken[0]} (in tinyjs itself): ${broken[1].message}`);
       continue;
     }
     // Removals first: a link or other non-file is unlinked before anything
