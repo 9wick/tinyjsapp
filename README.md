@@ -213,6 +213,9 @@ myapp/
   src/shared/             # optional: code both sides import — see below
 ```
 
+For `tinyjs.json` completion and type checks in your editor, see the
+[configuration schema guide](docs/config-schema.md).
+
 Projects made before 0.53 keep `icon.png` (and `Credits.html`) at the
 project root; both are still found there.
 
