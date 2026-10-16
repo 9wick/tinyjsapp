@@ -8,6 +8,9 @@ It only reads files. It starts no processes, opens no windows, rebuilds
 nothing and doesn't use the network. Exit status is 1 when any `FAIL` line
 is printed, 0 otherwise; `WARN` and `NOTE` lines don't change it.
 
+In a terminal the labels are coloured. Piped or redirected output stays
+plain, and setting `NO_COLOR` turns colour off.
+
 ## What it checks
 
 - **The install:** the bundled runtime and launcher exist and are

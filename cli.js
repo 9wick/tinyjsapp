@@ -3210,12 +3210,16 @@ async function cmdDoctor() {
   if (args.length) fail('usage: tinyjs doctor (no arguments)');
   const version = await toolVersion();
   let errors = 0;
-  const ok = (msg) => console.log('OK:   ' + msg);
-  const warn = (msg) => console.log('WARN: ' + msg);
-  const note = (msg) => console.log('NOTE: ' + msg);
+  // Colour the labels only in a terminal (never when piped or redirected),
+  // honouring NO_COLOR and TERM=dumb. libuv translates the codes on Windows.
+  const tint = tjs.stdout.isTerminal && !tjs.env.NO_COLOR && tjs.env.TERM !== 'dumb'
+    ? (code, text) => `\x1b[${code}m${text}\x1b[0m` : (code, text) => text;
+  const ok = (msg) => console.log(tint('32', 'OK:  ') + ' ' + msg);
+  const warn = (msg) => console.log(tint('33', 'WARN:') + ' ' + msg);
+  const note = (msg) => console.log(tint('2', 'NOTE:') + ' ' + msg);
   const bad = (msg, fix) => {
     errors++;
-    console.log('FAIL: ' + msg);
+    console.log(tint('1;31', 'FAIL:') + ' ' + msg);
     if (fix) console.log('      ' + fix);
   };
 
@@ -3372,7 +3376,7 @@ async function cmdDoctor() {
 
   note('a pass here can\'t prove a window will open (binary architecture, ' +
        'shared libraries and OS security settings aren\'t checked)');
-  console.log(errors ? `doctor: ${errors} problem(s)` : 'doctor: no problems found');
+  console.log(errors ? tint('1;31', `doctor: ${errors} problem(s)`) : tint('32', 'doctor: no problems found'));
   tjs.exit(errors ? 1 : 0);
 }
 

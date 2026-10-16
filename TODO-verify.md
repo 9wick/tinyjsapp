@@ -65,6 +65,14 @@ plain ssh.
   unknown` on this arm64 VM — libuv's cpus[0].model is "unknown" when
   /proc/cpuinfo has no model name (normal on ARM); printing the arch there
   would say more. *(2026-10-16, Linux arm64, Ubuntu GNOME VM)*
+- [ ] **Coloured labels** — in a terminal `OK:` green, `WARN:` yellow,
+  `FAIL:` bold red, `NOTE:` dim, verdict line red/green; `tinyjs doctor |
+  more` (or `> out.txt`) and `NO_COLOR=1` stay plain, with no stray escape
+  codes. Windows: PowerShell in Windows Terminal AND the old conhost window
+  (libuv should translate the codes there). macOS ✓ *(2026-10-16, via
+  `script`)*.
+  - [ ] Windows
+  - [ ] Linux
 - [x] **Header shows the architecture** (follow-up to the Linux note
   above): `on linux arm64` with no `unknown` on the arm64 VM, and
   `on windows arm64, <cpu>` on Windows 11 arm64. macOS: `on macos arm64,
