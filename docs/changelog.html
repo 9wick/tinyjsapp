@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.8 <span class="date">2026-10-19</span></h2>
+      <ul>
+        <li><b>macOS: clicking the Dock icon brings back a window hidden by <code>setHideOnClose(true)</code>.</b> The red close button hid the main window as expected, but nothing brought it back: clicking the app&rsquo;s Dock icon did nothing. Now it shows the same window again, with its page state intact. A visible or minimized window, and an app with <code>"mainWindow": false</code>, behave as before. Windows and Linux already showed the window when the app is launched again. Thanks to <a href="https://github.com/9wick">@9wick</a> for the fix (<a href="https://github.com/tarwin/tinyjsapp/pull/73">#73</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.7 <span class="date">2026-10-16</span></h2>
       <ul>
         <li><b>New: <code>tinyjs update-project</code> brings a project&rsquo;s types and agent skill up to date.</b> <code>tinyjs new</code> copies the TypeScript types (<code>tiny.d.ts</code>, <code>tjs.d.ts</code>) and the coding-agent skill (<code>.claude/skills/tinyjs/</code>, <code>.agents/skills/tinyjs/</code>) into a project once, and nothing updated them after that. Run it in a project after <code>tinyjs update</code>. It goes file by file and names every file it updates, adds or removes, so the skill folders end up identical to your tinyjs&rsquo;s. Types are only updated where the project has them, and a project without the skill gets one. Edits to those files are overwritten (git has the old versions). It never writes through a symbolic link: a linked folder or file is skipped by name, so a cloned project can&rsquo;t point it at files elsewhere. A file it can&rsquo;t change, such as one another program has open, is named and the rest still updates (exit 1). <code>tinyjs doctor</code> now says, in a project, when these files are behind.</li>

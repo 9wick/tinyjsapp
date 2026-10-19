@@ -4,6 +4,17 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.8 — 2026-10-19
+
+- **macOS: clicking the Dock icon brings back a window hidden by
+  `setHideOnClose(true)`.** The red close button hid the main window as
+  expected, but nothing brought it back: clicking the app's Dock icon did
+  nothing. Now it shows the same window again, with its page state intact.
+  A visible or minimized window, and an app with `"mainWindow": false`,
+  behave as before. Windows and Linux already showed the window when the
+  app is launched again. Thanks to [@9wick](https://github.com/9wick) for
+  the fix ([#73](https://github.com/tarwin/tinyjsapp/pull/73)).
+
 ## 0.57.7 — 2026-10-16
 
 - **New: `tinyjs update-project` brings a project's types and agent skill
