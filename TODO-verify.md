@@ -14,18 +14,21 @@ With `setHideOnClose(true)`, the red button hid the main window, but a Dock
 click did not bring it back. The reopen delegate now shows the existing
 main window when hide-on-close is enabled and no windows are visible.
 
-- [x] **macOS** — reproduced the failure before the fix. In
-  `test/dock-reopen`, repeated red-button close → Dock click restores the
-  window with its unsaved input intact, in dev and packaged `.app` runs.
-  *(2026-10-16, macOS 26.4.1, manual checks.)*
+- [x] **macOS** — reproduced the failure before the fix. In a
+  `setHideOnClose(true)` app, repeated red-button close → Dock click
+  restores the window with its unsaved input intact, in dev and packaged
+  `.app` runs. *(2026-10-16, macOS 26.4.1, manual checks by the PR #73
+  author. 2026-10-19: scripted before/after — `performClose:` then a
+  LaunchServices reopen — restores on the PR launcher only; plus a real
+  Dock click, hand-checked.)*
 - [x] **macOS visible-window reopen (dev and packaged)** — switching away
   while the window is visible, then clicking its Dock icon focuses the same
   window with its input intact, without creating another window.
 - [x] **macOS minimized-window reopen (dev and packaged)** — yellow-button
   minimize → Dock click restores the window with its input intact.
-- [x] **macOS windowless reopen (dev and packaged)** — in
-  `test/dock-reopen-windowless`, Dock clicks leave the app without a main
-  window, and tray editor open/close still works.
+- [x] **macOS windowless reopen (dev and packaged)** — in a
+  `"mainWindow": false` tray app, Dock clicks leave the app without a main
+  window, and opening/closing a named window from the tray still works.
   *(2026-10-17, macOS 26.4.1, manual checks of all three cases above.)*
 
 ## `tinyjs update-project` + doctor's stale-files note (`feat/update-project`, 2026-10-16)
