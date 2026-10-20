@@ -2371,9 +2371,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         return 'failed';   // no xdg-mime on this box
       }
     },
-    // Standard per-app directories (data/cache/logs are per app id, not
-    // auto-created — tjs.makeDir(..., { recursive: true }) first write).
-    // Prefer these over hardcoding ~/Library paths.
+    // Standard per-app directories (data/cache/logs are per app id; app.paths()
+    // creates them, see callableRecord below). Prefer these over hardcoding
+    // ~/Library paths.
     paths: IS_WIN
       ? {
           home: tjs.homeDir,
@@ -2922,8 +2922,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   // a page. DEPRECATED (0.57.0): reading them as plain objects
   // (app.paths.data). That still works — each field is a getter that warns
   // once — and JSON.stringify / spread still see the fields.
-  const callableRecord = (name, obj) => {
-    const fn = async () => ({ ...obj });
+  const callableRecord = (name, obj, prepare) => {
+    const fn = async () => (prepare && await prepare(), { ...obj });
     for (const k of Object.keys(obj)) {
       Object.defineProperty(fn, k, {
         enumerable: true, configurable: true,
@@ -2935,7 +2935,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   };
   const pathsRecord = app.paths;
   app.info = callableRecord('info', app.info);
-  app.paths = callableRecord('paths', pathsRecord);
+  // The per-app dirs exist by the time paths() resolves, so a first
+  // writeFile(paths.logs + '/x.log') just works (#71). Once per run; a dir
+  // that can't be made still leaves paths() resolving.
+  let pathsMade;
+  const makePathDirs = () => pathsMade ??= Promise.all(
+    ['data', 'cache', 'logs'].map((k) =>
+      tjs.makeDir(pathsRecord[k], { recursive: true }).catch(() => {})));
+  app.paths = callableRecord('paths', pathsRecord, makePathDirs);
 
   // close/windows/setHideOnClose take tiny.win's shapes: close(id?) closes
   // that window (no id = main = quit), not "main, whatever you pass".

@@ -393,7 +393,8 @@ audio.src = tiny.fileURL(path);  // file:// URL for a disk path — ALWAYS this,
 // "readAccess": true | "/path" in tinyjs.json.
 await tiny.app.paths();   // { home, data, cache, logs, temp, downloads,
                           //   desktop, documents, resources, executables } — per-OS correct; backend
-                          //   twin: await app.paths() (same shape)
+                          //   twin: await app.paths() (same shape). data/cache/logs
+                          //   are created before it resolves — write straight into them
 // resources: the project's resources/ folder in dev, its bundled copy in
 // builds, null without one. Backend: (await app.paths()).resources.
 // executables: this OS's sidecars from executables/, flat (.build/executables

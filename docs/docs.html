@@ -1417,7 +1417,7 @@ await <b>tiny.app.shell.trash</b>(path);    <i>// recoverable — prefer over de
 <i>// standard per-app directories — no hardcoded ~/Library paths</i>
 await <b>tiny.app.paths</b>();  <i>// { home, data, cache, logs, temp, downloads,</i>
                          <i>//   desktop, documents } — data/cache/logs are per</i>
-                         <i>//   app id; create on first write. Backend: the</i>
+                         <i>//   app id, created for you. Backend: the</i>
                          <i>//   same, await app.paths().</i>
 
 <i>// become the default opener for an extension (or 'folder') — only because</i>
