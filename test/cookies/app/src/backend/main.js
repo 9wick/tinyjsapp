@@ -22,9 +22,10 @@ async function run(app) {
     httpOnly: true, expires: Date.now() + 3600e3, sameSite: 'lax' }));
   await step('readBack', async () => (await app.cookies.get({ url: BASE + '/x', name: 'injected' }))
     .map((c) => ({ ...c, expiresInMin: Math.round((c.expires - Date.now()) / 60e3) })));
+  // No sameSite given: set() defaults to 'lax' on every OS.
   await step('session', async () => {
     await app.cookies.set({ url: BASE, name: 'sess', value: 'a b=c' });
-    return (await app.cookies.get({ url: BASE, name: 'sess' })).map((c) => [c.value, c.expires]);
+    return (await app.cookies.get({ url: BASE, name: 'sess' })).map((c) => [c.value, c.expires, c.sameSite]);
   });
   await step('otherPath', async () => {
     await app.cookies.set({ url: BASE, name: 'deep', value: '1', path: '/admin' });

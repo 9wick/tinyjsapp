@@ -8062,13 +8062,14 @@ struct CookieReq {
 
 #ifdef __APPLE__
 static std::string cookie_json(NSHTTPCookie *c) {
-  std::string same = "null";
+  // WebKit reports SameSite=None as no policy at all, and enforces an unset
+  // one as None too (no lax-by-default), so no policy reads as "none" —
+  // what it does, and what set() needs to hand back to keep it working.
+  std::string same = "\"none\"";
   if (@available(macOS 10.15, *)) {
     NSString *p = c.sameSitePolicy;
     if ([p isEqualToString:NSHTTPCookieSameSiteLax]) same = "\"lax\"";
     else if ([p isEqualToString:NSHTTPCookieSameSiteStrict]) same = "\"strict\"";
-    // WebKit reports SameSite=None as no policy at all, so none and unset
-    // both arrive as null here.
   }
   std::string expires = "null";
   if (!c.sessionOnly && c.expiresDate)
@@ -8117,6 +8118,7 @@ static void do_cookies(webview_t, void *arg) {
     if (@available(macOS 10.15, *)) {
       if (f(8) == "lax") props[NSHTTPCookieSameSitePolicy] = NSHTTPCookieSameSiteLax;
       else if (f(8) == "strict") props[NSHTTPCookieSameSitePolicy] = NSHTTPCookieSameSiteStrict;
+      // "none" is no policy at all — WebKit has no constant for it.
     }
     NSHTTPCookie *c = [NSHTTPCookie cookieWithProperties:props];
     if (!c) {

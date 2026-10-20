@@ -33,6 +33,15 @@ ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
   sess=a b=c`, `all` = 2. But unset SameSite (`vis`) reads `lax` here, not
   `none` as in the 2.50.4 container — it varies by WebKitGTK version, so
   don't document a fixed value. *(2026-10-19.)*
+- SameSite follow-up (same day): `set()` now defaults `sameSite` to
+  `'lax'`, and macOS reads no-policy as `'none'` instead of `null` (what
+  WebKit enforces, and what `set()` needs to keep such a cookie working).
+  Probe: `session` should be `[["a b=c", null, "lax"]]` everywhere.
+  - [x] **macOS** — `session` `lax`; `vis` reads `none`; every other row
+    unchanged. *(2026-10-19.)*
+  - [ ] **Windows** — `session` `lax` (expected unchanged: `vis` `lax`).
+  - [ ] **Linux** — `session` `lax` on WebKitGTK 2.50 AND 2.52 (`vis`
+    still varies by version; that's documented, not a bug).
 
 ## `app.paths()` creates data/cache/logs; build names a busy dist/ (#71, #72, 2026-10-19)
 

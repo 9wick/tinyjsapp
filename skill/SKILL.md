@@ -178,7 +178,7 @@ tiny.win.open('settings', { page: 'settings.html', size: '420x300',
 
 Everything else — windows/chrome/state events, menus (in every window),
 dialogs, tray, notifications, clipboard, hotkeys, audio (sampler / filters /
-audioTap / proxyURL), store/secrets, permissions, deep links, auto-update,
+audioTap / proxyURL), store/secrets, cookies, permissions, deep links, auto-update,
 `tiny.macos.*` — is in references/api.md with signatures and gotchas.
 
 ## Cross-platform rules

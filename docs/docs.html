@@ -1725,6 +1725,16 @@ await <b>app.cookies.remove</b>({ url: 'https://app.example.com' });   <i>// -&g
     a cookie straight from <code>get</code>, or <code>{ url, name? }</code>.
     On Linux, <code>get()</code> without a <code>url</code> needs WebKitGTK
     2.42+.</p>
+    <p class="note"><b>SameSite.</b> <code>set</code> defaults
+    <code>sameSite</code> to <code>'lax'</code> on every OS, because the
+    engines disagree about a cookie without one. <code>get</code> reports the
+    policy the engine enforces, so a cookie the <i>site</i> set without
+    SameSite reads as that engine's default: <code>'none'</code> on macOS
+    (WebKit has no lax-by-default), <code>'lax'</code> on Windows (Chromium's
+    default), and either on Linux depending on the WebKitGTK version. Passing a
+    <code>get</code> result back to <code>set</code> keeps the cookie working
+    the same way. <code>'none'</code> generally needs <code>secure: true</code>
+    to be sent cross-site.</p>
   </section>
 
   <section id="open">

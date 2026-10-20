@@ -2206,7 +2206,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // those). Backend only, on purpose: a page that could read the jar could
     // read every site's session. Shape: { name, value, domain, path,
     // expires (ms epoch | null = session), secure, httpOnly, sameSite
-    // ('lax'|'strict'|'none'|null) }. A leading '.' on domain means
+    // ('lax'|'strict'|'none') }. A leading '.' on domain means
     // "and subdomains", as every engine reports it; without one the cookie
     // is host-only.
     cookies: {
@@ -2227,7 +2227,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // { url?, domain?, name, value, path = '/', expires?, secure?,
       //   httpOnly?, sameSite? } — url OR domain says where it belongs (url
       // alone = host-only for its host). expires: Date or ms epoch; omit for
-      // a session cookie. Replaces any cookie with the same name/domain/path.
+      // a session cookie. sameSite defaults to 'lax' — every engine has its
+      // own idea of an unset one (#46), so never leave it unset. Replaces
+      // any cookie with the same name/domain/path.
       async set(c = {}) {
         const name = cookieField(c.name, 'name');
         if (!name) throw new Error('cookies.set: name is required');
@@ -2243,8 +2245,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
           if (!Number.isFinite(ms)) throw new Error('cookies.set: bad expires');
           expires = String(Math.round(ms));
         }
-        const sameSite = c.sameSite == null ? '' : String(c.sameSite).toLowerCase();
-        if (sameSite && !['lax', 'strict', 'none'].includes(sameSite)) {
+        const sameSite = c.sameSite == null ? 'lax' : String(c.sameSite).toLowerCase();
+        if (!['lax', 'strict', 'none'].includes(sameSite)) {
           throw new Error("cookies.set: sameSite is 'lax', 'strict' or 'none'");
         }
         const r = await ask('COOKIES', ['set', esc(name), esc(value), esc(domain), esc(path), expires,

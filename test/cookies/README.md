@@ -15,10 +15,10 @@ Start from an empty jar (the app quits after clearing what it set; delete
 
 | key | expected |
 |---|---|
-| `fromPage` | `sid=s3cret … httpOnly=true sameSite=lax expires=null` and `vis=1 … httpOnly=false` |
+| `fromPage` | `sid=s3cret … httpOnly=true sameSite=lax expires=null` and `vis=1 … httpOnly=false` (`vis` has no SameSite, so it reads as the engine's default: `none` macOS, `lax` Windows, `none` or `lax` Linux by WebKitGTK version) |
 | `set` | `true` |
 | `readBack` | one `injected` cookie: `httpOnly: true`, `sameSite: "lax"`, `expiresInMin: 60`, `domain: "127.0.0.1"` |
-| `session` | `[["a b=c", null]]` |
+| `session` | `[["a b=c", null, "lax"]]` (set() without sameSite → `lax`, every OS) |
 | `otherPath` | `[0, 1, 0]` (`/admin` cookie: not on `/`, yes on `/admin/x`, not on `/adminx`) |
 | `badName` / `badValue` / `noWhere` | `THREW …` (`;`, CR/LF, no url or domain) |
 | `removeVis` / `removeExact` | `1` |

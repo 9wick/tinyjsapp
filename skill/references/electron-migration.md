@@ -38,6 +38,7 @@ architecture, not the code.
 | `dialog.showOpenDialog` etc. | `tiny.dialog.openFile/openFiles/pickFolder/saveFile/alert/confirm/prompt` |
 | `shell.openExternal/showItemInFolder/trashItem` | `tiny.app.shell.open/reveal/trash` |
 | `app.getPath(name)` | `tiny.app.paths()` / backend `app.paths` (plain object) |
+| `session.cookies.get/set/remove` | backend `app.cookies.get/set/remove` — same idea, backend only; `expires` is ms (not `expirationDate` seconds), `sameSite` defaults to `'lax'` |
 | `safeStorage` / keytar | `tiny.app.secrets.get/set/delete` (Keychain / Credential Manager / Secret Service) |
 | `autoUpdater` (+ electron-updater) | `"update": { url, auto }` in tinyjs.json + `tinyjs publish`; `update.check()` / `update.install()` |
 | `nativeTheme` | `tiny.theme.get()/on()` |

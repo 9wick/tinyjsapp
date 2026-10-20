@@ -673,10 +673,11 @@ declare interface TinyCookie {
   expires: number | null;
   secure: boolean;
   httpOnly: boolean;
-  /** a cookie set without SameSite reads null on macOS, 'lax' on Windows
-   *  (Chromium's default), and 'none' or 'lax' on Linux depending on the
-   *  WebKitGTK version — don't rely on a fixed value */
-  sameSite: 'lax' | 'strict' | 'none' | null;
+  /** the policy the engine enforces. A cookie a SITE set without SameSite
+   *  reads as that engine's default: 'none' on macOS, 'lax' on Windows,
+   *  'none' or 'lax' on Linux by WebKitGTK version. Hand it back to set()
+   *  unchanged to keep the cookie working the same way. */
+  sameSite: 'lax' | 'strict' | 'none';
 }
 
 declare interface TinyCookieInit {
@@ -692,6 +693,7 @@ declare interface TinyCookieInit {
   expires?: Date | number;
   secure?: boolean;
   httpOnly?: boolean;
+  /** default 'lax' on every OS (engines disagree about an unset one) */
   sameSite?: 'lax' | 'strict' | 'none';
 }
 

@@ -2001,14 +2001,26 @@ The same page also runs against a built `dist/<name>` or the `.app`'s
   `get({ url?, name?, domain?, path? })` → `[{ name, value, domain, path,
   expires (ms | null = session), secure, httpOnly, sameSite }]`; with `url`
   you get what a request to it would carry. `set({ url | domain, name,
-  value, path = '/', expires?, secure?, httpOnly?, sameSite? })` replaces a
-  cookie with the same name/domain/path; `url` alone makes it host-only, a
-  `domain` of `'.example.com'` covers subdomains. `remove()` takes a cookie
-  from `get()` (name + domain + path) or `{ url, name? }`, and resolves the
-  number removed. Names and values with control characters or `;` are
-  refused. Pages get no cookie API: a page that could read the jar could
-  read every site's session — if one needs a cookie, hand it over from your
-  own `api` handler. Linux needs WebKitGTK 2.42+ for `get()` without a `url`.
+  value, path = '/', expires?, secure?, httpOnly?, sameSite = 'lax' })`
+  replaces a cookie with the same name/domain/path; `url` alone makes it
+  host-only, a `domain` of `'.example.com'` covers subdomains. `remove()`
+  takes a cookie from `get()` (name + domain + path) or `{ url, name? }`,
+  and resolves the number removed. Names and values with control
+  characters or `;` are refused. Linux needs WebKitGTK 2.42+ for `get()`
+  without a `url`.
+
+  **SameSite.** `set()` defaults to `'lax'` on every OS, because the engines
+  disagree about a cookie with none. `get()` reports the policy the engine
+  enforces, so a cookie the *site* set without SameSite reads as that
+  engine's default: `'none'` on macOS (WebKit has no lax-by-default),
+  `'lax'` on Windows (Chromium's default), and either on Linux depending on
+  the WebKitGTK version. Passing a `get()` result back to `set()` keeps it
+  working the same way, which is what the example above relies on.
+  `'none'` generally needs `secure: true` to be sent cross-site.
+
+  Pages get no cookie API: a page that could read the jar could read every
+  site's session — if one needs a cookie, hand it over from your own `api`
+  handler.
 
 ### On-device AI (`tiny.macos.ai`)
 
