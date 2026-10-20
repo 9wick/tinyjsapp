@@ -1,0 +1,8 @@
+{
+  "name": "cookieprobe",
+  "title": "cookie probe",
+  "size": "600x400",
+  "id": "app.tinyjs.cookieprobe",
+  "version": "0.1.0",
+  "url": "http://127.0.0.1:8799/login"
+}

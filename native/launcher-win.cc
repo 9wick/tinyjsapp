@@ -5714,6 +5714,174 @@ static void do_navr(webview_t, void *arg) {
     return E_NOINTERFACE;                                                      \
   }
 
+// --- app.cookies (#46): the WebView2 profile's CookieManager ----------------
+// Every window shares the one environment/profile, so the main webview's
+// manager is the whole app's jar, HttpOnly included. The bridge filters.
+// COOKIES <qid> get\t<url>   ('' = whole jar — GetCookies' own convention)
+// COOKIES <qid> set\t<name>\t<value>\t<domain>\t<path>\t<expiresMs>\t<secure01>\t<httpOnly01>\t<samesite>
+// COOKIES <qid> delete\t<name>\t<domain>\t<path>     GOT {ok, removed}
+static std::string take_wstr(LPWSTR s) {
+  std::string out = s ? narrow(s) : "";
+  if (s)
+    CoTaskMemFree(s);
+  return out;
+}
+
+static std::string cookie_str(ICoreWebView2Cookie *c,
+                              HRESULT (STDMETHODCALLTYPE ICoreWebView2Cookie::*get)(LPWSTR *)) {
+  LPWSTR s = nullptr;
+  return SUCCEEDED((c->*get)(&s)) ? take_wstr(s) : "";
+}
+
+static std::string wv2_cookie_json(ICoreWebView2Cookie *c) {
+  BOOL session = TRUE, secure = FALSE, http_only = FALSE;
+  double expires = -1;
+  COREWEBVIEW2_COOKIE_SAME_SITE_KIND same = COREWEBVIEW2_COOKIE_SAME_SITE_KIND_NONE;
+  c->get_IsSession(&session);
+  c->get_Expires(&expires);
+  c->get_IsSecure(&secure);
+  c->get_IsHttpOnly(&http_only);
+  c->get_SameSite(&same);
+  std::string exp = session || expires < 0
+                        ? "null"
+                        : std::to_string((long long)(expires * 1000.0));
+  const char *ss = same == COREWEBVIEW2_COOKIE_SAME_SITE_KIND_LAX      ? "\"lax\""
+                   : same == COREWEBVIEW2_COOKIE_SAME_SITE_KIND_STRICT ? "\"strict\""
+                                                                      : "\"none\"";
+  return "{\"name\":" + json_escape(cookie_str(c, &ICoreWebView2Cookie::get_Name)) +
+         ",\"value\":" + json_escape(cookie_str(c, &ICoreWebView2Cookie::get_Value)) +
+         ",\"domain\":" + json_escape(cookie_str(c, &ICoreWebView2Cookie::get_Domain)) +
+         ",\"path\":" + json_escape(cookie_str(c, &ICoreWebView2Cookie::get_Path)) +
+         ",\"expires\":" + exp + ",\"secure\":" + (secure ? "true" : "false") +
+         ",\"httpOnly\":" + (http_only ? "true" : "false") + ",\"sameSite\":" + ss + "}";
+}
+
+struct CookiesGetHandler : public ICoreWebView2GetCookiesCompletedHandler {
+  TINY_COM_BOILERPLATE(ICoreWebView2GetCookiesCompletedHandler)
+  std::string qid;
+  HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr,
+                                   ICoreWebView2CookieList *list) override {
+    UINT32 n = 0;
+    if (FAILED(hr) || !list || FAILED(list->get_Count(&n))) {
+      got(qid, "{\"ok\":false,\"error\":\"GetCookies failed\"}");
+      return S_OK;
+    }
+    std::string json = "[";
+    for (UINT32 i = 0; i < n; i++) {
+      ICoreWebView2Cookie *c = nullptr;
+      if (FAILED(list->GetValueAtIndex(i, &c)) || !c)
+        continue;
+      if (json.size() > 1)
+        json += ",";
+      json += wv2_cookie_json(c);
+      c->Release();
+    }
+    got(qid, "{\"ok\":true,\"cookies\":" + json + "]}");
+    return S_OK;
+  }
+};
+
+// DeleteCookie takes the cookie object itself, so find the exact
+// name/domain/path match in the whole jar rather than trusting
+// DeleteCookiesWithDomainAndPath's idea of a leading-dot domain.
+struct CookiesDeleteHandler : public ICoreWebView2GetCookiesCompletedHandler {
+  TINY_COM_BOILERPLATE(ICoreWebView2GetCookiesCompletedHandler)
+  std::string qid, name, domain, path;
+  ICoreWebView2CookieManager *mgr = nullptr; // owned ref
+  ~CookiesDeleteHandler() {
+    if (mgr)
+      mgr->Release();
+  }
+  HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr,
+                                   ICoreWebView2CookieList *list) override {
+    UINT32 n = 0, removed = 0;
+    if (FAILED(hr) || !list || FAILED(list->get_Count(&n))) {
+      got(qid, "{\"ok\":false,\"error\":\"GetCookies failed\"}");
+      return S_OK;
+    }
+    for (UINT32 i = 0; i < n; i++) {
+      ICoreWebView2Cookie *c = nullptr;
+      if (FAILED(list->GetValueAtIndex(i, &c)) || !c)
+        continue;
+      if (cookie_str(c, &ICoreWebView2Cookie::get_Name) == name &&
+          cookie_str(c, &ICoreWebView2Cookie::get_Domain) == domain &&
+          cookie_str(c, &ICoreWebView2Cookie::get_Path) == path &&
+          SUCCEEDED(mgr->DeleteCookie(c)))
+        removed++;
+      c->Release();
+    }
+    got(qid, "{\"ok\":true,\"removed\":" + std::to_string(removed) + "}");
+    return S_OK;
+  }
+};
+
+static ICoreWebView2CookieManager *cookie_manager() {
+  ICoreWebView2_2 *wv22 = nullptr;
+  ICoreWebView2CookieManager *mgr = nullptr;
+  if (g_wv2 && SUCCEEDED(g_wv2->QueryInterface(IID_ICoreWebView2_2, (void **)&wv22))) {
+    wv22->get_CookieManager(&mgr);
+    wv22->Release();
+  }
+  return mgr;
+}
+
+static void do_cookies(webview_t, void *arg) {
+  QReq *req = static_cast<QReq *>(arg);
+  std::string qid = req->qid;
+  std::vector<std::string> p = split_tabs(req->rest);
+  delete req;
+  auto f = [&](size_t i) { return i < p.size() ? wire_unescape(p[i]) : std::string(); };
+  std::string op = p.empty() ? "" : p[0];
+  ICoreWebView2CookieManager *mgr = cookie_manager();
+  if (!mgr) {
+    got(qid, "{\"ok\":false,\"error\":\"no webview\"}");
+    return;
+  }
+
+  if (op == "get") {
+    CookiesGetHandler *h = new CookiesGetHandler();
+    h->qid = qid;
+    if (FAILED(mgr->GetCookies(widen(f(1)).c_str(), h)))
+      got(qid, "{\"ok\":false,\"error\":\"GetCookies failed\"}");
+    h->Release();
+  } else if (op == "set") {
+    ICoreWebView2Cookie *c = nullptr;
+    HRESULT hr = mgr->CreateCookie(widen(f(1)).c_str(), widen(f(2)).c_str(),
+                                   widen(f(3)).c_str(), widen(f(4)).c_str(), &c);
+    if (SUCCEEDED(hr) && c) {
+      if (!f(5).empty())
+        c->put_Expires(std::atof(f(5).c_str()) / 1000.0);
+      c->put_IsSecure(f(6) == "1");
+      c->put_IsHttpOnly(f(7) == "1");
+      std::string same = f(8);
+      if (same == "lax")
+        c->put_SameSite(COREWEBVIEW2_COOKIE_SAME_SITE_KIND_LAX);
+      else if (same == "strict")
+        c->put_SameSite(COREWEBVIEW2_COOKIE_SAME_SITE_KIND_STRICT);
+      else if (same == "none")
+        c->put_SameSite(COREWEBVIEW2_COOKIE_SAME_SITE_KIND_NONE);
+      hr = mgr->AddOrUpdateCookie(c);
+      c->Release();
+    }
+    got(qid, SUCCEEDED(hr) ? "{\"ok\":true}"
+                           : "{\"ok\":false,\"error\":\"invalid cookie\"}");
+  } else if (op == "delete") {
+    CookiesDeleteHandler *h = new CookiesDeleteHandler();
+    h->qid = qid;
+    h->name = f(1);
+    h->domain = f(2);
+    h->path = f(3);
+    mgr->AddRef();
+    h->mgr = mgr;
+    if (FAILED(mgr->GetCookies(L"", h)))
+      got(qid, "{\"ok\":false,\"error\":\"GetCookies failed\"}");
+    h->Release();
+  } else {
+    got(qid, "{\"ok\":false,\"error\":\"bad cookies op\"}");
+  }
+  mgr->Release();
+}
+
 struct NavStartHandler : public ICoreWebView2NavigationStartingEventHandler {
   TINY_COM_BOILERPLATE(ICoreWebView2NavigationStartingEventHandler)
   std::string winid;
@@ -7806,6 +7974,12 @@ static void pipe_read_loop() {
           continue;
         tiny_dispatch(do_secret,
                          new QReq{line.substr(7, sp - 7), line.substr(sp + 1)});
+      } else if (line.rfind("COOKIES ", 0) == 0) {
+        size_t sp = line.find(' ', 8);
+        if (sp == std::string::npos)
+          continue;
+        tiny_dispatch(do_cookies,
+                         new QReq{line.substr(8, sp - 8), line.substr(sp + 1)});
       } else if (line.rfind("ATTENTION", 0) == 0) {
         tiny_dispatch(do_attention,
                          new int(line.size() > 10 ? std::atoi(line.c_str() + 10)

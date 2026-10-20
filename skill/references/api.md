@@ -283,6 +283,42 @@ Per-engine caveats live in platforms.md; they matter if you promise a
 behaviour to a user (e.g. a denied navigation has still made its request on
 Linux).
 
+### Cookies (backend only)
+
+`app.cookies` is the webview's own jar: every window and the wrapped site
+share it, and it includes HttpOnly cookies, which `document.cookie` can't
+see. There's no page-side API, on purpose: a page that could read the jar
+could read every site's session. If a page needs a cookie, hand it over
+from your own `api` handler.
+
+```js
+// BACKEND — keep a site's login, restore it on a later launch, log out
+const [sid] = await app.cookies.get({ url: 'https://app.example.com', name: 'sid' });
+// -> { name, value, domain, path, expires (ms | null = session),
+//      secure, httpOnly, sameSite: 'lax' | 'strict' | 'none' }
+await app.secrets.set('sid', JSON.stringify(sid));      // tokens: secrets, never store
+await app.cookies.set({ url: 'https://app.example.com', ...JSON.parse(await app.secrets.get('sid')) });
+await app.cookies.remove({ url: 'https://app.example.com' });   // -> number removed
+```
+
+- `get({ url?, name?, domain?, path? })`: with `url`, you get what a request
+  to that URL would carry (domain, path and secure all match). Linux needs
+  WebKitGTK 2.42+ for `get()` without a `url`.
+- `set({ url | domain, name, value, path = '/', expires?, secure?,
+  httpOnly?, sameSite = 'lax' })` replaces a cookie with the same
+  name/domain/path. `url` alone makes it host-only; `domain:
+  '.example.com'` covers subdomains. `expires` is a Date or ms; leave it
+  out for a session cookie.
+- `remove(cookieFromGet)` deletes that exact cookie; `remove({ url, name? })`
+  deletes everything `get` would return for it.
+- Names or values with `;` or control characters are refused.
+- **sameSite:** `set()` defaults to `'lax'` everywhere. `get()` reports what
+  the engine enforces, so a cookie the SITE set without SameSite reads as
+  that engine's default: `'none'` on macOS, `'lax'` on Windows, and either on
+  Linux depending on the WebKitGTK version. Don't hard-code a value for
+  site cookies. Passing a `get()` result straight back to `set()` keeps it
+  behaving the same. `'none'` generally needs `secure: true`.
+
 ## Tray
 
 ```js

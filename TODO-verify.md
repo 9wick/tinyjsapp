@@ -8,6 +8,49 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #46 — `app.cookies`: the webview's cookie jar (`feat/cookies-46`, 2026-10-19)
+
+Backend-only `app.cookies.get/set/remove` over each engine's own store
+(`COOKIES` wire op): WKHTTPCookieStore, WebKitCookieManager, WebView2's
+ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
+
+- [x] **macOS** — every row of the probe table as expected; server.py saw
+  `injected=v1; sess=a b=c; sid=s3cret`. *(2026-10-19, macOS 27.)*
+- [x] **Windows** — same probe; every row as expected, server.py saw
+  `sid=s3cret; injected=v1; sess=a b=c`. A url-only set comes back
+  host-only (`127.0.0.1`, no dot) and `removeExact` found it. Unset
+  SameSite reads `lax` here (Chromium's default; Linux `none`, macOS
+  `null`) — `vis` in `fromPage`. *(2026-10-19, Windows 11 arm64, launcher
+  rebuilt from the branch by `tinyjs dev`.)*
+- [x] **Linux** — same probe; every row as expected, server.py saw
+  `sid=s3cret; injected=v1; sess=a b=c`. Unset SameSite reads `none`
+  here (macOS: `null`). *(2026-10-19, ubuntu:22.04 container on arm64,
+  Xvfb + dbus-run-session, WebKitGTK 2.50.4 — a real launcher and
+  WebKitGTK, but not a desktop session; x86_64 and pre-2.42 WebKitGTK
+  not run.)*
+  Re-run on the VM's real Wayland desktop (WebKitGTK 2.52.6, arm64, clean
+  jar): every row as expected, server.py saw `sid=s3cret; injected=v1;
+  sess=a b=c`, `all` = 2. But unset SameSite (`vis`) reads `lax` here, not
+  `none` as in the 2.50.4 container — it varies by WebKitGTK version, so
+  don't document a fixed value. *(2026-10-19.)*
+- SameSite follow-up (same day): `set()` now defaults `sameSite` to
+  `'lax'`, and macOS reads no-policy as `'none'` instead of `null` (what
+  WebKit enforces, and what `set()` needs to keep such a cookie working).
+  Probe: `session` should be `[["a b=c", null, "lax"]]` everywhere.
+  - [x] **macOS** — `session` `lax`; `vis` reads `none`; every other row
+    unchanged. *(2026-10-19.)*
+  - [x] **Windows** — `session` `lax` (expected unchanged: `vis` `lax`).
+    *(2026-10-19, Windows 11 arm64, clean jar: `session`
+    `[["a b=c", null, "lax"]]`, `vis` `lax`, every other row unchanged;
+    server.py saw `sid=s3cret; injected=v1; sess=a b=c`.)*
+  - [x] **Linux** — `session` `lax` on WebKitGTK 2.50 AND 2.52 (`vis`
+    still varies by version; that's documented, not a bug). *(2026-10-19,
+    arm64: 2.52.6 on the VM's Wayland desktop — `vis` `lax`; 2.50.4 in an
+    ubuntu:22.04 container, Xvfb + dbus-run-session, `setup.sh` from a copy
+    of the branch — `vis` `none`. Both: `session` `["a b=c", null,
+    "lax"]`, every other row unchanged, server.py saw `sid=s3cret;
+    injected=v1; sess=a b=c`.)*
+
 ## `app.paths()` creates data/cache/logs; build names a busy dist/ (#71, #72, 2026-10-19)
 
 `makePathDirs` in bridge.js; the `exists('dist')` check after `rmTree('dist')`

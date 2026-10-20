@@ -233,6 +233,8 @@
 //                         SPOTLIGHT <qid> <query>    find files by content
 //                                                    (NSMetadataQuery); GOT
 //                                                    {ok, paths}
+//                         COOKIES <qid> get|set|delete\t…  the webview's
+//                                                    cookie jar (do_cookies)
 //                                                    Reads: GET battery, wifi.
 //                         AI available <qid> /
 //                         AI generate <qid> <prompt>\t<instructions>\t<toolsJson>
@@ -8048,6 +8050,119 @@ static void do_spotlight(webview_t, void *arg) {
 }
 #endif
 
+// --- app.cookies (#46): the default WKWebsiteDataStore's jar -----------------
+// Every window and a wrapped site share the default store, so this is the
+// whole app's jar, HttpOnly included. The bridge filters; get answers all.
+// COOKIES <qid> get\t<url>  (url unused here — getAllCookies is the API)
+// COOKIES <qid> set\t<name>\t<value>\t<domain>\t<path>\t<expiresMs>\t<secure01>\t<httpOnly01>\t<samesite>
+// COOKIES <qid> delete\t<name>\t<domain>\t<path>     GOT {ok, removed}
+struct CookieReq {
+  std::string qid, rest;
+};
+
+#ifdef __APPLE__
+static std::string cookie_json(NSHTTPCookie *c) {
+  // WebKit reports SameSite=None as no policy at all, and enforces an unset
+  // one as None too (no lax-by-default), so no policy reads as "none" —
+  // what it does, and what set() needs to hand back to keep it working.
+  std::string same = "\"none\"";
+  if (@available(macOS 10.15, *)) {
+    NSString *p = c.sameSitePolicy;
+    if ([p isEqualToString:NSHTTPCookieSameSiteLax]) same = "\"lax\"";
+    else if ([p isEqualToString:NSHTTPCookieSameSiteStrict]) same = "\"strict\"";
+  }
+  std::string expires = "null";
+  if (!c.sessionOnly && c.expiresDate)
+    expires = std::to_string(
+        (long long)([c.expiresDate timeIntervalSince1970] * 1000.0));
+  return std::string("{\"name\":") + json_escape(c.name.UTF8String ?: "") +
+         ",\"value\":" + json_escape(c.value.UTF8String ?: "") +
+         ",\"domain\":" + json_escape(c.domain.UTF8String ?: "") +
+         ",\"path\":" + json_escape(c.path.UTF8String ?: "/") +
+         ",\"expires\":" + expires +
+         ",\"secure\":" + (c.secure ? "true" : "false") +
+         ",\"httpOnly\":" + (c.HTTPOnly ? "true" : "false") +
+         ",\"sameSite\":" + same + "}";
+}
+
+static void do_cookies(webview_t, void *arg) {
+  CookieReq *req = static_cast<CookieReq *>(arg);
+  std::string qid = req->qid;
+  std::vector<std::string> p = split_tabs(req->rest);
+  delete req;
+  auto f = [&](size_t i) { return i < p.size() ? wire_unescape(p[i]) : std::string(); };
+  std::string op = p.empty() ? "" : p[0];
+  WKHTTPCookieStore *store = [WKWebsiteDataStore defaultDataStore].httpCookieStore;
+
+  if (op == "get") {
+    [store getAllCookies:^(NSArray<NSHTTPCookie *> *all) {
+      std::string json = "[";
+      for (NSHTTPCookie *c in all) {
+        if (json.size() > 1) json += ",";
+        json += cookie_json(c);
+      }
+      sock_write_line("GOT " + qid + " {\"ok\":true,\"cookies\":" + json + "]}");
+    }];
+  } else if (op == "set") {
+    NSMutableDictionary *props = [NSMutableDictionary dictionary];
+    props[NSHTTPCookieName] = ns(f(1));
+    props[NSHTTPCookieValue] = ns(f(2));
+    props[NSHTTPCookieDomain] = ns(f(3));
+    props[NSHTTPCookiePath] = ns(f(4));
+    if (!f(5).empty())
+      props[NSHTTPCookieExpires] = [NSDate
+          dateWithTimeIntervalSince1970:std::atof(f(5).c_str()) / 1000.0];
+    if (f(6) == "1") props[NSHTTPCookieSecure] = @"TRUE";
+    // No public constant, but "HttpOnly" is the key NSHTTPCookie reads.
+    if (f(7) == "1") props[@"HttpOnly"] = @"TRUE";
+    if (@available(macOS 10.15, *)) {
+      if (f(8) == "lax") props[NSHTTPCookieSameSitePolicy] = NSHTTPCookieSameSiteLax;
+      else if (f(8) == "strict") props[NSHTTPCookieSameSitePolicy] = NSHTTPCookieSameSiteStrict;
+      // "none" is no policy at all — WebKit has no constant for it.
+    }
+    NSHTTPCookie *c = [NSHTTPCookie cookieWithProperties:props];
+    if (!c) {
+      sock_write_line("GOT " + qid + " {\"ok\":false,\"error\":\"invalid cookie\"}");
+      return;
+    }
+    [store setCookie:c completionHandler:^{
+      sock_write_line("GOT " + qid + " {\"ok\":true}");
+    }];
+  } else if (op == "delete") {
+    std::string name = f(1), domain = f(2), path = f(3);
+    [store getAllCookies:^(NSArray<NSHTTPCookie *> *all) {
+      NSMutableArray<NSHTTPCookie *> *hits = [NSMutableArray array];
+      for (NSHTTPCookie *c in all)
+        if (name == (c.name.UTF8String ?: "") &&
+            domain == (c.domain.UTF8String ?: "") &&
+            path == (c.path.UTF8String ?: ""))
+          [hits addObject:c];
+      std::string done = "GOT " + qid + " {\"ok\":true,\"removed\":" +
+                         std::to_string(hits.count) + "}";
+      if (hits.count == 0) {
+        sock_write_line(done);
+        return;
+      }
+      // Answer after the last deletion lands, so a get() straight after
+      // remove() can't still see it.
+      __block NSUInteger left = hits.count;
+      for (NSHTTPCookie *c in hits)
+        [store deleteCookie:c completionHandler:^{
+          if (--left == 0) sock_write_line(done);
+        }];
+    }];
+  } else {
+    sock_write_line("GOT " + qid + " {\"ok\":false,\"error\":\"bad cookies op\"}");
+  }
+}
+#else
+static void do_cookies(webview_t, void *arg) {
+  CookieReq *r = static_cast<CookieReq *>(arg);
+  sock_write_line("GOT " + r->qid + " {\"ok\":false,\"error\":\"unsupported\"}");
+  delete r;
+}
+#endif
+
 // --- on-device AI: FoundationModels via the Swift shim (macOS 26) --------------------
 // Built only with TINYJS_AI=1 (needs the macOS 26 SDK + swiftc; see setup.sh).
 // Generation blocks for seconds, so it runs on a dedicated background queue,
@@ -8863,6 +8978,11 @@ static void sock_read_loop() {
                          new std::string(line.size() > 8
                                              ? wire_unescape(line.substr(8))
                                              : ""));
+      } else if (line.rfind("COOKIES ", 0) == 0) {
+        size_t sp = line.find(' ', 8);
+        if (sp == std::string::npos) continue;
+        launcher_dispatch(g_w, do_cookies,
+                         new CookieReq{line.substr(8, sp - 8), line.substr(sp + 1)});
       } else if (line.rfind("SPOTLIGHT ", 0) == 0) {
         size_t sp = line.find(' ', 10);
         if (sp == std::string::npos) continue;
