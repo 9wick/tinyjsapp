@@ -4,6 +4,40 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Windows: one coordinate space across monitors with different
+  scaling.** `screens()`, `setPosition`, `getState()` and `mousePosition()`
+  each divided by a different monitor's scale, so on a mixed-DPI setup they
+  disagreed. A 125% laptop to the right of a 100% 1920-wide monitor reported
+  `x: 1536`, a point inside the left monitor. They now share one layout,
+  built the way Chromium builds its own: the laptop sits at `x: 1920`, and
+  `setPosition(getState().x, getState().y)` stays put on every monitor.
+  **If you worked around this** by multiplying by `scale` before
+  `setPosition` (the workaround in #70), remove it. Single-monitor and
+  same-scale setups are unaffected.
+- **Place windows relative to one screen.** `setPosition(x, y, { screen })`
+  takes coordinates relative to that screen's top-left, in its points, or in
+  its pixels with `units: 'px'`. `setSize(w, h, { units: 'px' })`,
+  `setFullscreen(true, { screen })` (which also works on Wayland) and
+  `win.open(id, { screen, x, y })` work the same way. There is no global
+  pixel space, because macOS doesn't have one, so `px` needs a `screen`.
+- **More about each screen.** `screens()` entries gain `uid` (the stable
+  identity to persist: display UUID on macOS, monitor device path on
+  Windows, connector + model on Linux), `internal` (the built-in panel) and
+  `pixels`. `getState()` gains `screenId`, `local` and `pixels`; `onState`
+  events carry `screenId` and fire when a window moves to another screen;
+  `mousePosition().screen` gains `id`. New: `screenAt(x, y)`,
+  `screenFor(rect)`, `foregroundScreen()` (the screen of the focused window
+  of any app, no permission needed; `null` on Wayland), `matchScreen(saved)`
+  and `onScreensChanged(fn)` (backend: `onSystem('screens')`).
+- **`"rememberWindows": true`** in tinyjs.json puts every window back where
+  the user left it: position, size, screen and maximized/fullscreen, kept
+  per set of plugged-in screens and matched across replugs. The main window
+  is shown once it has been placed. Off by default.
+  ([#70](https://github.com/tarwin/tinyjsapp/issues/70), thanks to
+  [@lionel-rowe](https://github.com/lionel-rowe) for the report.)
+
 ## 0.58.1 — 2026-10-19
 
 - **Linux: apps start on NVIDIA + Wayland.** With NVIDIA's proprietary

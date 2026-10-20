@@ -521,9 +521,19 @@ await tiny.app.paste();              // = keystroke('cmd+v'); hide() first to
                                      // Linux: X11/XWayland only (XTest).
 await tiny.app.frontmostApp();  // { name, bundleId, pid } | null (mac/win)
 
-await tiny.app.screens();  // [{ id, name, x, y, width, height, scale,
-                           //    visible: {...}, primary }] — same coords as
-                           //    win.setPosition
+await tiny.app.screens();  // [{ id, uid, name, x, y, width, height, scale,
+                           //    visible: {...}, primary, internal,
+                           //    pixels: { width, height, visible } }] — same
+                           //    coords as win.setPosition. Persist uid, not id.
+tiny.win.setPosition(x, y, { screen, units: 'px' }); // screen-local; px needs screen
+tiny.win.setSize(w, h, { units: 'px' });             // pixels of the window's screen
+tiny.win.setFullscreen(true, { screen });            // works on Wayland too
+await tiny.app.screenAt(x, y); await tiny.app.screenFor(rect);
+await tiny.app.foregroundScreen();  // focused window of ANY app; null on Wayland
+await tiny.app.matchScreen(saved);  // saved screen -> connected one, or null
+tiny.app.onScreensChanged(fn);      // backend: onSystem('screens')
+// "rememberWindows": true in tinyjs.json restores every window's place per
+// screen layout (main shown once restored) — don't hand-roll it.
 await tiny.app.mousePosition();  // { x, y, window: { x, y, inside }, screen }
 // Linux: X11 only — pure Wayland hides the global pointer (capabilities()
 // says so; "windowPlacement": true forces XWayland, or use mouseTracking):

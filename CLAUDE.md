@@ -31,6 +31,9 @@ three platforms same day (Linux instrumented, mac/win hand-tested;
 TODO-verify.md). PDF pagination + header/footer plan:
 TODO-pdf.md (macOS `printToPDF` emits ONE tall page today; Windows and
 Linux paginate).
+Multi-screen (#70 — Windows mixed-DPI coordinates are inconsistent today,
+screen-relative placement, stable screen ids, remembered placement):
+TODO-screens.md, planned 2026-10-19.
 Site wrappers (a hosted third-party page as the app's main frame — JS
 dialogs, downloads, navigation policy, popups, find, and the tinyjs.json
 `"api"` capability gate): TODO-site-wrapper.md, shipped on all three

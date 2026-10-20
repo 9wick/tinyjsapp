@@ -276,6 +276,12 @@ declare interface TinyWinState {
     windowControlsPos?: { x: number; y: number } | null;
   };
   screen: { width: number; height: number; scale: number };
+  /** the screen holding most of the window — its id (match screens()) */
+  screenId: number;
+  /** frame top-left relative to that screen, in its points */
+  local: { x: number; y: number };
+  /** local x/y and the PAGE's box in that screen's pixels */
+  pixels: TinyRect;
   /** Linux only: false on Wayland, where the compositor ignores setPosition */
   canPosition?: boolean;
 }
@@ -395,6 +401,10 @@ declare interface TinyOpenWindowOptions {
   /** top-left screen position, applied before the window is shown */
   x?: number;
   y?: number;
+  /** x/y relative to this screen (id or a screens() entry) */
+  screen?: number | TinyScreen;
+  /** units for x/y with `screen`: 'pt' (default) or 'px' */
+  units?: 'pt' | 'px';
   /** keep this window above another of YOUR windows (true = 'main', or a
    *  win.open id) without floating over other apps the way
    *  setLevel('floating') does. Native owner/transient/child relation: it
@@ -503,6 +513,9 @@ declare interface TinyWindowStateEvent {
   /** Wayland never reports it */
   minimized: boolean;
   focused: boolean;
+  /** id of the screen holding most of the window; the event also fires when
+   *  only this changes (the window moved to another screen) */
+  screenId: number;
 }
 
 /** system.requirements(): what a feature needs on this machine */
@@ -551,13 +564,20 @@ declare interface TinyMousePosition {
    *  the backend gets main */
   window: { x: number; y: number; inside: boolean } | null;
   /** the display the cursor is on (frame in the same coords) */
-  screen: { x: number; y: number; width: number; height: number; scale: number };
+  screen: { id: number; x: number; y: number; width: number; height: number; scale: number };
 }
 
+declare interface TinyRect { x: number; y: number; width: number; height: number }
+
 declare interface TinyScreen {
-  /** CGDirectDisplayID */
+  /** session handle (what captureScreen/recording take) — NOT stable across
+   *  reboots or replugs; persist `uid` instead */
   id: number;
-  /** e.g. 'Built-in Retina Display' (null before macOS 10.15) */
+  /** the most stable identity the OS offers: display UUID (macOS), monitor
+   *  device path (Windows), connector name (Linux). Identical monitors can
+   *  still collide — matchScreen() scores more than this */
+  uid: string;
+  /** human-readable, e.g. 'Built-in Retina Display'; null if unknown */
   name: string | null;
   /** display frame — same top-left coordinates as win.setPosition */
   x: number;
@@ -566,9 +586,46 @@ declare interface TinyScreen {
   height: number;
   /** frame minus the menu bar and Dock */
   visible: { x: number; y: number; width: number; height: number };
+  /** device pixels per point. Linux/GTK3: an INTEGER buffer scale — a 125%
+   *  fractional setup reports 1 or 2 depending on the compositor */
   scale: number;
   /** the menu-bar screen (the coordinate origin) */
   primary: boolean;
+  /** the built-in panel (laptop); false when the OS can't tell */
+  internal: boolean;
+  /** the same screen in its own pixels; visible is screen-local */
+  pixels: { width: number; height: number; visible: TinyRect };
+}
+
+/** What remembered placement keeps about a screen (matchScreen input). */
+declare interface TinyScreenSnapshot {
+  uid: string | null;
+  name: string | null;
+  width: number;
+  height: number;
+  scale: number;
+  primary: boolean;
+  internal: boolean;
+  /** position in left-to-right order — tells identical monitors apart */
+  rank?: number;
+}
+
+declare interface TinyPositionOptions {
+  /** x/y are relative to this screen's top-left (id or a screens() entry) */
+  screen?: number | TinyScreen;
+  /** 'pt' (default): the screen's logical points; 'px': its pixels —
+   *  needs `screen` (there is no global pixel space on macOS or Wayland) */
+  units?: 'pt' | 'px';
+}
+
+declare interface TinySizeOptions {
+  /** 'px': pixels of the screen the window is on */
+  units?: 'pt' | 'px';
+}
+
+declare interface TinyFullscreenOptions {
+  /** go fullscreen on this screen (moving there first) */
+  screen?: number | TinyScreen;
 }
 
 /** Standard per-app directories; data/cache/logs are per app id, and exist
@@ -795,7 +852,7 @@ declare interface Tiny {
     setTitle(title: string): Promise<void>;
     /** resize the PAGE's box (decorations excluded), top-left anchored —
      *  the same units getState().width/height reports back */
-    setSize(width: number, height: number): Promise<void>;
+    setSize(width: number, height: number, opts?: TinySizeOptions): Promise<void>;
     /** hides the APP (NSApp hide): focus returns to the previous app —
      *  palettes can hide-then-paste with no frontmost tracking.
      *  hide({ app: false }) puts away just this window instead */
@@ -807,7 +864,7 @@ declare interface Tiny {
     restore(): Promise<void>;
     /** toggle */
     fullscreen(): Promise<void>;
-    setFullscreen(enabled: boolean): Promise<void>;
+    setFullscreen(enabled: boolean, opts?: TinyFullscreenOptions): Promise<void>;
     setAlwaysOnTop(enabled: boolean): Promise<void>;
     setResizable(enabled: boolean): Promise<void>;
     /** floor for user resizes */
@@ -824,8 +881,10 @@ declare interface Tiny {
     setLevel(level: TinyWindowLevel): Promise<void>;
     /** follow the user across every Space + float over fullscreen apps */
     setAllSpaces(enabled: boolean): Promise<void>;
-    /** top-left origin, screen points */
-    setPosition(x: number, y: number): Promise<void>;
+    /** top-left origin, screen points (global). With { screen }: relative to
+     *  that screen's top-left, in its points — or its pixels with
+     *  units: 'px'. No-op on Wayland. */
+    setPosition(x: number, y: number, opts?: TinyPositionOptions): Promise<void>;
     /** null if the window is already gone */
     getState(): Promise<TinyWinState | null>;
     /** fullscreen/maximized/minimized/focused transitions, from any cause.
@@ -1161,6 +1220,18 @@ declare interface Tiny {
     };
     /** every display, same top-left coords as win.setPosition */
     screens(): Promise<TinyScreen[]>;
+    /** the screen containing a global point; null if none */
+    screenAt(x: number, y: number): Promise<TinyScreen | null>;
+    /** the screen holding most of a global rect; null if it touches none */
+    screenFor(rect: TinyRect): Promise<TinyScreen | null>;
+    /** the screen of the focused window of ANY app (no permission needed);
+     *  the cursor's screen when that app shows no window; null on Wayland */
+    foregroundScreen(): Promise<TinyScreen | null>;
+    /** a saved TinyScreen / TinyScreenSnapshot -> the connected screen it
+     *  most likely is now (ids don't survive replugs/reboots), or null */
+    matchScreen(saved: Partial<TinyScreen> | TinyScreenSnapshot): Promise<TinyScreen | null>;
+    /** screens plugged/unplugged/rearranged/rescaled; returns unsubscribe */
+    onScreensChanged(fn: (screens: TinyScreen[]) => void): () => void;
     /** standard per-app directories */
     paths(): Promise<TinyPaths>;
     /** become the default opener for a file extension, or 'folder'.
@@ -1251,8 +1322,8 @@ declare interface TinyWindowHandle {
   close(): void;
   setTitle(title: string): void;
   /** resize the PAGE's box (decorations excluded), top-left anchored */
-  setSize(width: number, height: number): void;
-  setPosition(x: number, y: number): void;
+  setSize(width: number, height: number, opts?: TinySizeOptions): void;
+  setPosition(x: number, y: number, opts?: TinyPositionOptions): void;
   center(): void;
   /** hide({ app: false }) puts away this window alone; on 'main' a bare
    *  hide() hides the whole app (macOS) */
@@ -1262,7 +1333,7 @@ declare interface TinyWindowHandle {
   restore(): void;
   zoom(): void;
   fullscreen(): void;
-  setFullscreen(enabled: boolean): void;
+  setFullscreen(enabled: boolean, opts?: TinyFullscreenOptions): void;
   setAlwaysOnTop(enabled: boolean): void;
   setResizable(enabled: boolean): void;
   setMinSize(width: number, height: number): void;
@@ -1312,7 +1383,7 @@ declare interface TinyApp {
   /** push an event to every window (tiny.api.on) */
   push(event: string, data?: unknown): void;
   setTitle(title: string): void;
-  setSize(width: number, height: number): void;
+  setSize(width: number, height: number, opts?: TinySizeOptions): void;
   /** Same names as tiny.menu.* in a page. */
   menu: {
     /** The APP menu — every window shows it, including ones opened later.
@@ -1348,8 +1419,8 @@ declare interface TinyApp {
   minimize(): void;
   restore(): void;
   fullscreen(): void;
-  setFullscreen(enabled: boolean): void;
-  setPosition(x: number, y: number): void;
+  setFullscreen(enabled: boolean, opts?: TinyFullscreenOptions): void;
+  setPosition(x: number, y: number, opts?: TinyPositionOptions): void;
   setAlwaysOnTop(enabled: boolean): void;
   setResizable(enabled: boolean): void;
   setClickThrough(enabled: boolean): void;
@@ -1476,8 +1547,13 @@ declare interface TinyApp {
     start(): Promise<{ ok: true }>;
     stop(): boolean;
   };
-  /** every display, same top-left coords as setPosition */
+  /** every display, same top-left coords as setPosition. Changes arrive as
+   *  onSystem('screens') and the 'screens-changed' page event */
   screens(): Promise<TinyScreen[]>;
+  screenAt(x: number, y: number): Promise<TinyScreen | null>;
+  screenFor(rect: TinyRect): Promise<TinyScreen | null>;
+  foregroundScreen(): Promise<TinyScreen | null>;
+  matchScreen(saved: Partial<TinyScreen> | TinyScreenSnapshot): Promise<TinyScreen | null>;
   /** standard per-app directories — a function, like tiny.app.paths()
    *  (reading app.paths.data as an object still works but is deprecated) */
   paths: (() => Promise<TinyPaths>) & TinyPathsDeprecatedFields;

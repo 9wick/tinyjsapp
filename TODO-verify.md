@@ -8,6 +8,57 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #70 — multi-screen: one Windows DIP space, screen-relative placement, `rememberWindows` (`feat/screens-70`, 2026-10-20)
+
+Plan and research: TODO-screens.md. Probe: `test/screens/` (README there) —
+`SCREENS_OUT=… tinyjs dev` runs every screen through the three coordinate
+spaces and the helpers; `SCREENS_PHASE=restore` checks rememberWindows after
+a restart; `SCREENS_PHASE=watch` records `screens-changed` while you plug and
+unplug. Windows and Linux launchers compile (MinGW-w64 14 on macOS; Ubuntu
+22.04 container) but have never run.
+
+- [x] **macOS, 2x built-in + 1x virtual display** (CGVirtualDisplay helper,
+  1920x1080 at 1x, right of the panel). Probe `ok: true` on both screens:
+  global/local-pt/local-px round-trip and set(get()) per screen, screenAt /
+  screenFor, foregroundScreen, matchScreen (exact, replug, stranger),
+  `win.open({ screen })`, `setFullscreen(true, { screen })` on the 1x
+  screen, `setSize({ units: 'px' })` exact (601x401) on 1x and snapped to
+  whole points (602x402) on 2x. rememberWindows: restored to the virtual
+  screen; after unplugging, the laptop-only layout's own placement; with
+  that layout deleted, the cursor's screen at the same local spot; replugged
+  as a NEW id (6 → 9) with the same uid → back on it. `screens-changed`
+  reached backend (`onSystem('screens')`) and page (`[1, 8]` then `[1]`).
+  *(2026-10-20, macOS 27.0.1, M-series.)*
+- [ ] **macOS, deferred show** — with rememberWindows the main window never
+  appears at the default spot before jumping (watch it, or screen-record a
+  launch).
+- [ ] **Windows, mixed DPI (100% + 125%), laptop RIGHT of the external** —
+  Lionel's setup. `screens()` reports the laptop at `x` = the external's
+  width (not width/1.25). Probe `ok: true`. Then with the 125% screen LEFT
+  of and ABOVE the primary, and with 150%.
+- [ ] **Windows, a window straddling two monitors** — `setPosition(get())`
+  does not move it (both directions pick the monitor holding most of it);
+  dragging it across emits one onState with the new `screenId`.
+- [ ] **Windows, uid** — stable across a reboot; two identical monitors get
+  different uids; note what happens when one moves to another port.
+- [ ] **Windows, `screens-changed`** — plug/unplug, change a monitor's
+  scale, move the taskbar (SPI_SETWORKAREA). Does a scale change alone send
+  WM_DISPLAYCHANGE? If not, it needs WM_DPICHANGED/WM_SETTINGCHANGE wiring.
+- [ ] **Windows, `setFullscreen(true, { screen })`** — main lands on the
+  chosen monitor; a secondary maximizes there.
+- [ ] **Windows, rememberWindows** — restore phase, incl. a maximized window
+  (normal rect kept), and no flash before the deferred show.
+- [ ] **Linux X11, two monitors** — probe `ok: true`; foregroundScreen via
+  _NET_ACTIVE_WINDOW; uid looks like `DP-1/<mfr>/<model>`; `internal` true
+  for eDP.
+- [ ] **Linux Wayland** — `setFullscreen(true, { screen })` uses that output
+  (the one placement op Wayland honours); foregroundScreen is null; spos /
+  pos are no-ops; rememberWindows restores size only; uid from
+  xdg_output.name on GNOME and KDE.
+- [ ] **Linux, fractional scaling** — what `scale` and `pixels` report at
+  125% on GNOME and KDE (expected: an integer, rounding differs), and what
+  WebKitGTK's `devicePixelRatio` says in the same setup.
+
 ## #78 — NVIDIA + Wayland: launcher sets `__NV_DISABLE_EXPLICIT_SYNC=1` (2026-10-19)
 
 The proprietary NVIDIA driver's explicit-sync path got the launcher's

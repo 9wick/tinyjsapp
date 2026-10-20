@@ -1448,6 +1448,12 @@ static bool g_hide_on_close = false;
 // lifts it.
 static bool g_accessory = false;
 static bool g_suppress_order_front = false;
+// TINYJS_DEFER_SHOW=1 (rememberWindows): build main hidden so the bridge can
+// put it where it was before anyone sees it, then `WINOP show`. If no show
+// arrives (bridge died, restore threw) the window appears anyway — a
+// window that never shows is worse than one that shows in the wrong place.
+static bool g_defer_show = false;
+
 
 #ifdef __APPLE__
 // Installed on the webview library's window delegate class; consulted on every
@@ -1493,6 +1499,9 @@ struct WinopReq {
 // change while running (below), gated by `rescue 0|1` ("offscreenRescue" in
 // tinyjs.json, default on).
 static bool g_rescue_on = true;
+// WINGEOM <win> lines after moves/resizes — only while the bridge asked
+// (rememberWindows), since a drag would otherwise stream them to nobody.
+static bool g_geom_events = false;
 static void rescue_offscreen(NSWindow *win) {
   if (!win)
     return;
@@ -1549,6 +1558,175 @@ static void apply_expose_policy(NSWindow *win) {
               NSWindowCollectionBehaviorParticipatesInCycle);
   win.collectionBehavior = b;
 }
+
+// --- screens (#70) -------------------------------------------------------------
+// One vocabulary for every screen-shaped answer. Global coordinates are
+// top-left points with the menu-bar screen's top-left as the origin — AppKit's
+// own space, y flipped — so nothing here converts between screens: a point is
+// a point everywhere on macOS. `local` is relative to a screen's top-left;
+// `pixels` is local × that screen's backingScaleFactor.
+//
+// id  = CGDirectDisplayID: stable for the session only (Apple: "until the
+//       machine restarts"), which is what captureScreen/recording take.
+// uid = CGDisplayCreateUUIDFromDisplayID: survives reboots and replugs (what
+//       winit and Zed persist). Identical monitors CAN still collide.
+static CGDirectDisplayID screen_display_id(NSScreen *s) {
+  return (CGDirectDisplayID)[s.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
+}
+
+static std::string screen_uid(NSScreen *s) {
+  CFUUIDRef u = CGDisplayCreateUUIDFromDisplayID(screen_display_id(s));
+  if (!u)
+    return std::to_string(screen_display_id(s));
+  CFStringRef str = CFUUIDCreateString(nullptr, u);
+  std::string out = [(__bridge NSString *)str UTF8String];
+  CFRelease(str);
+  CFRelease(u);
+  return out;
+}
+
+static NSScreen *screen_for_display_id(long id) {
+  for (NSScreen *s in [NSScreen screens])
+    if ((long)screen_display_id(s) == id)
+      return s;
+  return nil;
+}
+
+// The screen holding most of a rect (Cocoa coords) — what "the window is on"
+// means everywhere in this API. nil when it touches none.
+static NSScreen *screen_for_rect(NSRect r) {
+  NSScreen *best = nil;
+  CGFloat bestA = 0;
+  for (NSScreen *s in [NSScreen screens]) {
+    NSRect i = NSIntersectionRect(r, s.frame);
+    CGFloat a = i.size.width * i.size.height;
+    if (a > bestA) {
+      bestA = a;
+      best = s;
+    }
+  }
+  return best;
+}
+
+static NSScreen *screen_of_window(NSWindow *win) {
+  return screen_for_rect(win.frame) ?: (win.screen ?: [NSScreen mainScreen]);
+}
+
+static std::string screen_json(NSScreen *s) {
+  CGFloat top = NSMaxY([[NSScreen screens][0] frame]);
+  NSRect f = s.frame, v = s.visibleFrame;
+  CGFloat sc = s.backingScaleFactor;
+  std::string name = "null";
+  if (@available(macOS 10.15, *))
+    name = json_escape([s.localizedName UTF8String]);
+  // visible, local: the work area relative to this screen's own top-left
+  double vlx = v.origin.x - f.origin.x, vly = NSMaxY(f) - NSMaxY(v);
+  char buf[768];
+  std::snprintf(
+      buf, sizeof(buf),
+      "{\"id\":%ld,\"uid\":%s,\"name\":%s,"
+      "\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,"
+      "\"visible\":{\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d},"
+      "\"scale\":%.2f,\"primary\":%s,\"internal\":%s,"
+      "\"pixels\":{\"width\":%ld,\"height\":%ld,"
+      "\"visible\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld}}}",
+      (long)screen_display_id(s), json_escape(screen_uid(s)).c_str(),
+      name.c_str(), (int)f.origin.x, (int)(top - NSMaxY(f)),
+      (int)f.size.width, (int)f.size.height, (int)v.origin.x,
+      (int)(top - NSMaxY(v)), (int)v.size.width, (int)v.size.height,
+      (double)sc, s == [NSScreen screens][0] ? "true" : "false",
+      CGDisplayIsBuiltin(screen_display_id(s)) ? "true" : "false",
+      lround(f.size.width * sc), lround(f.size.height * sc), lround(vlx * sc),
+      lround(vly * sc), lround(v.size.width * sc), lround(v.size.height * sc));
+  return buf;
+}
+
+// `"screenId":<id>,"local":{..},"pixels":{..}` for a window's state — the
+// frame's top-left relative to the screen holding most of it, and the
+// CONTENT size, so the px fields mean what x/y/width/height mean, in pixels.
+static std::string window_screen_fields(NSWindow *win) {
+  NSScreen *s = screen_of_window(win);
+  NSRect f = win.frame, sf = s.frame;
+  NSSize cs = [win contentRectForFrameRect:f].size;
+  CGFloat sc = s.backingScaleFactor;
+  double lx = f.origin.x - sf.origin.x, ly = NSMaxY(sf) - NSMaxY(f);
+  char buf[256];
+  std::snprintf(buf, sizeof(buf),
+                "\"screenId\":%ld,\"local\":{\"x\":%d,\"y\":%d},"
+                "\"pixels\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld}",
+                (long)screen_display_id(s), (int)lround(lx), (int)lround(ly),
+                lround(lx * sc), lround(ly * sc), lround(cs.width * sc),
+                lround(cs.height * sc));
+  return buf;
+}
+
+// Screen of the focused window of ANY app. No permission needed: without
+// Screen Recording, CGWindowList still returns other apps' bounds and owner
+// pids and only blanks titles (measured on macOS 27, 2026-10-19). Falls back
+// to the cursor's screen when the frontmost app shows no window (Finder on
+// the desktop) — the same approximation everyone else uses.
+static NSScreen *foreground_screen() {
+  pid_t pid = [[NSWorkspace sharedWorkspace] frontmostApplication].processIdentifier;
+  CFArrayRef list = CGWindowListCopyWindowInfo(
+      kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+      kCGNullWindowID);
+  NSScreen *found = nil;
+  if (list) {
+    CGFloat top = NSMaxY([[NSScreen screens][0] frame]);
+    for (NSDictionary *w in (__bridge NSArray *)list) { // front to back
+      if ([w[(id)kCGWindowLayer] intValue] != 0 ||
+          [w[(id)kCGWindowOwnerPID] intValue] != pid)
+        continue;
+      CGRect b;
+      if (!CGRectMakeWithDictionaryRepresentation(
+              (__bridge CFDictionaryRef)w[(id)kCGWindowBounds], &b))
+        continue;
+      // CG bounds are top-left global; AppKit's are bottom-left
+      found = screen_for_rect(
+          NSMakeRect(b.origin.x, top - b.origin.y - b.size.height, b.size.width,
+                     b.size.height));
+      if (found)
+        break;
+    }
+    CFRelease(list);
+  }
+  if (!found) {
+    NSPoint p = [NSEvent mouseLocation];
+    for (NSScreen *s in [NSScreen screens])
+      if (NSMouseInRect(p, s.frame, NO))
+        found = s;
+  }
+  return found;
+}
+
+// fullscreen on a chosen screen: a window goes fullscreen on the screen it's
+// on, so move it there first. Already fullscreen elsewhere → leave fullscreen,
+// and do the move + re-enter once AppKit says the exit finished.
+static void fullscreen_on_screen(NSWindow *win, NSScreen *s) {
+  bool fs = (win.styleMask & NSWindowStyleMaskFullScreen) != 0;
+  if (fs && screen_of_window(win) == s)
+    return;
+  if (fs) {
+    __block id tok = nil;
+    tok = [[NSNotificationCenter defaultCenter]
+        addObserverForName:NSWindowDidExitFullScreenNotification
+                    object:win
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification *) {
+                  [[NSNotificationCenter defaultCenter] removeObserver:tok];
+                  fullscreen_on_screen(win, s);
+                }];
+    [win toggleFullScreen:nil];
+    return;
+  }
+  NSRect v = s.visibleFrame, f = win.frame;
+  f.size.width = fmin(f.size.width, v.size.width);
+  f.size.height = fmin(f.size.height, v.size.height);
+  f.origin.x = NSMidX(v) - f.size.width / 2;
+  f.origin.y = NSMidY(v) - f.size.height / 2;
+  [win setFrame:f display:YES];
+  [win toggleFullScreen:nil];
+}
 #endif
 
 static void do_winop(webview_t w, void *arg) {
@@ -1556,6 +1734,11 @@ static void do_winop(webview_t w, void *arg) {
   std::string *op = &wr->opstr;
 #ifdef __APPLE__
   @autoreleasepool {
+    if (*op == "geom 1" || *op == "geom 0") { // app-wide, windowless too
+      g_geom_events = op->back() == '1';
+      delete wr;
+      return;
+    }
     NSWindow *win = window_for_id(w, wr->win);
     bool is_main = wr->win == "main";
     if (is_main && !win && g_windowless) {
@@ -1594,6 +1777,8 @@ static void do_winop(webview_t w, void *arg) {
       // document windows are up — without deactivating the app around them.
       [win orderOut:nil];
     } else if (*op == "show" || *op == "show 1") {
+      if (is_main)
+        g_defer_show = false;
       [NSApp unhide:nil];
       [NSApp activateIgnoringOtherApps:YES];
       [win makeKeyAndOrderFront:nil];
@@ -1602,6 +1787,8 @@ static void do_winop(webview_t w, void *arg) {
       // but the active app keeps keyboard focus; clicking it activates
       // normally. (True non-activating click-through needs an NSPanel with
       // NSWindowStyleMaskNonactivatingPanel — not what webview creates.)
+      if (is_main)
+        g_defer_show = false;
       [NSApp unhideWithoutActivation];
       [win orderFrontRegardless];
     } else if (*op == "presence 0") {
@@ -1704,6 +1891,42 @@ static void do_winop(webview_t w, void *arg) {
         CGFloat screenTop = NSMaxY([[NSScreen screens][0] frame]);
         [win setFrameTopLeftPoint:NSMakePoint(x, screenTop - y)];
       }
+    } else if (op->rfind("spos ", 0) == 0) {
+      // spos <screen id> <x> <y> <pt|px>: top-left relative to that screen,
+      // in its points or its pixels. Points can be fractional here — that's
+      // how a px position on a 2x screen lands on an odd pixel.
+      long sid = 0;
+      double x = 0, y = 0;
+      char units[4] = "pt";
+      if (std::sscanf(op->c_str() + 5, "%ld %lf %lf %3s", &sid, &x, &y,
+                      units) >= 3) {
+        if (NSScreen *s = screen_for_display_id(sid)) {
+          if (std::strcmp(units, "px") == 0) {
+            x /= s.backingScaleFactor;
+            y /= s.backingScaleFactor;
+          }
+          NSRect sf = s.frame;
+          [win setFrameTopLeftPoint:NSMakePoint(sf.origin.x + x,
+                                                NSMaxY(sf) - y)];
+        }
+      }
+    } else if (op->rfind("pxsize ", 0) == 0) {
+      // setSize(w, h, { units: 'px' }): content size in the pixels of the
+      // screen the window is on. Top-left anchored, like SIZE.
+      int pw = 0, ph = 0;
+      if (std::sscanf(op->c_str() + 7, "%d %d", &pw, &ph) == 2 && pw > 0 &&
+          ph > 0) {
+        CGFloat sc = screen_of_window(win).backingScaleFactor;
+        NSRect f = win.frame;
+        CGFloat top = NSMaxY(f);
+        f.size = [win frameRectForContentRect:NSMakeRect(0, 0, pw / sc,
+                                                         ph / sc)].size;
+        f.origin.y = top - f.size.height;
+        [win setFrame:f display:YES];
+      }
+    } else if (op->rfind("fsscreen ", 0) == 0) {
+      if (NSScreen *s = screen_for_display_id(std::atol(op->c_str() + 9)))
+        fullscreen_on_screen(win, s);
     } else if (*op == "onscreen") {
       rescue_offscreen(win); // the bridge (or the app) decided this window
                              // must be reachable — see the note on the helper
@@ -1825,15 +2048,20 @@ static void tiny_makeKeyAndOrderFront(id self, SEL cmd, id sender) {
     g_orig_makeKeyAndOrderFront(self, cmd, sender);
 }
 
+static void install_order_front_suppression() {
+  g_suppress_order_front = true;
+  if (!g_orig_makeKeyAndOrderFront)
+    g_orig_makeKeyAndOrderFront = (OrderFrontIMP)swizzle(
+        [NSWindow class], @selector(makeKeyAndOrderFront:),
+        (IMP)tiny_makeKeyAndOrderFront, "v@:@");
+}
+
 static void install_accessory_mode() {
   g_accessory = true;
-  g_suppress_order_front = true;
   g_orig_setActivationPolicy = (SetPolicyIMP)swizzle(
       [NSApplication class], @selector(setActivationPolicy:),
       (IMP)tiny_setActivationPolicy, "c@:q");
-  g_orig_makeKeyAndOrderFront = (OrderFrontIMP)swizzle(
-      [NSWindow class], @selector(makeKeyAndOrderFront:),
-      (IMP)tiny_makeKeyAndOrderFront, "v@:@");
+  install_order_front_suppression();
   [[NSApplication sharedApplication]
       setActivationPolicy:NSApplicationActivationPolicyAccessory];
 }
@@ -2024,9 +2252,15 @@ static void install_system_observers() {
                   object:nil
                    queue:[NSOperationQueue mainQueue]
               usingBlock:^(NSNotification *) {
+                // One `SYS screens` per settled change: AppKit posts this
+                // several times for a single plug/unplug/rearrange.
+                static int gen = 0;
+                int mine = ++gen;
                 dispatch_after(
                     dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                     dispatch_get_main_queue(), ^{
+                      if (mine == gen)
+                        sock_write_line("SYS screens");
                       if (!g_rescue_on)
                         return;
                       NSWindow *main = (NSWindow *)webview_get_native_handle(
@@ -3996,7 +4230,7 @@ static void do_get(webview_t w, void *arg) {
             "\"windowControlsPos\":%s,"
             "\"transparent\":%s,\"vibrancy\":%s,\"squareCorners\":%s,"
             "\"acceptsFirstMouse\":%s},"
-            "\"screen\":{\"width\":%d,\"height\":%d,\"scale\":%.2f}}",
+            "\"screen\":{\"width\":%d,\"height\":%d,\"scale\":%.2f}",
             (int)f.origin.x, (int)(top - NSMaxY(f)), (int)cr.size.width,
             (int)cr.size.height, (int)f.size.width, (int)f.size.height,
             fs ? "true" : "false",
@@ -4033,6 +4267,7 @@ static void do_get(webview_t w, void *arg) {
             (int)scr.frame.size.width, (int)scr.frame.size.height,
             (double)scr.backingScaleFactor);
         json = buf;
+        json += "," + window_screen_fields(win) + "}";
       }
     } else if (req->what == "battery") {
       json = battery_json();
@@ -4079,9 +4314,10 @@ static void do_get(webview_t w, void *arg) {
       char buf[384];
       std::snprintf(
           buf, sizeof(buf),
-          "{\"x\":%d,\"y\":%d,\"window\":%s,\"screen\":{\"x\":%d,\"y\":%d,"
-          "\"width\":%d,\"height\":%d,\"scale\":%.2f}}",
-          (int)p.x, (int)(top - p.y), winjson.c_str(), (int)sf.origin.x,
+          "{\"x\":%d,\"y\":%d,\"window\":%s,\"screen\":{\"id\":%ld,"
+          "\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,\"scale\":%.2f}}",
+          (int)p.x, (int)(top - p.y), winjson.c_str(),
+          (long)screen_display_id(scr), (int)sf.origin.x,
           (int)(top - NSMaxY(sf)), (int)sf.size.width, (int)sf.size.height,
           (double)scr.backingScaleFactor);
       json = buf;
@@ -4090,33 +4326,13 @@ static void do_get(webview_t w, void *arg) {
       // getState / mousePosition use, so setPosition against any screen's
       // frame just works. visible excludes the menu bar and Dock. primary
       // is the menu-bar screen (screens[0], the coordinate origin).
-      CGFloat top = NSMaxY([[NSScreen screens][0] frame]);
       json = "[";
-      bool first_scr = true;
-      for (NSScreen *s in [NSScreen screens]) {
-        NSRect f = s.frame, v = s.visibleFrame;
-        NSNumber *num = s.deviceDescription[@"NSScreenNumber"];
-        std::string name = "null";
-        if (@available(macOS 10.15, *))
-          name = json_escape([s.localizedName UTF8String]);
-        char buf[512];
-        std::snprintf(
-            buf, sizeof(buf),
-            "{\"id\":%ld,\"name\":%s,"
-            "\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,"
-            "\"visible\":{\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d},"
-            "\"scale\":%.2f,\"primary\":%s}",
-            (long)num.integerValue, name.c_str(), (int)f.origin.x,
-            (int)(top - NSMaxY(f)), (int)f.size.width, (int)f.size.height,
-            (int)v.origin.x, (int)(top - NSMaxY(v)), (int)v.size.width,
-            (int)v.size.height, (double)s.backingScaleFactor,
-            s == [NSScreen screens][0] ? "true" : "false");
-        if (!first_scr)
-          json += ",";
-        first_scr = false;
-        json += buf;
-      }
+      for (NSScreen *s in [NSScreen screens])
+        json += (json.size() > 1 ? "," : "") + screen_json(s);
       json += "]";
+    } else if (req->what == "fgscreen") {
+      NSScreen *s = foreground_screen();
+      json = s ? std::to_string((long)screen_display_id(s)) : "null";
     } else if (req->what == "idle") {
       // Seconds since the user's last input, session-wide (pause polling /
       // dim UI when the user walks away).
@@ -6385,7 +6601,10 @@ static void emit_winstate(NSWindow *win, const std::string &id) {
   std::string s = std::string("{\"fullscreen\":") + b(fs) +
                   ",\"maximized\":" + b(!fs && win.zoomed) +
                   ",\"minimized\":" + b(win.miniaturized) +
-                  ",\"focused\":" + b(win.keyWindow) + "}";
+                  ",\"focused\":" + b(win.keyWindow) +
+                  ",\"screenId\":" +
+                  std::to_string((long)screen_display_id(screen_of_window(win))) +
+                  "}";
   auto it = g_last_winstate.find(id);
   if (it != g_last_winstate.end() && it->second == s)
     return;
@@ -6402,6 +6621,8 @@ static void install_winstate_observers() {
     NSWindowDidBecomeKeyNotification,
     NSWindowDidResignKeyNotification,
     NSWindowDidResizeNotification,
+    NSWindowDidMoveNotification,
+    NSWindowDidChangeScreenNotification,
   ];
   NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
   for (NSNotificationName name in names) {
@@ -6421,8 +6642,14 @@ static void install_winstate_observers() {
                   // windowControlsPos back on every transition (three
                   // setFrames, no-op when none is set; the fullscreen guard
                   // lives in apply_traffic_pos_xy).
-                  apply_traffic_pos(win, id);
-                  emit_winstate(win, id);
+                  bool moved = n.name == NSWindowDidMoveNotification;
+                  if (!moved)
+                    apply_traffic_pos(win, id);
+                  emit_winstate(win, id); // deduped: a plain move is silent
+                  // rememberWindows: the bridge debounces and reads state
+                  if (g_geom_events &&
+                      (moved || n.name == NSWindowDidResizeNotification))
+                    sock_write_line("WINGEOM " + id);
                 }];
   }
 }
@@ -9489,6 +9716,15 @@ int main(int argc, char *argv[]) {
     }
     if (accessory)
       install_accessory_mode();
+    const char *defer = getenv("TINYJS_DEFER_SHOW");
+    bool want_defer = defer && std::strcmp(defer, "1") == 0;
+    if (!want_defer)
+      want_defer = [[[NSBundle mainBundle]
+          objectForInfoDictionaryKey:@"TinyjsDeferShow"] boolValue];
+    if (!accessory && want_defer) {
+      g_defer_show = true;
+      install_order_front_suppression();
+    }
   }
   // readAccess: widen the page's file:// read root (dev via env, packaged via
   // the Info.plist key cli.js writes). '~' expands to the home directory.
@@ -9606,6 +9842,17 @@ int main(int argc, char *argv[]) {
       [win orderOut:nil];
       g_suppress_order_front = false;
     }
+    if (g_defer_show)
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
+                     dispatch_get_main_queue(), ^{
+                       if (!g_defer_show)
+                         return;
+                       g_defer_show = false;
+                       NSWindow *win = (NSWindow *)webview_get_native_handle(
+                           g_w, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW);
+                       [NSApp activateIgnoringOtherApps:YES];
+                       [win makeKeyAndOrderFront:nil];
+                     });
     // debug:"open" — main window's inspector, once the run loop is going.
     if (g_debug_open)
       dispatch_async(dispatch_get_main_queue(), ^{

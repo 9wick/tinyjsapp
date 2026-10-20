@@ -1398,6 +1398,7 @@ const app = await createApp({
   openFolders: ${JSON.stringify(cfg.openFolders ?? false)},
   permissions: ${JSON.stringify(cfg.permissions ?? null)},
   offscreenRescue: ${JSON.stringify(cfg.offscreenRescue ?? null)},
+  rememberWindows: ${JSON.stringify(cfg.rememberWindows ?? false)},
 });
 if (appMod.init) appMod.init(app);
 `;
@@ -2815,6 +2816,12 @@ async function cmdBuild() {
     // the only channel a LaunchServices-started launcher has.
     extraKeys += `
   <key>TinyjsNoMainWindow</key>      <true/>`;
+  }
+  if (cfg.rememberWindows && cfg.mainWindow !== false && cfg.activation !== 'accessory') {
+    // Build the main window hidden so the bridge can restore where it was
+    // before anyone sees it (the env knob's plist twin — see createApp).
+    extraKeys += `
+  <key>TinyjsDeferShow</key>     <true/>`;
   }
   if (cfg.activation === 'accessory') {
     // Menu-bar agent: LSUIElement starts the process with no Dock icon at the

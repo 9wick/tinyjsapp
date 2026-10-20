@@ -1135,9 +1135,9 @@ async function linuxUserDirs() {
 
 // Tiny persistent JSON store in the per-app data dir.
 // Flat string keys, JSON values, atomic writes.
-function makeStore(appId) {
+function makeStore(appId, file = 'store.json') {
   const dir = appDataDir(appId);
-  const path = dir + '/store.json';
+  const path = dir + '/' + file;
   let data = null;
   // A null-prototype object, so every key is just a key: on a plain {},
   // get('constructor') answered Object's own function and set('__proto__', v)
@@ -1195,7 +1195,83 @@ function makeStore(appId) {
   };
 }
 
-export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, mainWindow = true, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null, resourcesPath = null, executablesPath = null }) {
+// ── screens (#70) ───────────────────────────────────────────────────────────
+// Pure geometry over a screens() list — global coordinates are logical
+// (points/DIPs) on every OS, so containment and overlap are plain rect math.
+// A screen can be named by its id or by a screen object from screens().
+function screenIdOf(s) {
+  const n = typeof s === 'object' && s ? s.id : s;
+  if (n === null || n === undefined || n === '' || !Number.isFinite(+n))
+    throw new TypeError('screen: pass a screen id or a screen from screens()');
+  return +n;
+}
+function screenAtIn(list, x, y) {
+  return (list || []).find((s) => x >= s.x && y >= s.y && x < s.x + s.width && y < s.y + s.height) ?? null;
+}
+// The screen holding most of a rect; null when it touches none.
+function screenForIn(list, r) {
+  let best = null, bestA = 0;
+  for (const s of list || []) {
+    const w = Math.min(r.x + r.width, s.x + s.width) - Math.max(r.x, s.x);
+    const h = Math.min(r.y + r.height, s.y + s.height) - Math.max(r.y, s.y);
+    if (w > 0 && h > 0 && w * h > bestA) { bestA = w * h; best = s; }
+  }
+  return best;
+}
+// Left-to-right, then top-to-bottom: "the one left of the laptop" — the only
+// thing that tells two identical monitors apart.
+function screenRank(list, s) {
+  return [...list].sort((a, b) => a.x - b.x || a.y - b.y).findIndex((o) => o.id === s.id);
+}
+// What a saved placement remembers about the screen it was on.
+function screenSnapshot(list, s) {
+  return { uid: s.uid ?? null, name: s.name ?? null, width: s.width, height: s.height,
+           scale: s.scale, primary: !!s.primary, internal: !!s.internal,
+           rank: screenRank(list, s), count: list.length };
+}
+// Best guess at which CONNECTED screen a snapshot describes, or null. Ids
+// lie (per-boot on macOS, enumeration order elsewhere, shared by identical
+// monitors), so score everything we know — see TODO-screens.md phase 4.
+const MATCH_THRESHOLD = 40;
+function matchScreenIn(list, saved) {
+  if (!saved || !list?.length) return null;
+  let best = null, bestScore = 0;
+  for (const s of list) {
+    let score = 0;
+    if (saved.uid && s.uid === saved.uid) score += 100;
+    if (saved.name && s.name === saved.name) score += 20;
+    if (s.width === saved.width && s.height === saved.height) score += 20;
+    if (s.scale === saved.scale) score += 10;
+    if (saved.internal && s.internal) score += 30;
+    if (saved.rank != null && screenRank(list, s) === saved.rank) score += 8;
+    if (!!s.primary === !!saved.primary) score += 3;
+    if (score > bestScore) { bestScore = score; best = s; }
+  }
+  return bestScore >= MATCH_THRESHOLD ? best : null;
+}
+// Which set of screens is plugged in — remembered placement is kept per
+// layout, the way Windows and macOS keep their own windows' positions.
+function layoutKey(list) {
+  return (list || []).map((s) => [s.uid ?? s.id, s.width, s.height, s.scale].join(':')).sort().join('|');
+}
+// A saved placement → where to put the window on THIS set of screens:
+// { screen, x, y, width, height } with x/y local logical points, size
+// clamped to the target's work area. null = nothing usable saved.
+function placementFor(list, saved, fallback) {
+  if (!saved?.rect) return null;
+  const s = matchScreenIn(list, saved.screen) ?? fallback ?? list.find((o) => o.primary) ?? list[0];
+  if (!s) return null;
+  const v = s.visible ?? s;
+  const vx = v.x - s.x, vy = v.y - s.y;   // work area, screen-local
+  const width = Math.max(1, Math.min(saved.rect.width, v.width));
+  const height = Math.max(1, Math.min(saved.rect.height, v.height));
+  const x = Math.max(vx, Math.min(saved.rect.x, vx + v.width - width));
+  const y = Math.max(vy, Math.min(saved.rect.y, vy + v.height - height));
+  return { screen: s, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+}
+export const __screensForTest = { screenAtIn, screenForIn, matchScreenIn, layoutKey, placementFor, screenSnapshot };
+
+export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', size = '960x640', version = '0.0.0', tinyjsVersion = 'dev', id = null, launcherPath, api = {}, onMenu, onTray, onHotkey, onContextMenu, onSystem, onOpenUrl, onOpenFiles, onNotificationClick, onNotificationAction, onMediaKey, onWindowClosed, onWindowState, onClipboardChange, onUpdateAvailable, onAudioTap, onLocale, onNavigate, onDownload, onWindowOpen, chrome = null, update = null, activation = null, mainWindow = true, readAccess = null, audioTap = null, windowPlacement = null, contextMenu = true, browserAccelerators = false, debug = false, about = null, userAgent = null, urlScheme = null, fileExtensions = null, openFolders = false, permissions = null, offscreenRescue = null, downloads = null, popups = null, apiAccess = null, inject = null, resourcesPath = null, executablesPath = null, rememberWindows = false }) {
   if (typeof mainWindow !== 'boolean') throw new Error('mainWindow must be a boolean');
   if (!mainWindow && url) throw new Error('`url` needs a main window to load into — drop mainWindow: false');
   // mainWindow: false — the launcher starts with no main window or WebView
@@ -1298,6 +1374,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     }
     if (activation === 'accessory') spawnEnv.TINYJS_ACTIVATION = 'accessory';
     spawnEnv.TINYJS_NO_MAIN_WINDOW = mainWindow ? '0' : '1';
+    // rememberWindows: main is built hidden and shown once it's been put
+    // back where it was (launcher shows it anyway after 3s). Accessory apps
+    // start hidden already and decide for themselves when to show.
+    if (rememberWindows && mainWindow && activation !== 'accessory') spawnEnv.TINYJS_DEFER_SHOW = '1';
     // Windows: a transparent main window must drop its GDI redirection
     // bitmap AT CREATION (stale white shows through a late-cleared webview
     // otherwise) — but a window without one can't draw a Win32 menu bar
@@ -1762,6 +1842,95 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     rescuePending.clear();
   })();
 
+  // The one place a position becomes a wire op. No opts: global logical
+  // points (the wire since 0.1). { screen }: relative to that screen's
+  // top-left, in its points, or its pixels with units: 'px'. There is no
+  // global PIXEL space to offer — macOS has none (points × per-screen scale
+  // overlaps) and Wayland has no globals at all — so px needs a screen.
+  function posWire(x, y, opts) {
+    if (opts?.screen == null) {
+      if (opts?.units === 'px') throw new TypeError("setPosition: units: 'px' needs { screen } — pixels only exist per screen");
+      return `pos ${x | 0} ${y | 0}`;
+    }
+    const n = (v) => (Number.isFinite(+v) ? +v : 0);
+    return `spos ${screenIdOf(opts.screen)} ${n(x)} ${n(y)} ${opts.units === 'px' ? 'px' : 'pt'}`;
+  }
+  // Last screens() answer: refreshed at boot and on every `SYS screens`, so
+  // win.open({ screen }) can place a window before it exists without a
+  // round-trip.
+  let screensCache = null;
+  const refreshScreens = async () => (screensCache = (await query('screens')) || []);
+
+  // ── remembered placement ("rememberWindows": true) ────────────────────────
+  // Kept per screen LAYOUT (the set of plugged-in screens), per window id:
+  // the screen it was on as a snapshot (uid, name, size, scale, built-in,
+  // layout rank — matchScreenIn scores them, since ids don't survive
+  // replugs), its rect relative to that screen, and maximized/fullscreen.
+  // Docked and laptop-only each get their own arrangement back, the way the
+  // OS does for its own windows. Lives in window-state.json beside
+  // store.json; saved 500ms after the last move/resize/state change, so a
+  // drag saves once, where it ended. A maximized or fullscreen window keeps
+  // its last NORMAL rect, so un-maximizing after a restore lands somewhere
+  // sane.
+  const lastWinState = new Map();          // win id -> last WINSTATE snapshot
+  const placeStore = rememberWindows ? makeStore(id, 'window-state.json') : null;
+  let placeLayouts = null;                 // in memory once loaded (sync reads)
+  const placeTimers = new Map();
+  const MAX_LAYOUTS = 8;
+  function placementDirty(wid) {
+    clearTimeout(placeTimers.get(wid));
+    placeTimers.set(wid, setTimeout(() => {
+      placeTimers.delete(wid);
+      savePlacement(wid).catch((e) => console.log('tinyjs: saving window placement failed:', e?.message ?? e));
+    }, 500));
+  }
+  async function savePlacement(wid) {
+    if (!placeLayouts) return;             // still restoring: don't save over it
+    const st = await app.window(wid).getState();
+    // hidden (incl. main before its deferred show) or minimized: keep the
+    // placement we have rather than record a transient one
+    if (!st || !st.visible || st.minimized) return;
+    const list = screensCache ?? (await refreshScreens());
+    const fullscreen = !!st.fullscreen, maximized = !fullscreen && !!lastWinState.get(wid)?.maximized;
+    const key = layoutKey(list);
+    const lay = placeLayouts[key] ?? (placeLayouts[key] = { windows: {} });
+    const prev = lay.windows[wid];
+    const s = list.find((o) => o.id === st.screenId) ??
+      screenForIn(list, { x: st.x, y: st.y, width: st.outer?.width ?? st.width, height: st.outer?.height ?? st.height });
+    const entry = { screen: prev?.screen ?? null, rect: prev?.rect ?? null, maximized, fullscreen };
+    if (s && (maximized || fullscreen)) entry.stateScreen = screenSnapshot(list, s);
+    else if (s) {
+      entry.screen = screenSnapshot(list, s);
+      entry.rect = { x: st.local?.x ?? st.x - s.x, y: st.local?.y ?? st.y - s.y, width: st.width, height: st.height };
+    }
+    lay.windows[wid] = entry;
+    lay.used = Date.now();
+    const keys = Object.keys(placeLayouts).sort((a, b) => (placeLayouts[b].used || 0) - (placeLayouts[a].used || 0));
+    for (const k of keys.slice(MAX_LAYOUTS)) delete placeLayouts[k];
+    await placeStore.set('layouts', placeLayouts);
+  }
+  // This layout's entry for the window; else the most recently used layout
+  // that knows it (a new arrangement starts from the last one that had it).
+  function savedPlacement(wid, list) {
+    if (!placeLayouts) return null;
+    const exact = placeLayouts[layoutKey(list)]?.windows?.[wid];
+    if (exact) return exact;
+    let best = null, used = -1;
+    for (const lay of Object.values(placeLayouts)) {
+      const e = lay?.windows?.[wid];
+      if (e && (lay.used || 0) > used) { best = e; used = lay.used || 0; }
+    }
+    return best;
+  }
+  // maximized / fullscreen go back on top of the restored normal rect
+  function applyPlacementState(wid, saved, list, onto) {
+    const h = app.window(wid);
+    if (saved.fullscreen) {
+      const fs = matchScreenIn(list, saved.stateScreen ?? saved.screen) ?? onto;
+      if (fs) h.setFullscreen(true, { screen: fs.id });
+    } else if (saved.maximized) h.zoom();
+  }
+
   const app = {
     push,
     // tjs.spawn, minus the console window on Windows: console tools spawned
@@ -1771,7 +1940,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     setTitle(t) { send('TITLE ' + one(t)); },
     // Content size — the page's own box, decorations excluded, the same units
     // tinyjs.json's "size" and getState().width/height use.
-    setSize(w, h) { send(`SIZE ${w | 0} ${h | 0}`); },
+    setSize(w, h, opts) { app.window('main').setSize(w, h, opts); },
     // Not JS eval(): sends script to the app's own page via webview_eval,
     // the same channel push() uses. Never receives external input.
     // esc() keeps newlines intact — flattening them would let a // line
@@ -1833,7 +2002,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // DEPRECATED (0.57.0): use app.win.getState(), as a page says tiny.win.getState().
     getWinState() { deprecated('app.getWinState()', 'app.win.getState()'); return query('win'); },
     restore() { send('WINOP restore'); },
-    setFullscreen(v) { send('WINOP fullscreen ' + (v ? 1 : 0)); },
+    setFullscreen(v, opts) { app.window('main').setFullscreen(v, opts); },
     notify,
     // Window visibility & app presence. hide() hides the APP (NSApp hide):
     // macOS returns focus to the previously active app on its own, so
@@ -1862,8 +2031,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     setLevel(level) { send('WINOP level ' + one(level ?? 'normal')); },
     // Follow the user onto every Space and float over fullscreen apps.
     setAllSpaces(v) { send('WINOP allspaces ' + (v ? 1 : 0)); },
-    // Top-left origin in screen points (CSS-style coordinates).
-    setPosition(x, y) { send(`WINOP pos ${x | 0} ${y | 0}`); rescueNote('main', 'pos'); },
+    // Top-left origin in screen points (CSS-style coordinates). With
+    // { screen } the point is relative to that screen's top-left, in its
+    // points — or its pixels with units: 'px' (see posWire).
+    setPosition(x, y, opts) { app.window('main').setPosition(x, y, opts); },
     // Clamp this window onto the nearest screen if nobody could see or grab
     // it (less than a sliver visible). The manual verb behind the automatic
     // policy above — for apps that set "offscreenRescue": false but still
@@ -2059,7 +2230,33 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // [{ id, name, x, y, width, height, visible: { x, y, width, height },
     //   scale, primary }] — visible excludes the menu bar and Dock; primary
     // is the menu-bar screen (the coordinate origin).
-    screens: () => query('screens'),
+    screens: () => refreshScreens(),
+    // The screen containing a global point / holding most of a global rect
+    // ({ x, y, width, height }); null when none does.
+    async screenAt(x, y) { return screenAtIn(await refreshScreens(), +x, +y); },
+    async screenFor(rect) { return screenForIn(await refreshScreens(), rect ?? {}); },
+    // The screen holding the focused window of ANY app (the user's attention,
+    // not ours); the cursor's screen when that app shows no window. null
+    // where the OS won't say (Wayland).
+    async foregroundScreen() {
+      const fid = await query('fgscreen');
+      if (fid == null) return null;
+      return (await refreshScreens()).find((s) => s.id === fid) ?? null;
+    },
+    // A screen snapshot saved earlier (win.getState().screen's screen, or a
+    // stored screens() entry) → the connected screen it most likely is, or
+    // null. Scores uid, name + resolution + scale, built-in-ness and layout
+    // position, because ids alone don't survive replugs and reboots.
+    async matchScreen(saved) {
+      const list = await refreshScreens();
+      if (saved && saved.rank == null && saved.id != null) {
+        // a raw screens() entry: give it the rank it had in ITS list, if
+        // that's this list; otherwise score without one
+        const same = list.find((s) => s.id === saved.id);
+        if (same) saved = { ...saved, rank: screenRank(list, same) };
+      }
+      return matchScreenIn(list, saved);
+    },
     // NSWorkspace verbs — no `open` spawns. open() takes a URL (any scheme)
     // or a file path; reveal() shows the file in Finder; trash() moves it to
     // the Trash (recoverable — prefer it over tjs.remove for user files).
@@ -2547,7 +2744,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // it like open() on any existing id (opts ignored), and throws under
     // mainWindow: false, where the launchers used to drop it silently
     // (macOS/Linux) or build a half-wired window (Windows).
-    openWindow(id, { page, title, size, minSize, chrome, x, y, parent } = {}) {
+    openWindow(id, { page, title, size, minSize, chrome, x, y, parent, screen, units } = {}) {
       if (String(id ?? '') === 'main') {
         if (!mainWindow)
           throw new Error("win.open: there is no 'main' window under mainWindow: false — open yours under another id");
@@ -2564,6 +2761,30 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       const vib = c.vibrancy === undefined ? ''
                 : c.vibrancy === null || c.vibrancy === false ? 'none'
                 : String(c.vibrancy);
+      // { screen, x, y, units? }: x/y relative to that screen (its points, or
+      // its pixels with units: 'px'), turned into the global point WINOPEN
+      // takes from the cached screens — inside one screen, global = the
+      // screen's origin + local on every OS. Not cached yet → open, then move.
+      let after = null;
+      if (screen != null && x != null && y != null) {
+        const sid = screenIdOf(screen);
+        const s = screensCache?.find((o) => o.id === sid);
+        if (s) {
+          const k = units === 'px' ? 1 / (s.scale || 1) : 1;
+          x = s.x + x * k; y = s.y + y * k;
+        } else {
+          after = posWire(x, y, { screen: sid, units });
+          x = y = null;
+        }
+      }
+      // rememberWindows: a window opened without an explicit place goes back
+      // where it last was (on this layout of screens, or the closest match)
+      let restored = null;
+      if (rememberWindows && x == null && y == null && after == null && screensCache) {
+        restored = savedPlacement(String(id), screensCache);
+        const p = placementFor(screensCache, restored, null);
+        if (p) { x = p.screen.x + p.x; y = p.screen.y + p.y; size = p.width + 'x' + p.height; }
+      }
       const hasPos = x != null && y != null;
       const wcp = c.windowControlsPos;
       send('WINOPEN ' + [one(id), one(p), one(title ?? id), one(size ?? '600x400'),
@@ -2576,6 +2797,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // minSize: "WxH" — a floor under user resizes, so a layout with a
       // natural size can't be shrunk until content falls off the bottom.
       if (minSize) send('WINOP@' + one(id) + ' minsize ' + one(minSize));
+      if (after) send('WINOP@' + one(id) + ' ' + after);
+      if (restored) applyPlacementState(String(id), restored, screensCache,
+        screensCache.find((o) => x != null && o.x <= x && x < o.x + o.width) ?? null);
       // a window BORN at a restored position is the classic stale-coordinates
       // case — same chase as a first setPosition (armed boots only)
       if (hasPos) rescueNote(id, 'pos');
@@ -2594,8 +2818,11 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         // (Until 0.57.0 this was a silent no-op for 'main'.)
         close: () => { if (id === 'main') app.quit(); else send('WINCLOSE ' + one(id)); },
         setTitle: (v) => t('TITLE', one(v)),
-        setSize: (w2, h2) => t('SIZE', `${w2 | 0} ${h2 | 0}`),
-        setPosition: (x, y) => { t('WINOP', `pos ${x | 0} ${y | 0}`); rescueNote(id, 'pos'); },
+        // { units: 'px' }: the pixels of the screen the window is on now.
+        setSize: (w2, h2, opts) => (opts?.units === 'px'
+          ? t('WINOP', `pxsize ${w2 | 0} ${h2 | 0}`)
+          : t('SIZE', `${w2 | 0} ${h2 | 0}`)),
+        setPosition: (x, y, opts) => { t('WINOP', posWire(x, y, opts)); rescueNote(id, 'pos'); },
         ensureOnScreen: () => t('WINOP', 'onscreen'),
         center: () => t('WINOP', 'center'),
         // hide({ app: false }) orders this window out on its own; a bare
@@ -2606,7 +2833,11 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         restore: () => t('WINOP', 'restore'),
         zoom: () => t('WINOP', 'zoom'),
         fullscreen: () => t('WINOP', 'fullscreen'),
-        setFullscreen: (v) => t('WINOP', 'fullscreen ' + (v ? 1 : 0)),
+        // { screen }: fullscreen on THAT screen (moving there first). Also the
+        // one placement op Wayland honours — xdg_toplevel.set_fullscreen(output).
+        setFullscreen: (v, opts) => t('WINOP', v && opts?.screen != null
+          ? 'fsscreen ' + screenIdOf(opts.screen)
+          : 'fullscreen ' + (v ? 1 : 0)),
         setAlwaysOnTop: (v) => t('WINOP', 'ontop ' + (v ? 1 : 0)),
         setResizable: (v) => t('WINOP', 'resizable ' + (v ? 1 : 0)),
         setMinSize: (w, h) => t('WINOP', 'minsize ' + (w | 0) + 'x' + (h | 0)),
@@ -2693,6 +2924,40 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     },
     done: null, // filled below
   };
+
+  // Boot: prime the screens cache (win.open({ screen }) reads it), and under
+  // rememberWindows load the saved placements, put main back, THEN show it —
+  // the launcher built it hidden (TINYJS_DEFER_SHOW / TinyjsDeferShow).
+  (async () => {
+    try { await refreshScreens(); } catch {}
+    if (!rememberWindows) return;
+    send('WINOP geom 1');
+    try {
+      placeLayouts = (await placeStore.get('layouts')) ?? {};
+      if (mainWindow) {
+        const list = screensCache ?? [];
+        const saved = savedPlacement('main', list);
+        if (saved) {
+          let fallback = null;
+          if (!matchScreenIn(list, saved.screen)) {
+            // the screen it was on is gone: the one the user is looking at
+            const m = await query('mouse').catch(() => null);
+            fallback = list.find((o) => o.id === m?.screen?.id) ?? null;
+          }
+          const p = placementFor(list, saved, fallback);
+          if (p) {
+            app.window('main').setSize(p.width, p.height);
+            app.window('main').setPosition(p.x, p.y, { screen: p.screen.id });
+          }
+          applyPlacementState('main', saved, list, p?.screen ?? null);
+        }
+      }
+    } catch (e) {
+      placeLayouts ??= {};
+      console.log('tinyjs: restoring window placement failed:', e?.message ?? e);
+    }
+    if (mainWindow && activation !== 'accessory') send('WINOP show');
+  })();
 
   // Reserved methods every tinyjs exposes; user API is merged on top but
   // cannot shadow the win.* namespace.
@@ -3065,7 +3330,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     quit: async () => (app.quit(), true),
     // win.* calls target the window the page lives in.
     'win.setTitle': async ({ title: t }, _a, m) => (forWin(m).setTitle(t), true),
-    'win.setSize': async ({ width, height }, _a, m) => (forWin(m).setSize(width, height), true),
+    'win.setSize': async ({ width, height, units }, _a, m) => (forWin(m).setSize(width, height, { units }), true),
     'win.hide': async (p, _a, m) => (forWin(m).hide(p), true),
     'win.show': async (p, _a, m) => (forWin(m).show(p), true),
     'win.center': async (_p, _a, m) => (forWin(m).center(), true),
@@ -3093,7 +3358,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // cross the bridge from a page. Backend code calls app.macos.ai.generate
     // directly and keeps its handlers in scope.
     'macos.ai.generate': async ({ prompt, instructions }) => (macosOnly('ai.generate'), app.macos.ai.generate(prompt, { instructions })),
-    'win.setPosition': async ({ x, y }, _a, m) => (forWin(m).setPosition(x, y), true),
+    'win.setPosition': async ({ x, y, screen, units }, _a, m) => (forWin(m).setPosition(x, y, { screen, units }), true),
     'win.open': async ({ id: wid, ...opts }) =>
       (app.win.open(wid, { ...opts, page: pageForWindow(opts.page) }), true),
     'win.close': async ({ id: wid }, _a, m) => {
@@ -3154,7 +3419,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     'win.getState': async (_p, _a, m) => forWin(m).getState(),
     'debug.get': async ({ what }) => query(String(what)),
     'win.restore': async (_p, _a, m) => (forWin(m).restore(), true),
-    'win.setFullscreen': async ({ enabled }, _a, m) => (forWin(m).setFullscreen(enabled), true),
+    'win.setFullscreen': async ({ enabled, screen }, _a, m) => (forWin(m).setFullscreen(enabled, { screen }), true),
     'win.setChrome': async (opts, _a, m) => (forWin(m).setChrome(opts), true),
     'audio.filters': async ({ filters }) => (app.audio.filters(filters), true),
     'audio.filterSet': async ({ index, filter }) => (app.audio.filter(index, filter ?? {}), true),
@@ -3222,6 +3487,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     }),
     'system.requirements': async ({ ids, refresh } = {}) => app.system.requirements(ids, { refresh }),
     'app.screens': async () => app.screens(),
+    'app.screenAt': async ({ x, y }) => app.screenAt(x, y),
+    'app.screenFor': async ({ rect }) => app.screenFor(rect),
+    'app.foregroundScreen': async () => app.foregroundScreen(),
+    'app.matchScreen': async ({ saved }) => app.matchScreen(saved),
     'app.paths': async () => app.paths(),
     'app.setAsDefaultHandler': async ({ ext }) => app.setAsDefaultHandler(ext),
     'shell.open': async ({ target }) => app.shell.open(target),
@@ -3427,6 +3696,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
           if (kind === 'theme') {
             lastTheme = { dark: value === 'dark' };
             push('theme', lastTheme);
+          } else if (kind === 'screens') {
+            // plugged/unplugged/rearranged/rescaled — pages get the fresh
+            // list, the backend the usual onSystem('screens', null)
+            refreshScreens().then((list) => push('screens-changed', list), () => {});
           } else {
             push(kind, {}); // 'sleep' | 'wake'
           }
@@ -3478,6 +3751,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
           clipWatch('win:' + id, 0);
           push('window-closed', { id });
           fire('onWindowClosed', onWindowClosed, id, app);
+        } else if (line.startsWith('WINGEOM ')) {
+          // a window moved or resized (sent only while rememberWindows asked)
+          if (rememberWindows) placementDirty(line.slice(8));
         } else if (line.startsWith('WINSTATE ')) {
           // Launcher-side deduped snapshot ({ fullscreen, maximized,
           // minimized, focused }) — fires on transitions from ANY cause:
@@ -3488,6 +3764,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
             try { st = JSON.parse(line.slice(sp + 1)); } catch {}
             if (st) {
               const info = { win: line.slice(9, sp), ...st };
+              lastWinState.set(info.win, info);
+              if (rememberWindows) placementDirty(info.win);
               push('window-state', info);
               fire('onWindowState', onWindowState, info, app);
             }

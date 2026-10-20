@@ -348,6 +348,62 @@ static GdkMonitor* monitor_for(GdkDisplay* d, GdkWindow* gw) {
   return m;
 }
 
+// ----------------------------------------------------------- screens (#70) ---
+// GDK's global space is already logical (application pixels = device pixels
+// / the monitor's integer scale), the same units the wire speaks, so screens
+// need no layout here — only identity. Caveat that matters for `pixels`:
+// GTK3 only knows the INTEGER wl_output/GDK scale; a 125% fractional setup
+// reports 1 or 2 depending on the compositor, and `pixels` are then the
+// buffer pixels GTK draws at, not the panel's (TODO-screens.md).
+static int monitor_index(GdkDisplay* d, GdkMonitor* m) {
+  int n = gdk_display_get_n_monitors(d);
+  for (int i = 0; i < n; i++)
+    if (gdk_display_get_monitor(d, i) == m) return i;
+  return 0;
+}
+
+// Connector (DP-1, eDP-1) from the plug name — XRandR's output name on X11,
+// xdg_output.name on Wayland (GTK 3.24) — plus manufacturer/model, so the
+// same port with a different monitor on it isn't "the same screen".
+static std::string monitor_plug(GdkDisplay* d, int i) {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  gchar* plug = gdk_screen_get_monitor_plug_name(gdk_display_get_default_screen(d), i);
+G_GNUC_END_IGNORE_DEPRECATIONS
+  std::string out = plug ? plug : "";
+  g_free(plug);
+  return out;
+}
+
+static std::string monitor_uid(GdkDisplay* d, int i) {
+  GdkMonitor* m = gdk_display_get_monitor(d, i);
+  const char* mf = gdk_monitor_get_manufacturer(m);
+  const char* md = gdk_monitor_get_model(m);
+  std::string plug = monitor_plug(d, i);
+  if (plug.empty() && !mf && !md) return std::to_string(i);
+  return plug + "/" + (mf ? mf : "") + "/" + (md ? md : "");
+}
+
+// laptop panels sit on embedded connectors
+static bool monitor_internal(GdkDisplay* d, int i) {
+  std::string plug = monitor_plug(d, i);
+  return plug.rfind("eDP", 0) == 0 || plug.rfind("LVDS", 0) == 0 ||
+         plug.rfind("DSI", 0) == 0;
+}
+
+// `"screenId":N,"local":{..},"pixels":{..}` — x/y is the window's global
+// origin, w/h its page box.
+static std::string window_screen_fields(GdkDisplay* d, GdkMonitor* m, int x, int y,
+                                        int w, int h) {
+  GdkRectangle geo = {0, 0, 0, 0};
+  int sc = 1;
+  if (m) { gdk_monitor_get_geometry(m, &geo); sc = gdk_monitor_get_scale_factor(m); }
+  int lx = x - geo.x, ly = y - geo.y;
+  return "\"screenId\":" + std::to_string(m ? monitor_index(d, m) : 0) +
+         ",\"local\":{\"x\":" + std::to_string(lx) + ",\"y\":" + std::to_string(ly) + "}" +
+         ",\"pixels\":{\"x\":" + std::to_string(lx * sc) + ",\"y\":" + std::to_string(ly * sc) +
+         ",\"width\":" + std::to_string(w * sc) + ",\"height\":" + std::to_string(h * sc) + "}";
+}
+
 // -------------------------------------------------------- window registry ---
 
 static WebKitWebView* wv_for(const std::string& winid) {
@@ -1214,11 +1270,13 @@ static std::string id_for_gtkwin(GtkWindow* win) {
   return "";
 }
 
-static gboolean on_window_state(GtkWidget* w, GdkEventWindowState* ev, gpointer) {
-  g_winstate[GTK_WINDOW(w)] = ev->new_window_state;
-  std::string id = id_for_gtkwin(GTK_WINDOW(w));
+static void emit_winstate(GtkWindow* win) {
+  std::string id = id_for_gtkwin(win);
   if (!id.empty()) {
-    GdkWindowState st = ev->new_window_state;
+    GdkWindowState st = g_winstate.count(win) ? g_winstate[win] : (GdkWindowState)0;
+    GdkDisplay* d = gdk_display_get_default();
+    GdkWindow* gw = gtk_widget_get_window(GTK_WIDGET(win));
+    int screen_id = d ? monitor_index(d, monitor_for(d, gw)) : 0;
     bool fs = (st & GDK_WINDOW_STATE_FULLSCREEN) != 0;
     auto b = [](bool v) { return v ? "true" : "false"; };
     // GTK keeps MAXIMIZED set under fullscreen-from-maximized; report the
@@ -1226,12 +1284,31 @@ static gboolean on_window_state(GtkWidget* w, GdkEventWindowState* ev, gpointer)
     std::string s = std::string("{\"fullscreen\":") + b(fs) +
         ",\"maximized\":" + b(!fs && (st & GDK_WINDOW_STATE_MAXIMIZED)) +
         ",\"minimized\":" + b((st & GDK_WINDOW_STATE_ICONIFIED) != 0) +
-        ",\"focused\":" + b((st & GDK_WINDOW_STATE_FOCUSED) != 0) + "}";
+        ",\"focused\":" + b((st & GDK_WINDOW_STATE_FOCUSED) != 0) +
+        ",\"screenId\":" + std::to_string(screen_id) + "}";
     auto it = g_last_winstate.find(id);
     if (it == g_last_winstate.end() || it->second != s) {
       g_last_winstate[id] = s;
       pipe_write_line("WINSTATE " + id + " " + s);
     }
+  }
+}
+
+static gboolean on_window_state(GtkWidget* w, GdkEventWindowState* ev, gpointer) {
+  g_winstate[GTK_WINDOW(w)] = ev->new_window_state;
+  emit_winstate(GTK_WINDOW(w));
+  return FALSE;
+}
+
+// WINGEOM <win> on every configure (move/resize) while the bridge asked —
+// rememberWindows; it debounces, so a drag's stream collapses to its end.
+// The same event carries a move onto another monitor into WINSTATE.
+static bool g_geom_events = false;
+static gboolean on_configure(GtkWidget* w, GdkEventConfigure*, gpointer) {
+  emit_winstate(GTK_WINDOW(w)); // deduped: only a change of monitor gets out
+  if (g_geom_events) {
+    std::string id = id_for_gtkwin(GTK_WINDOW(w));
+    if (!id.empty()) pipe_write_line("WINGEOM " + id);
   }
   return FALSE;
 }
@@ -1409,9 +1486,19 @@ static void windowless_app_op(const std::string& op) {
   }
 }
 
+// rememberWindows (TINYJS_DEFER_SHOW=1): main is built hidden and shown by
+// the bridge once restored; this flag lets the 3s fallback show it anyway.
+static bool g_defer_show = false;
+
 static void do_winop(const std::string& winid, const std::string& op) {
+  if (op == "geom 1" || op == "geom 0") {   // app-wide, windowless too
+    g_geom_events = op.back() == '1';
+    return;
+  }
   GtkWindow* win = win_for(winid);
   bool main_win = (winid.empty() || winid == "main");
+  if (main_win && (op == "show" || op == "show 1" || op == "show 0"))
+    g_defer_show = false;
   if (!win) {
     if (main_win && g_windowless) windowless_app_op(op);
     return;
@@ -1520,6 +1607,48 @@ static void do_winop(const std::string& winid, const std::string& op) {
       if (gwin) gdk_window_move(gwin, x, y);
       else gtk_window_move(win, x, y);   // not realized yet
     }
+  }
+  else if (op.rfind("spos ", 0) == 0) {
+    // spos <monitor> <x> <y> <pt|px>: relative to that monitor's top-left.
+    // GDK's global space is logical already, so pt is plain addition and px
+    // divides by the monitor's (integer) scale.
+    int idx = -1;
+    double x = 0, y = 0;
+    char units[4] = "pt";
+    GdkDisplay* d = gdk_display_get_default();
+    if (sscanf(op.c_str() + 5, "%d %lf %lf %3s", &idx, &x, &y, units) >= 3 && d &&
+        idx >= 0 && idx < gdk_display_get_n_monitors(d)) {
+      GdkMonitor* m = gdk_display_get_monitor(d, idx);
+      GdkRectangle geo;
+      gdk_monitor_get_geometry(m, &geo);
+      if (strcmp(units, "px") == 0) {
+        int sc = gdk_monitor_get_scale_factor(m);
+        x /= sc;
+        y /= sc;
+      }
+      int gx = geo.x + (int)lround(x), gy = geo.y + (int)lround(y);
+      GdkWindow* gwin = gtk_widget_get_window(GTK_WIDGET(win));
+      if (gwin) gdk_window_move(gwin, gx, gy);
+      else gtk_window_move(win, gx, gy);
+    }
+  }
+  else if (op.rfind("pxsize ", 0) == 0) {
+    // setSize(w, h, { units: 'px' }): the page box in the monitor's pixels
+    int pw = 0, ph = 0;
+    if (sscanf(op.c_str() + 7, "%d %d", &pw, &ph) == 2) {
+      GdkDisplay* d = gdk_display_get_default();
+      GdkMonitor* m = d ? monitor_for(d, gtk_widget_get_window(GTK_WIDGET(win))) : nullptr;
+      int sc = m ? gdk_monitor_get_scale_factor(m) : 1;
+      set_content_size(winid, (int)lround((double)pw / sc), (int)lround((double)ph / sc));
+    }
+  }
+  else if (op.rfind("fsscreen ", 0) == 0) {
+    // fullscreen on a chosen monitor — xdg_toplevel.set_fullscreen(output)
+    // on Wayland, so this one works there too
+    int idx = atoi(op.c_str() + 9);
+    GdkDisplay* d = gdk_display_get_default();
+    if (d && idx >= 0 && idx < gdk_display_get_n_monitors(d))
+      gtk_window_fullscreen_on_monitor(win, gdk_display_get_default_screen(d), idx);
   }
   else if (op == "hideonclose 1") { if (main_win) g_hide_on_close = true; }
   else if (op == "hideonclose 0") { if (main_win) g_hide_on_close = false; }
@@ -2476,7 +2605,8 @@ static std::string win_state_json(const std::string& winid) {
     ",\"canPosition\":" + b(on_x11()) +
     ",\"screen\":{\"width\":" + std::to_string(geo.width) +
     ",\"height\":" + std::to_string(geo.height) +
-    ",\"scale\":" + std::to_string(scale) + "}}";
+    ",\"scale\":" + std::to_string(scale) + "}," +
+    window_screen_fields(d, m, x, y, w, h) + "}";
 }
 
 // --- opt-in outside-the-window cursor tracking: state ------------------------
@@ -2565,7 +2695,8 @@ static std::string mouse_json(const std::string& winid) {
 
   return "{\"x\":" + std::to_string(gx) + ",\"y\":" + std::to_string(gy) +
          ",\"window\":" + winpart +
-         ",\"screen\":{\"x\":" + std::to_string(geo.x) +
+         ",\"screen\":{\"id\":" + std::to_string(m ? monitor_index(d, m) : 0) +
+         ",\"x\":" + std::to_string(geo.x) +
          ",\"y\":" + std::to_string(geo.y) +
          ",\"width\":" + std::to_string(geo.width) +
          ",\"height\":" + std::to_string(geo.height) +
@@ -2581,19 +2712,26 @@ static std::string screens_json() {
     GdkRectangle geo, wa;
     gdk_monitor_get_geometry(m, &geo);
     gdk_monitor_get_workarea(m, &wa);
+    int sc = gdk_monitor_get_scale_factor(m);
     const char* model = gdk_monitor_get_model(m);
+    auto num = [](long v) { return std::to_string(v); };
     if (i) out += ",";
-    out += "{\"id\":" + std::to_string(i) +
+    out += "{\"id\":" + num(i) +
+           ",\"uid\":" + json_escape(monitor_uid(d, i)) +
            ",\"name\":" + (model ? json_escape(model) : "null") +
-           ",\"x\":" + std::to_string(geo.x) + ",\"y\":" + std::to_string(geo.y) +
-           ",\"width\":" + std::to_string(geo.width) +
-           ",\"height\":" + std::to_string(geo.height) +
-           ",\"visible\":{\"x\":" + std::to_string(wa.x) +
-           ",\"y\":" + std::to_string(wa.y) +
-           ",\"width\":" + std::to_string(wa.width) +
-           ",\"height\":" + std::to_string(wa.height) + "}" +
-           ",\"scale\":" + std::to_string(gdk_monitor_get_scale_factor(m)) +
-           ",\"primary\":" + (gdk_monitor_is_primary(m) ? "true" : "false") + "}";
+           ",\"x\":" + num(geo.x) + ",\"y\":" + num(geo.y) +
+           ",\"width\":" + num(geo.width) + ",\"height\":" + num(geo.height) +
+           ",\"visible\":{\"x\":" + num(wa.x) + ",\"y\":" + num(wa.y) +
+           ",\"width\":" + num(wa.width) + ",\"height\":" + num(wa.height) + "}" +
+           ",\"scale\":" + num(sc) +
+           ",\"primary\":" + (gdk_monitor_is_primary(m) ? "true" : "false") +
+           ",\"internal\":" + (monitor_internal(d, i) ? "true" : "false") +
+           ",\"pixels\":{\"width\":" + num((long)geo.width * sc) +
+           ",\"height\":" + num((long)geo.height * sc) +
+           ",\"visible\":{\"x\":" + num((long)(wa.x - geo.x) * sc) +
+           ",\"y\":" + num((long)(wa.y - geo.y) * sc) +
+           ",\"width\":" + num((long)wa.width * sc) +
+           ",\"height\":" + num((long)wa.height * sc) + "}}}";
   }
   out += "]";
   return out;
@@ -2639,6 +2777,21 @@ static void answer_get(const std::string& qid, const std::string& what) {
     send_got(qid, win_state_json(what == "win" ? "main" : what.substr(4)));
   } else if (what == "mouse" || what.rfind("mouse:", 0) == 0) {
     send_got(qid, mouse_json(what == "mouse" ? "main" : what.substr(6)));
+  } else if (what == "fgscreen") {
+    // the monitor of the focused window of ANY app: _NET_ACTIVE_WINDOW on
+    // X11; Wayland keeps other clients' windows private -> null
+    std::string out = "null";
+    GdkDisplay* d = gdk_display_get_default();
+    if (d && on_x11()) {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+      GdkWindow* aw = gdk_screen_get_active_window(gdk_display_get_default_screen(d));
+G_GNUC_END_IGNORE_DEPRECATIONS
+      if (aw) {
+        out = std::to_string(monitor_index(d, gdk_display_get_monitor_at_window(d, aw)));
+        g_object_unref(aw);
+      }
+    }
+    send_got(qid, out);
   } else if (what == "screens") {
     send_got(qid, screens_json());
   } else if (what == "clipboard") {
@@ -6238,6 +6391,7 @@ static GtkWidget* on_create_webview(WebKitWebView* parent,
     g_shared_ucms[sec->shared_ucm]++;  // counted: one opener, several popups
     gtk_box_pack_start(GTK_BOX(vbox), GTK_WIDGET(sec->wv), TRUE, TRUE, 0);
     g_signal_connect(sec->win, "window-state-event", G_CALLBACK(on_window_state), nullptr);
+    g_signal_connect(sec->win, "configure-event", G_CALLBACK(on_configure), nullptr);
     g_signal_connect(sec->win, "delete-event", G_CALLBACK(on_secwin_delete), nullptr);
     g_signal_connect_data(sec->win, "destroy", G_CALLBACK(on_secwin_destroy),
         g_strdup(wid.c_str()), [](gpointer d, GClosure*) { g_free(d); },
@@ -6766,6 +6920,7 @@ static void do_winopen(const std::string& rest) {
   sec->wv = make_webview(id);
   gtk_box_pack_start(GTK_BOX(vbox), GTK_WIDGET(sec->wv), TRUE, TRUE, 0);
   g_signal_connect(sec->win, "window-state-event", G_CALLBACK(on_window_state), nullptr);
+  g_signal_connect(sec->win, "configure-event", G_CALLBACK(on_configure), nullptr);
   g_signal_connect(sec->win, "delete-event", G_CALLBACK(on_secwin_delete), nullptr);
   g_signal_connect_data(sec->win, "destroy", G_CALLBACK(on_secwin_destroy),
     g_strdup(id.c_str()), [](gpointer d, GClosure*) { g_free(d); }, (GConnectFlags)0);
@@ -7569,6 +7724,20 @@ int main(int argc, char** argv) {
     if (disp) {
       g_signal_connect(disp, "monitor-added", G_CALLBACK(on_monitors), nullptr);
       g_signal_connect(disp, "monitor-removed", G_CALLBACK(on_monitors), nullptr);
+      // screens() changed — plugged, removed, moved, rescaled, work area —
+      // reported once things settle (one change fires a burst of these)
+      static guint screens_timer = 0;
+      auto on_screens = +[](GdkScreen*, gpointer) {
+        if (screens_timer) g_source_remove(screens_timer);
+        screens_timer = g_timeout_add(500, [](gpointer) -> gboolean {
+          screens_timer = 0;
+          pipe_write_line("SYS screens");
+          return G_SOURCE_REMOVE;
+        }, nullptr);
+      };
+      GdkScreen* scr = gdk_display_get_default_screen(disp);
+      g_signal_connect(scr, "monitors-changed", G_CALLBACK(on_screens), nullptr);
+      g_signal_connect(scr, "size-changed", G_CALLBACK(on_screens), nullptr);
     }
   }
 
@@ -7599,6 +7768,7 @@ int main(int argc, char** argv) {
     gtk_box_pack_start(GTK_BOX(g_vbox), GTK_WIDGET(g_wv), TRUE, TRUE, 0);
 
     g_signal_connect(g_win, "window-state-event", G_CALLBACK(on_window_state), nullptr);
+    g_signal_connect(g_win, "configure-event", G_CALLBACK(on_configure), nullptr);
     g_signal_connect(g_win, "delete-event", G_CALLBACK(on_main_delete), nullptr);
     g_signal_connect(g_win, "destroy", G_CALLBACK(on_main_destroy), nullptr);
     g_signal_connect(g_win, "focus-in-event", G_CALLBACK(on_main_focus_in), nullptr);
@@ -7613,11 +7783,23 @@ int main(int argc, char** argv) {
     if (const char* ch = getenv("TINYJS_CHROME"); ch && *ch)
       apply_chrome("", split_tabs(ch));
 
-    if (g_accessory) {
-      gtk_window_set_skip_taskbar_hint(g_win, TRUE);
-      // window stays hidden; only WINOP show reveals it
+    const char* defer = getenv("TINYJS_DEFER_SHOW");
+    g_defer_show = !g_accessory && defer && strcmp(defer, "1") == 0;
+    if (g_accessory || g_defer_show) {
+      if (g_accessory) gtk_window_set_skip_taskbar_hint(g_win, TRUE);
+      // window stays hidden; only WINOP show reveals it (rememberWindows:
+      // the bridge's, after restoring — or ours after 3s if that never comes)
       gtk_widget_show_all(g_vbox);
       gtk_widget_hide(g_menubar);
+      if (g_defer_show)
+        g_timeout_add(3000, [](gpointer) -> gboolean {
+          if (g_defer_show && g_win) {
+            g_defer_show = false;
+            gtk_widget_show(GTK_WIDGET(g_win));
+            gtk_window_present(g_win);
+          }
+          return G_SOURCE_REMOVE;
+        }, nullptr);
     } else {
       gtk_widget_show_all(GTK_WIDGET(g_win));
       gtk_widget_hide(g_menubar);  // shown only when the app declares menus

@@ -123,6 +123,10 @@ static bool g_main_transparent = false;
 static bool g_click_through = false;
 static std::string g_level = "normal";
 static bool g_fullscreen = false;
+static bool g_programmatic_size = false; // see clamp_min_track
+// TINYJS_DEFER_SHOW=1 (rememberWindows): main starts hidden until the bridge
+// has put it back where it was and sends `WINOP show`; shown anyway after 3s.
+static bool g_defer_show = false;
 static WINDOWPLACEMENT g_fs_placement = {sizeof(WINDOWPLACEMENT)};
 static LONG g_fs_style = 0, g_fs_exstyle = 0;
 
@@ -173,6 +177,8 @@ static bool g_asleep = false;
 #define WM_TINY_TRAY (WM_APP + 2)
 #define WM_TINY_DISPATCH (WM_APP + 3) // windowless: posted UI work, see below
 #define TIMER_CLIPWATCH 0x7101
+#define TIMER_SCREENS 0x7102   // one `SYS screens` per settled display change
+#define TIMER_DEFERSHOW 0x7103 // rememberWindows: show main if the bridge never does
 
 // Hop to the UI thread. webview_dispatch needs the library's instance, which
 // a windowless launcher never creates — there the work rides a message to the
@@ -188,6 +194,7 @@ static void tiny_dispatch(tiny_fn fn, void *arg) {
 
 static void drag_dbg(const std::string &msg); // drag&drop diagnostics (below)
 static double window_scale(HWND hwnd);        // DPI: logical<->physical (below)
+static double monitor_scale(HMONITOR mon);    // (below)
 
 // multi-window plumbing (defined in the multi-window section below)
 struct TinyWin;
@@ -2005,6 +2012,337 @@ static void rescue_offscreen(HWND hwnd) {
                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+// --- screens: one global logical space (#70) ---------------------------------
+// Windows positions everything in PHYSICAL pixels; the wire speaks logical
+// units (DIPs), like macOS points. Until 0.59 every API divided by whichever
+// scale was handy — screens() by the monitor's own, setPosition by the
+// window's current one, getState by the window's, mouse by the cursor's — so
+// on mixed-DPI setups no two agreed (#70: a 1.25 laptop right of a 1.0
+// 1920-wide monitor reported x=1536, a point INSIDE the left monitor).
+//
+// Now there is one layout, built the way Chromium builds its own (ScreenWin,
+// docs/ui/display/display_conversion.md): the primary at its physical origin,
+// then breadth-first, each monitor placed against a neighbour it shares an
+// edge with — flush to that edge, offset along it by the neighbour's scale,
+// sized by its own. Adjacency survives (the laptop above sits at x=1920).
+// Limits, as Chromium's: a scaled-down monitor with several neighbours can't
+// always make room for all of them, so DIP rects may overlap — a DIP point
+// then maps through the FIRST monitor holding it; monitors touching nothing
+// (Windows normally forbids that) keep physical origin / their own scale.
+// Every screen-shaped answer and every position op goes through here.
+struct ScreenLayout {
+  HMONITOR mon;
+  RECT px, work;     // physical
+  double scale;
+  long dx, dy, dw, dh; // the monitor's rect in the global DIP space
+  bool primary;
+  std::wstring device; // \\.\DISPLAYn
+};
+
+static std::vector<ScreenLayout> screen_layout() {
+  std::vector<HMONITOR> mons;
+  // Same order as captureScreen / recording's display index — it IS the id.
+  EnumDisplayMonitors(
+      nullptr, nullptr,
+      [](HMONITOR m, HDC, LPRECT, LPARAM lp) -> BOOL {
+        ((std::vector<HMONITOR> *)lp)->push_back(m);
+        return TRUE;
+      },
+      (LPARAM)&mons);
+  std::vector<ScreenLayout> L;
+  for (HMONITOR m : mons) {
+    MONITORINFOEXW mi;
+    mi.cbSize = sizeof(mi);
+    ScreenLayout s = {};
+    s.mon = m;
+    s.scale = monitor_scale(m);
+    if (GetMonitorInfoW(m, (MONITORINFO *)&mi)) {
+      s.px = mi.rcMonitor;
+      s.work = mi.rcWork;
+      s.primary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+      s.device = mi.szDevice;
+    }
+    s.dw = lround((s.px.right - s.px.left) / s.scale);
+    s.dh = lround((s.px.bottom - s.px.top) / s.scale);
+    L.push_back(s);
+  }
+  if (L.empty())
+    return L;
+  std::vector<bool> placed(L.size(), false);
+  size_t root = 0;
+  for (size_t i = 0; i < L.size(); i++)
+    if (L[i].primary)
+      root = i;
+  L[root].dx = lround(L[root].px.left / L[root].scale); // primary: 0,0
+  L[root].dy = lround(L[root].px.top / L[root].scale);
+  placed[root] = true;
+  std::vector<size_t> queue = {root};
+  for (size_t qi = 0; qi < queue.size(); qi++) {
+    const ScreenLayout &P = L[queue[qi]];
+    for (size_t c = 0; c < L.size(); c++) {
+      if (placed[c])
+        continue;
+      ScreenLayout &C = L[c];
+      bool vov = C.px.top < P.px.bottom && C.px.bottom > P.px.top;
+      bool hov = C.px.left < P.px.right && C.px.right > P.px.left;
+      long along_y = P.dy + lround((C.px.top - P.px.top) / P.scale);
+      long along_x = P.dx + lround((C.px.left - P.px.left) / P.scale);
+      if (C.px.left == P.px.right && vov) {
+        C.dx = P.dx + P.dw;
+        C.dy = along_y;
+      } else if (C.px.right == P.px.left && vov) {
+        C.dx = P.dx - C.dw;
+        C.dy = along_y;
+      } else if (C.px.top == P.px.bottom && hov) {
+        C.dy = P.dy + P.dh;
+        C.dx = along_x;
+      } else if (C.px.bottom == P.px.top && hov) {
+        C.dy = P.dy - C.dh;
+        C.dx = along_x;
+      } else {
+        continue;
+      }
+      placed[c] = true;
+      queue.push_back(c);
+    }
+  }
+  for (size_t c = 0; c < L.size(); c++)
+    if (!placed[c]) {
+      L[c].dx = lround(L[c].px.left / L[c].scale);
+      L[c].dy = lround(L[c].px.top / L[c].scale);
+    }
+  return L;
+}
+
+static int layout_index(const std::vector<ScreenLayout> &L, HMONITOR m) {
+  for (size_t i = 0; i < L.size(); i++)
+    if (L[i].mon == m)
+      return (int)i;
+  return L.empty() ? -1 : 0;
+}
+
+// physical point -> the monitor holding it (nearest, off-screen)
+static const ScreenLayout *layout_at_px(const std::vector<ScreenLayout> &L,
+                                        POINT p) {
+  int i = layout_index(L, MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST));
+  return i < 0 ? nullptr : &L[i];
+}
+
+static double dip_dist2(const ScreenLayout &s, double x, double y) {
+  double cx = x < s.dx ? s.dx : x > s.dx + s.dw ? s.dx + s.dw : x;
+  double cy = y < s.dy ? s.dy : y > s.dy + s.dh ? s.dy + s.dh : y;
+  return (x - cx) * (x - cx) + (y - cy) * (y - cy);
+}
+
+// DIP point -> the first monitor whose DIP rect holds it, else the nearest
+static const ScreenLayout *layout_at_dip(const std::vector<ScreenLayout> &L,
+                                         double x, double y) {
+  const ScreenLayout *best = nullptr;
+  double bestD = 0;
+  for (const ScreenLayout &s : L) {
+    double d = dip_dist2(s, x, y);
+    if (d == 0 && x < s.dx + s.dw && y < s.dy + s.dh)
+      return &s;
+    if (!best || d < bestD) {
+      best = &s;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+// DIP rect -> the monitor holding most of it (falls back to its top-left).
+// What a window position is measured against both ways, so set(get())
+// round-trips even when the top-left pokes onto a neighbour.
+static const ScreenLayout *layout_for_dip_rect(const std::vector<ScreenLayout> &L,
+                                               double x, double y, double w,
+                                               double h) {
+  const ScreenLayout *best = nullptr;
+  double bestA = 0;
+  for (const ScreenLayout &s : L) {
+    double iw = (std::min)(x + w, (double)s.dx + s.dw) - (std::max)(x, (double)s.dx);
+    double ih = (std::min)(y + h, (double)s.dy + s.dh) - (std::max)(y, (double)s.dy);
+    if (iw > 0 && ih > 0 && iw * ih > bestA) {
+      bestA = iw * ih;
+      best = &s;
+    }
+  }
+  return best ? best : layout_at_dip(L, x, y);
+}
+
+static void px_to_dip(const ScreenLayout &s, LONG px, LONG py, double *x,
+                      double *y) {
+  *x = s.dx + (px - s.px.left) / s.scale;
+  *y = s.dy + (py - s.px.top) / s.scale;
+}
+
+static POINT dip_to_px(const ScreenLayout &s, double x, double y) {
+  return {(LONG)lround(s.px.left + (x - s.dx) * s.scale),
+          (LONG)lround(s.px.top + (y - s.dy) * s.scale)};
+}
+
+// A global DIP point (WINOPEN x/y, popup features) -> physical, plus the
+// scale of the monitor it lands on (to size the new window in its units).
+static POINT dip_point_to_px(double x, double y, double *scale_out) {
+  std::vector<ScreenLayout> L = screen_layout();
+  const ScreenLayout *s = layout_at_dip(L, x, y);
+  if (!s) {
+    if (scale_out)
+      *scale_out = 1.0;
+    return {(LONG)lround(x), (LONG)lround(y)};
+  }
+  if (scale_out)
+    *scale_out = s->scale;
+  return dip_to_px(*s, x, y);
+}
+
+// The monitor holding most of a window — what "the window is on" means.
+static const ScreenLayout *layout_of_window(const std::vector<ScreenLayout> &L,
+                                            HWND hwnd) {
+  int i = layout_index(L, MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST));
+  return i < 0 ? nullptr : &L[i];
+}
+
+// uid / friendly name / built-in-ness per \\.\DISPLAYn, from the display
+// config — the identity GetMonitorInfo doesn't have. uid is the monitor
+// device path (EDID-derived hardware id + the instance the port gets), which
+// survives reboots; identical monitors still differ by instance.
+struct MonIdent {
+  std::string uid, name;
+  bool internal = false;
+};
+
+static std::map<std::wstring, MonIdent> monitor_idents() {
+  std::map<std::wstring, MonIdent> out;
+  UINT32 np = 0, nm = 0;
+  if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &np, &nm) != ERROR_SUCCESS)
+    return out;
+  std::vector<DISPLAYCONFIG_PATH_INFO> paths(np);
+  std::vector<DISPLAYCONFIG_MODE_INFO> modes(nm);
+  if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &np, paths.data(), &nm,
+                         modes.data(), nullptr) != ERROR_SUCCESS)
+    return out;
+  for (UINT32 i = 0; i < np; i++) {
+    DISPLAYCONFIG_SOURCE_DEVICE_NAME src = {};
+    src.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+    src.header.size = sizeof(src);
+    src.header.adapterId = paths[i].sourceInfo.adapterId;
+    src.header.id = paths[i].sourceInfo.id;
+    if (DisplayConfigGetDeviceInfo(&src.header) != ERROR_SUCCESS)
+      continue;
+    if (out.count(src.viewGdiDeviceName))
+      continue; // cloned outputs: the first target names the source
+    DISPLAYCONFIG_TARGET_DEVICE_NAME tgt = {};
+    tgt.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+    tgt.header.size = sizeof(tgt);
+    tgt.header.adapterId = paths[i].targetInfo.adapterId;
+    tgt.header.id = paths[i].targetInfo.id;
+    MonIdent mi;
+    if (DisplayConfigGetDeviceInfo(&tgt.header) == ERROR_SUCCESS) {
+      mi.uid = narrow(tgt.monitorDevicePath);
+      mi.name = narrow(tgt.monitorFriendlyDeviceName);
+    }
+    auto t = paths[i].targetInfo.outputTechnology;
+    mi.internal = t == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL ||
+                  t == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED ||
+                  t == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED;
+    out[src.viewGdiDeviceName] = mi;
+  }
+  return out;
+}
+
+static std::string screens_json() {
+  std::vector<ScreenLayout> L = screen_layout();
+  std::map<std::wstring, MonIdent> ids = monitor_idents();
+  std::string json = "[";
+  for (size_t i = 0; i < L.size(); i++) {
+    const ScreenLayout &s = L[i];
+    MonIdent id;
+    auto it = ids.find(s.device);
+    if (it != ids.end())
+      id = it->second;
+    if (id.uid.empty())
+      id.uid = narrow(s.device);
+    if (id.name.empty())
+      id.name = id.internal ? "Built-in display" : narrow(s.device);
+    char buf[1024];
+    std::snprintf(
+        buf, sizeof(buf),
+        "{\"id\":%zu,\"uid\":%s,\"name\":%s,"
+        "\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld,"
+        "\"visible\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld},"
+        "\"scale\":%.2f,\"primary\":%s,\"internal\":%s,"
+        "\"pixels\":{\"width\":%ld,\"height\":%ld,"
+        "\"visible\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld}}}",
+        i, json_escape(id.uid).c_str(), json_escape(id.name).c_str(), s.dx,
+        s.dy, s.dw, s.dh, s.dx + lround((s.work.left - s.px.left) / s.scale),
+        s.dy + lround((s.work.top - s.px.top) / s.scale),
+        lround((s.work.right - s.work.left) / s.scale),
+        lround((s.work.bottom - s.work.top) / s.scale), s.scale,
+        s.primary ? "true" : "false", id.internal ? "true" : "false",
+        (long)(s.px.right - s.px.left), (long)(s.px.bottom - s.px.top),
+        (long)(s.work.left - s.px.left), (long)(s.work.top - s.px.top),
+        (long)(s.work.right - s.work.left), (long)(s.work.bottom - s.work.top));
+    if (i)
+      json += ",";
+    json += buf;
+  }
+  return json + "]";
+}
+
+// WINOP pos: a global DIP top-left. The monitor is picked by where most of
+// the window WOULD be (its current size in DIPs), the same rule getState
+// reads it back by.
+static void move_window_dip(HWND hwnd, double x, double y) {
+  std::vector<ScreenLayout> L = screen_layout();
+  RECT r;
+  GetWindowRect(hwnd, &r);
+  double ws = window_scale(hwnd);
+  const ScreenLayout *s = layout_for_dip_rect(
+      L, x, y, (r.right - r.left) / ws, (r.bottom - r.top) / ws);
+  if (!s)
+    return;
+  POINT p = dip_to_px(*s, x, y);
+  // SWP_NOACTIVATE: lockstep group-drags reposition N windows per frame —
+  // without it every move steals activation and the drag crawls.
+  SetWindowPos(hwnd, nullptr, p.x, p.y, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// WINOP spos <idx> <x> <y> <pt|px>: relative to that monitor's top-left.
+static void move_window_on_screen(HWND hwnd, int idx, double x, double y,
+                                  bool px) {
+  std::vector<ScreenLayout> L = screen_layout();
+  if (idx < 0 || idx >= (int)L.size())
+    return;
+  const ScreenLayout &s = L[idx];
+  double k = px ? 1.0 : s.scale;
+  SetWindowPos(hwnd, nullptr, (int)lround(s.px.left + x * k),
+               (int)lround(s.px.top + y * k), 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// Centre on a monitor's work area (shrinking to fit) — the first half of
+// fullscreen-on-a-screen; fullscreen then fills whichever monitor holds it.
+static void center_on_screen(HWND hwnd, int idx) {
+  std::vector<ScreenLayout> L = screen_layout();
+  if (idx < 0 || idx >= (int)L.size())
+    return;
+  const RECT &v = L[idx].work;
+  RECT r;
+  GetWindowRect(hwnd, &r);
+  int w = (std::min)(r.right - r.left, v.right - v.left);
+  int h = (std::min)(r.bottom - r.top, v.bottom - v.top);
+  SetWindowPos(hwnd, nullptr, v.left + ((v.right - v.left) - w) / 2,
+               v.top + ((v.bottom - v.top) - h) / 2, w, h,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// WINGEOM <win> after a move/resize ends — only while the bridge asked
+// (rememberWindows). A user drag reports once, at WM_EXITSIZEMOVE.
+static bool g_geom_events = false;
+static void emit_geom(HWND hwnd);
+
 struct WinopReq {
   std::string win, op;
 };
@@ -2014,6 +2352,11 @@ static void windowless_app_op(const std::string &op); // below TinyWin
 static void do_winop(webview_t, void *arg) {
   WinopReq *req = static_cast<WinopReq *>(arg);
   const std::string &op = req->op;
+  if (op == "geom 1" || op == "geom 0") { // app-wide, windowless too
+    g_geom_events = op.back() == '1';
+    delete req;
+    return;
+  }
   HWND hwnd = hwnd_for_win(req->win);
   bool main = hwnd == g_hwnd;
   if (!hwnd) {
@@ -2029,6 +2372,8 @@ static void do_winop(webview_t, void *arg) {
     ShowWindow(hwnd, SW_HIDE);
   } else if (starts("show")) {
     bool activate = op != "show 0";
+    if (main)
+      g_defer_show = false;
     // A window minimized while it had no taskbar button by some route we
     // don't intercept (Win+M) would come back still minimized — un-minimize.
     if (IsIconic(hwnd))
@@ -2101,12 +2446,42 @@ static void do_winop(webview_t, void *arg) {
     }
   } else if (starts("pos ")) {
     int x = 0, y = 0;
-    std::sscanf(op.c_str() + 4, "%d %d", &x, &y);
-    double s = window_scale(hwnd); // wire is logical; SetWindowPos physical
-    // SWP_NOACTIVATE: lockstep group-drags reposition N windows per frame —
-    // without it every move steals activation and the drag crawls.
-    SetWindowPos(hwnd, nullptr, (int)lround(x * s), (int)lround(y * s), 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    if (std::sscanf(op.c_str() + 4, "%d %d", &x, &y) == 2)
+      move_window_dip(hwnd, x, y); // global DIPs, see screen_layout
+  } else if (starts("spos ")) {
+    int idx = -1;
+    double x = 0, y = 0;
+    char units[4] = "pt";
+    if (std::sscanf(op.c_str() + 5, "%d %lf %lf %3s", &idx, &x, &y, units) >= 3)
+      move_window_on_screen(hwnd, idx, x, y, std::strcmp(units, "px") == 0);
+  } else if (starts("pxsize ")) {
+    // setSize(w, h, { units: 'px' }): the client size in physical pixels,
+    // which is what Windows speaks anyway — no scale involved.
+    int pw = 0, ph = 0;
+    if (std::sscanf(op.c_str() + 7, "%d %d", &pw, &ph) == 2 && pw > 0 && ph > 0) {
+      RECT o, c;
+      GetWindowRect(hwnd, &o);
+      GetClientRect(hwnd, &c);
+      g_programmatic_size = true;
+      SetWindowPos(hwnd, nullptr, 0, 0, pw + (o.right - o.left) - c.right,
+                   ph + (o.bottom - o.top) - c.bottom, SWP_NOMOVE | SWP_NOZORDER);
+      g_programmatic_size = false;
+    }
+  } else if (starts("fsscreen ")) {
+    // fullscreen on a chosen monitor: leave fullscreen, move there, re-enter.
+    // Secondaries "fullscreen" by maximizing (see above), so they maximize
+    // on that monitor instead.
+    int idx = std::atoi(op.c_str() + 9);
+    if (main) {
+      set_fullscreen(false);
+      center_on_screen(hwnd, idx);
+      set_fullscreen(true);
+    } else {
+      if (IsZoomed(hwnd))
+        ShowWindow(hwnd, SW_RESTORE);
+      center_on_screen(hwnd, idx);
+      ShowWindow(hwnd, SW_MAXIMIZE);
+    }
   } else if (op == "onscreen") {
     rescue_offscreen(hwnd); // the bridge (or the app) decided this window
                             // must be reachable — see the note on the helper
@@ -4137,10 +4512,17 @@ static std::string win_state_json(HWND hwnd) {
   GetMonitorInfoW(mon, &mi);
   double sc = window_scale(hwnd);
   auto L = [sc](LONG v) { return (long)lround(v / sc); }; // physical -> logical
+  // position: the global DIP layout, measured against the monitor holding
+  // most of the window (what setPosition picks by too)
+  std::vector<ScreenLayout> lay = screen_layout();
+  const ScreenLayout *on = layout_of_window(lay, hwnd);
+  double gx = r.left / sc, gy = r.top / sc;
+  if (on)
+    px_to_dip(*on, r.left, r.top, &gx, &gy);
   LONG style = GetWindowLongW(hwnd, GWL_STYLE);
   LONG ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
   bool frameless = main ? (g_frameless || g_square) : !(style & WS_CAPTION);
-  char buf[896]; // truncation here would emit half a JSON object
+  char buf[1280]; // truncation here would emit half a JSON object
   // Read the styles back so set -> get round-trips. WS_MINIMIZEBOX and
   // WS_MAXIMIZEBOX only mean anything while WS_SYSMENU is present.
   std::string controls = "[";
@@ -4168,8 +4550,10 @@ static std::string win_state_json(HWND hwnd) {
       "\"clickThrough\":%s,\"level\":\"%s\",\"allSpaces\":false,"
       "\"chrome\":{\"frame\":%s,\"windowControls\":%s,\"transparent\":false,"
       "\"vibrancy\":null,\"squareCorners\":%s,\"acceptsFirstMouse\":true},"
-      "\"screen\":{\"width\":%ld,\"height\":%ld,\"scale\":%.2f}}",
-      L(r.left), L(r.top), L(cr.right), L(cr.bottom),
+      "\"screen\":{\"width\":%ld,\"height\":%ld,\"scale\":%.2f},"
+      "\"screenId\":%d,\"local\":{\"x\":%ld,\"y\":%ld},"
+      "\"pixels\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld}}",
+      lround(gx), lround(gy), L(cr.right), L(cr.bottom),
       L(r.right - r.left), L(r.bottom - r.top),
       (main && g_fullscreen) ? "true" : "false",
       IsIconic(hwnd) ? "true" : "false",
@@ -4182,7 +4566,12 @@ static std::string win_state_json(HWND hwnd) {
       frameless ? "false" : "true", controls.c_str(),
       (main && g_square) ? "true" : "false",
       L(mi.rcMonitor.right - mi.rcMonitor.left),
-      L(mi.rcMonitor.bottom - mi.rcMonitor.top), monitor_scale(mon));
+      L(mi.rcMonitor.bottom - mi.rcMonitor.top), monitor_scale(mon),
+      on ? (int)(on - lay.data()) : 0,
+      on ? lround((r.left - on->px.left) / on->scale) : 0L,
+      on ? lround((r.top - on->px.top) / on->scale) : 0L,
+      on ? (long)(r.left - on->px.left) : 0L, on ? (long)(r.top - on->px.top) : 0L,
+      (long)cr.right, (long)cr.bottom);
   return buf;
 }
 
@@ -4190,37 +4579,6 @@ static BOOL CALLBACK enum_mon_proc(HMONITOR mon, HDC, LPRECT, LPARAM lp) {
   std::vector<HMONITOR> *v = (std::vector<HMONITOR> *)lp;
   v->push_back(mon);
   return TRUE;
-}
-
-static std::string screens_json() {
-  std::vector<HMONITOR> mons;
-  EnumDisplayMonitors(nullptr, nullptr, enum_mon_proc, (LPARAM)&mons);
-  std::string json = "[";
-  for (size_t i = 0; i < mons.size(); i++) {
-    MONITORINFOEXW mi;
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfoW(mons[i], (MONITORINFO *)&mi);
-    double ms = monitor_scale(mons[i]);
-    auto L = [ms](LONG v) { return (long)lround(v / ms); };
-    char buf[512];
-    std::snprintf(
-        buf, sizeof(buf),
-        "{\"id\":%zu,\"name\":%s,"
-        "\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld,"
-        "\"visible\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld},"
-        "\"scale\":%.2f,\"primary\":%s}",
-        i, json_escape(narrow(mi.szDevice)).c_str(), L(mi.rcMonitor.left),
-        L(mi.rcMonitor.top), L(mi.rcMonitor.right - mi.rcMonitor.left),
-        L(mi.rcMonitor.bottom - mi.rcMonitor.top), L(mi.rcWork.left),
-        L(mi.rcWork.top), L(mi.rcWork.right - mi.rcWork.left),
-        L(mi.rcWork.bottom - mi.rcWork.top), ms,
-        (mi.dwFlags & MONITORINFOF_PRIMARY) ? "true" : "false");
-    if (i)
-      json += ",";
-    json += buf;
-  }
-  json += "]";
-  return json;
 }
 
 static void do_get(webview_t, void *arg) {
@@ -4249,25 +4607,34 @@ static void do_get(webview_t, void *arg) {
     RECT cr;
     GetClientRect(target, &cr);
     bool inside = c.x >= 0 && c.y >= 0 && c.x < cr.right && c.y < cr.bottom;
-    HMONITOR mon = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = {sizeof(mi)};
-    GetMonitorInfoW(mon, &mi);
-    double ms = monitor_scale(mon), ws = window_scale(target);
+    std::vector<ScreenLayout> lay = screen_layout();
+    const ScreenLayout *on = layout_at_px(lay, p);
+    double ws = window_scale(target), gx = p.x, gy = p.y;
+    if (on)
+      px_to_dip(*on, p.x, p.y, &gx, &gy);
     char buf[384];
     std::snprintf(
         buf, sizeof(buf),
         "{\"x\":%ld,\"y\":%ld,\"window\":{\"x\":%ld,\"y\":%ld,\"inside\":%s},"
-        "\"screen\":{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld,"
+        "\"screen\":{\"id\":%d,\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld,"
         "\"scale\":%.2f}}",
-        (long)lround(p.x / ms), (long)lround(p.y / ms),
-        (long)lround(c.x / ws), (long)lround(c.y / ws),
-        inside ? "true" : "false", (long)lround(mi.rcMonitor.left / ms),
-        (long)lround(mi.rcMonitor.top / ms),
-        (long)lround((mi.rcMonitor.right - mi.rcMonitor.left) / ms),
-        (long)lround((mi.rcMonitor.bottom - mi.rcMonitor.top) / ms), ms);
+        lround(gx), lround(gy), (long)lround(c.x / ws), (long)lround(c.y / ws),
+        inside ? "true" : "false", on ? (int)(on - lay.data()) : 0,
+        on ? on->dx : 0L, on ? on->dy : 0L, on ? on->dw : 0L, on ? on->dh : 0L,
+        on ? on->scale : 1.0);
     json = buf;
   } else if (what == "screens") {
     json = screens_json();
+  } else if (what == "fgscreen") {
+    // the monitor holding the focused window of ANY app; the cursor's when
+    // nothing is focused (desktop)
+    std::vector<ScreenLayout> lay = screen_layout();
+    HWND fg = GetForegroundWindow();
+    POINT cp;
+    GetCursorPos(&cp);
+    int i = fg ? layout_index(lay, MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST))
+               : layout_index(lay, MonitorFromPoint(cp, MONITOR_DEFAULTTONEAREST));
+    json = i < 0 ? "null" : std::to_string(i);
   } else if (what == "idle") {
     LASTINPUTINFO li = {sizeof(li)};
     if (GetLastInputInfo(&li)) {
@@ -4324,11 +4691,15 @@ static void do_get(webview_t, void *arg) {
       RECT r;
       if (SUCCEEDED(Shell_NotifyIconGetRect(&nii, &r))) {
         POINT tp = {r.left, r.top};
-        double ms = monitor_scale(MonitorFromPoint(tp, MONITOR_DEFAULTTONEAREST));
+        std::vector<ScreenLayout> lay = screen_layout();
+        const ScreenLayout *on = layout_at_px(lay, tp);
+        double ms = on ? on->scale : 1.0, gx = r.left / ms, gy = r.top / ms;
+        if (on)
+          px_to_dip(*on, r.left, r.top, &gx, &gy);
         char buf[128];
         std::snprintf(buf, sizeof(buf),
                       "{\"x\":%ld,\"y\":%ld,\"width\":%ld,\"height\":%ld}",
-                      (long)lround(r.left / ms), (long)lround(r.top / ms),
+                      lround(gx), lround(gy),
                       (long)lround((r.right - r.left) / ms),
                       (long)lround((r.bottom - r.top) / ms));
         json = buf;
@@ -4519,7 +4890,7 @@ static void set_min_size(const std::string &id, int w, int h) {
 // Without it, a window whose min IS its design size can never be collapsed by
 // its own code — amp's satellites windowshaded their content away but the
 // frame refused to shrink, while main (which sets no floor) was fine.
-static bool g_programmatic_size = false;
+// (g_programmatic_size itself is declared up with the window globals.)
 
 // Clamp a MINMAXINFO to a logical-px floor. ptMinTrackSize is the OUTER window
 // size in physical px, matching what setSize/getState now speak.
@@ -4571,12 +4942,47 @@ static void emit_winstate(HWND hwnd, int focused) {
   std::string s = std::string("{\"fullscreen\":") + b(fs) +
                   ",\"maximized\":" + b(!fs && !!IsZoomed(hwnd)) +
                   ",\"minimized\":" + b(!!IsIconic(hwnd)) +
-                  ",\"focused\":" + b(foc) + "}";
+                  ",\"focused\":" + b(foc) +
+                  ",\"screenId\":" +
+                  std::to_string(layout_index(
+                      screen_layout(), MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST))) +
+                  "}";
   auto it = g_last_winstate.find(id);
   if (it != g_last_winstate.end() && it->second == s)
     return;
   g_last_winstate[id] = s;
   pipe_write_line("WINSTATE " + id + " " + s);
+}
+
+// A user drag/resize reports once, when the modal size-move loop ends;
+// programmatic moves report as they happen (the bridge debounces both).
+static HWND g_sizemove_hwnd = nullptr;
+static void emit_geom(HWND hwnd) {
+  if (!g_geom_events || !hwnd || hwnd == g_sizemove_hwnd)
+    return;
+  std::string id = hwnd == g_hwnd ? "main" : id_for_hwnd(hwnd);
+  if (!id.empty())
+    pipe_write_line("WINGEOM " + id);
+}
+
+// Shared by main's and the secondaries' procs.
+static void geom_msg(HWND hwnd, UINT msg) {
+  switch (msg) {
+  case WM_ENTERSIZEMOVE:
+    g_sizemove_hwnd = hwnd;
+    break;
+  case WM_EXITSIZEMOVE:
+    g_sizemove_hwnd = nullptr;
+    emit_geom(hwnd);
+    break;
+  case WM_MOVE:
+    emit_winstate(hwnd); // deduped: only a change of monitor gets out
+    emit_geom(hwnd);
+    break;
+  case WM_SIZE:
+    emit_geom(hwnd);
+    break;
+  }
 }
 
 static ICoreWebView2Controller *ctrl_for_win(const std::string &id) {
@@ -5024,8 +5430,14 @@ static LRESULT CALLBACK secwin_proc(HWND hwnd, UINT msg, WPARAM wp,
       tw->ctrl->put_Bounds(rc);
     }
     emit_winstate(hwnd); // maximize/minimize/restore land here
+    geom_msg(hwnd, msg);
     break;
   }
+  case WM_MOVE:
+  case WM_ENTERSIZEMOVE:
+  case WM_EXITSIZEMOVE:
+    geom_msg(hwnd, msg);
+    break;
   case WM_ACTIVATE:
     emit_winstate(hwnd, LOWORD(wp) != WA_INACTIVE);
     break;
@@ -5271,6 +5683,11 @@ static void do_winopen(webview_t, void *arg) {
                              WS_MAXIMIZEBOX | WS_SYSMENU)
                           : WS_OVERLAPPEDWINDOW;
   double sc = window_scale(g_hwnd); // logical wire units -> physical pixels
+  // A position is a global DIP point (screen_layout); the window is sized in
+  // the units of the monitor it will open on, not main's.
+  POINT at = {CW_USEDEFAULT, CW_USEDEFAULT};
+  if (wr->hasPos)
+    at = dip_point_to_px(wr->x, wr->y, &sc);
   RECT rc = {0, 0, (LONG)lround(wr->width * sc), (LONG)lround(wr->height * sc)};
   // `size` is the page's box. Frameless secondaries answer WM_NCCALCSIZE with
   // "no non-client area" (see secwin_proc), exactly as the main window does, so
@@ -5280,8 +5697,8 @@ static void do_winopen(webview_t, void *arg) {
   // bar height it asked for, while main (already borderless-client) was right.
   if (!frameless)
     AdjustWindowRect(&rc, style, FALSE);
-  int px = wr->hasPos ? (int)lround(wr->x * sc) : CW_USEDEFAULT;
-  int py = wr->hasPos ? (int)lround(wr->y * sc) : CW_USEDEFAULT;
+  int px = at.x;
+  int py = at.y;
   if (wr->hasPos) {
     // AppKit-style constraint: never open a window fully off-screen (stale
     // saved positions — e.g. pre-DPI-fix physical coords — otherwise land
@@ -6591,10 +7008,13 @@ struct NewWindowHandler : public ICoreWebView2NewWindowRequestedEventHandler {
       ch = 600;
     ensure_secwin_class();
     double sc = window_scale(g_hwnd);
+    POINT at = {CW_USEDEFAULT, CW_USEDEFAULT};
+    if (hasPos)
+      at = dip_point_to_px(fx, fy, &sc); // global DIPs, see screen_layout
     RECT rc = {0, 0, (LONG)lround(cw * sc), (LONG)lround(ch * sc)};
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
-    int px = hasPos ? (int)lround(fx * sc) : CW_USEDEFAULT;
-    int py = hasPos ? (int)lround(fy * sc) : CW_USEDEFAULT;
+    int px = at.x;
+    int py = at.y;
     HWND hwnd = CreateWindowExW(0, L"TinyjsSecondary", widen(pid).c_str(),
                                 WS_OVERLAPPEDWINDOW, px, py,
                                 rc.right - rc.left, rc.bottom - rc.top,
@@ -6956,11 +7376,22 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
     // The webview library's own proc does the bounds work for main; this is
     // only the state event (maximize/minimize/restore, deduped in the emit).
     emit_winstate(hwnd);
+    if (hwnd == g_hwnd)
+      geom_msg(hwnd, msg);
+    break;
+  case WM_MOVE:
+  case WM_ENTERSIZEMOVE:
+  case WM_EXITSIZEMOVE:
+    if (hwnd == g_hwnd)
+      geom_msg(hwnd, msg);
     break;
   case WM_ACTIVATE:
     emit_winstate(hwnd, LOWORD(wp) != WA_INACTIVE);
     break;
   case WM_DISPLAYCHANGE:
+    // screens() changed: tell the bridge once things settle (a replug sends
+    // a burst of these)
+    SetTimer(hwnd, TIMER_SCREENS, 500, nullptr);
     // A monitor departed (or the layout changed) mid-session: windows it was
     // holding are now stranded in space. One pass over what's VISIBLE — the
     // main wndproc alone handles this so N windows don't run N passes.
@@ -7000,6 +7431,20 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
     return 0;
   }
   case WM_TIMER:
+    if (wp == TIMER_SCREENS) {
+      KillTimer(hwnd, TIMER_SCREENS);
+      pipe_write_line("SYS screens");
+      return 0;
+    }
+    if (wp == TIMER_DEFERSHOW) {
+      KillTimer(hwnd, TIMER_DEFERSHOW);
+      if (g_defer_show && g_hwnd) {
+        g_defer_show = false;
+        ShowWindow(g_hwnd, SW_SHOW);
+        SetForegroundWindow(g_hwnd);
+      }
+      return 0;
+    }
     if (wp == TIMER_CLIPWATCH) {
       DWORD seq = GetClipboardSequenceNumber();
       if (seq != g_clip_last_seq) {
@@ -7012,6 +7457,8 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
     }
     break;
   case WM_SETTINGCHANGE: {
+    if (wp == SPI_SETWORKAREA) // taskbar moved/resized: visible rects changed
+      SetTimer(hwnd, TIMER_SCREENS, 500, nullptr);
     bool dark = read_theme_dark();
     if (dark != g_theme_dark) {
       g_theme_dark = dark;
@@ -8891,6 +9338,17 @@ static int run(int argc, char **argv) {
       g_accessory = true;
       ShowWindow(g_hwnd, SW_HIDE);
       set_taskbar_button(false);
+    }
+  }
+  // rememberWindows: stay hidden until the bridge has restored main's place
+  // (`WINOP show`), but never longer than 3s.
+  {
+    char v[8];
+    DWORD n = GetEnvironmentVariableA("TINYJS_DEFER_SHOW", v, sizeof(v));
+    if (!g_accessory && n > 0 && strcmp(v, "1") == 0) {
+      g_defer_show = true;
+      ShowWindow(g_hwnd, SW_HIDE);
+      SetTimer(g_hwnd, TIMER_DEFERSHOW, 3000, nullptr);
     }
   }
 

@@ -1,0 +1,8 @@
+{
+  "name": "screenprobe",
+  "title": "screen probe",
+  "size": "400x300",
+  "id": "app.tinyjs.screenprobe",
+  "version": "0.1.0",
+  "rememberWindows": true
+}
