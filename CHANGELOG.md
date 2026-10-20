@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.59.0 — 2026-10-20
 
 - **Windows: one coordinate space across monitors with different
   scaling.** `screens()`, `setPosition`, `getState()` and `mousePosition()`
@@ -33,8 +33,10 @@ https://tinyjs.app/changelog.
   and `onScreensChanged(fn)` (backend: `onSystem('screens')`).
 - **`"rememberWindows": true`** in tinyjs.json puts every window back where
   the user left it: position, size, screen and maximized/fullscreen, kept
-  per set of plugged-in screens and matched across replugs. The main window
-  is shown once it has been placed. Off by default.
+  per set of plugged-in screens and matched across replugs. A window that
+  was maximized comes back maximized on the screen it was on, and a move
+  made just before `quit()` is saved. The main window is shown once it has
+  been placed. Off by default.
   ([#70](https://github.com/tarwin/tinyjsapp/issues/70), thanks to
   [@lionel-rowe](https://github.com/lionel-rowe) for the report.)
 - **Windows: windows keep their size when moved to a screen with a different
@@ -51,12 +53,6 @@ https://tinyjs.app/changelog.
   instead, one title bar lower than the spot `setPosition` moves the frame
   to, so `setPosition(getState().x, getState().y)` moved the window down by
   one title bar each time. Frameless windows and Wayland are unaffected.
-- **`rememberWindows` fixes.** On Linux, a main window with a menu bar
-  came back one menu bar shorter on every launch. A window that was
-  maximized the whole time (including one the window manager maximized
-  because it didn't fit) now comes back maximized on the screen it was on,
-  not wherever the window manager first put it. A move or resize made
-  just before `quit()` is saved instead of lost.
 
 ## 0.58.1 — 2026-10-19
 
