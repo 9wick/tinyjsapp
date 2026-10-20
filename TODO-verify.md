@@ -113,9 +113,21 @@ unplug. Linux launcher compiles (Ubuntu 22.04 container) but has never run.
     ANNOUNCED (seeded at boot). After: plain 2 + 2 (`[[0], [0, 1]]`),
     polling 2 + 2, fullscreen in/out alone 0 — and 0 for fullscreen on the
     real one-screen desktop, Wayland and X11. *(2026-10-20.)*
-  - [ ] **macOS + Windows** — re-run the plug/unplug and fullscreen checks
-    on the fixed dedupe, once with something polling screens() (the
-    kitchen-sink Desktop tab open is enough).
+  - [x] **Windows** — reproduced, then fixed. One display in the VM today
+    (no second Parallels display attached), so the real change is a
+    RESCALE: the watch probe (scratch copy + a 200ms backend app.screens()
+    poller + an optional fullscreen in/out) while DisplayConfigSetDeviceInfo
+    takes the display 200% → 175% → 200% (GetDpiForMonitor read back
+    168 / 192 each time). Old bridge (`06e9ccc`) + poller: 0 onSystem, 0
+    page events — swallowed on Windows too. Fixed bridge: 2 + 2 without the
+    poller, 2 + 2 with it (77 polls); fullscreen in/out + poller alone: 0.
+    *(2026-10-20, Windows 11 26200 arm64 / Parallels.)*
+  - [ ] **Windows, plug/unplug** — the same with a second display removed
+    and re-added (Win+P "PC screen only" → "Extend", as above). Needs a
+    second Parallels display attached.
+  - [ ] **macOS** — re-run the plug/unplug and fullscreen checks on the
+    fixed dedupe, once with something polling screens() (the kitchen-sink
+    Desktop tab open is enough).
 
 Windows runs: Windows 11 arm64 in Parallels, launcher rebuilt from the branch
 by `tinyjs dev`. Second screen = an external on the Mac passed through as a
