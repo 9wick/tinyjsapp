@@ -14,8 +14,7 @@ Plan and research: TODO-screens.md. Probe: `test/screens/` (README there) —
 `SCREENS_OUT=… tinyjs dev` runs every screen through the three coordinate
 spaces and the helpers; `SCREENS_PHASE=restore` checks rememberWindows after
 a restart; `SCREENS_PHASE=watch` records `screens-changed` while you plug and
-unplug. Windows and Linux launchers compile (MinGW-w64 14 on macOS; Ubuntu
-22.04 container) but have never run.
+unplug. Linux launcher compiles (Ubuntu 22.04 container) but has never run.
 
 - [x] **macOS, 2x built-in + 1x virtual display** (CGVirtualDisplay helper,
   1920x1080 at 1x, right of the panel). Probe `ok: true` on both screens:
@@ -32,22 +31,93 @@ unplug. Windows and Linux launchers compile (MinGW-w64 14 on macOS; Ubuntu
 - [ ] **macOS, deferred show** — with rememberWindows the main window never
   appears at the default spot before jumping (watch it, or screen-record a
   launch).
-- [ ] **Windows, mixed DPI (100% + 125%), laptop RIGHT of the external** —
+
+Windows runs: Windows 11 arm64 in Parallels, launcher rebuilt from the branch
+by `tinyjs dev`. Second screen = an external on the Mac passed through as a
+second "Parallels Vu" (both 2x native); scales set per monitor and monitors
+moved with DisplayConfigSetDeviceInfo / SetDisplayConfig (what Settings
+does), so every layout below is a real Windows one. A cable pull does NOT
+reach the guest (Parallels keeps the display) — "unplug" here is Win+P
+"PC screen only" → "Extend" (SetDisplayConfig TOPOLOGY_INTERNAL/EXTEND),
+which removes and re-adds the monitor with the same broadcasts.
+*(2026-10-20.)* Scratch harness (dpi.ps1, topo.ps1, a 2ms window poller,
+a broadcast spy) was not committed.
+
+- [x] **Windows, mixed DPI (100% + 125%), laptop RIGHT of the external** —
   Lionel's setup. `screens()` reports the laptop at `x` = the external's
   width (not width/1.25). Probe `ok: true`. Then with the 125% screen LEFT
   of and ABOVE the primary, and with 150%.
-- [ ] **Windows, a window straddling two monitors** — `setPosition(get())`
+  - Primary 3456x2168 at 100%, second 2160x1350 px: 125% right → `x: 3456`
+    (not 2765), 1728x1080; left → `x: -1728`; above → `y: -1080`; 150%
+    right → `x: 3456`, 1440x900. Probe `ok: true` in all four, every case
+    round-trips on both screens (local px within the ±1 a fractional scale
+    allows). Also both at 2x, right and left: `ok: true`.
+- [x] **Windows, a window straddling two monitors** — `setPosition(get())`
   does not move it (both directions pick the monitor holding most of it);
   dragging it across emits one onState with the new `screenId`.
+  - FIXED on the way: a window coming FROM the 150% screen to a spot mostly
+    on the 100% one landed 100 DIPs off on the wrong screen
+    (`setPosition(3156, 542)` → `3256, 509`, screen 1). It kept its 1.5x
+    physical size, sat 50/50 physically, so Windows never rescaled it and
+    getState read it through the 150% monitor. `match_monitor_dpi` now hops
+    it inside the target first (WM_DPICHANGED fires synchronously; the
+    webview's handler resizes), for `pos` and `spos`. After: all four
+    from×to combinations land exactly, size stays 400x300 DIP.
+  - set(get()) ×3 stable mostly-on-0 and mostly-on-1 (100% + 150%).
+  - Slide across (40 SetWindowPos steps from another process — the same
+    WM_MOVE path a drag takes, but not a mouse drag): one onState 0 → 1;
+    the other way one 1 → 0.
 - [ ] **Windows, uid** — stable across a reboot; two identical monitors get
   different uids; note what happens when one moves to another port.
-- [ ] **Windows, `screens-changed`** — plug/unplug, change a monitor's
+  - Two identical panels (both "Parallels Vu"): different uids,
+    `\?\DISPLAY#PRL5000#3&21de92e8&0&UID0#{e6f0…}` vs `…&UID1#{…}` —
+    the PnP instance part tells them apart. Survived scale changes, moves
+    and a topology off/on (rememberWindows matched it back). Reboot and
+    port move not done (a VM has no ports; a reboot ends the session).
+- [x] **Windows, `screens-changed`** — plug/unplug, change a monitor's
   scale, move the taskbar (SPI_SETWORKAREA). Does a scale change alone send
   WM_DISPLAYCHANGE? If not, it needs WM_DPICHANGED/WM_SETTINGCHANGE wiring.
-- [ ] **Windows, `setFullscreen(true, { screen })`** — main lands on the
+  - **Scale: yes, it does** — 200% → 225% → 200% sent WM_SETTINGCHANGE
+    0x9F, WM_DISPLAYCHANGE, WM_SETTINGCHANGE 0x2F each way; one
+    `onSystem('screens')` + one page event per change, the list carrying
+    2.25 / 1536x964 then 2 / 1728x1084. No extra wiring needed.
+  - **Work area:** taskbar auto-hide on/off → one event each (visible
+    height 1084 / 1036). A bare SPI_SETWORKAREA is reverted by Explorer
+    within 300ms, so set+revert reads as ONE settled event.
+  - **Unplug/replug** (Win+P, see above): remove → one event, `[0]`;
+    re-add → TWO events 650ms apart, both `[0, 1]` — Windows sends two
+    WM_DISPLAYCHANGE ~930ms apart on re-add, past the 500ms debounce.
+    Harmless (same list twice); a bridge-side "same list as last time"
+    skip would make it one.
+- [x] **Windows, `setFullscreen(true, { screen })`** — main lands on the
   chosen monitor; a secondary maximizes there.
-- [ ] **Windows, rememberWindows** — restore phase, incl. a maximized window
+  - Main: probe's fullscreenOn → screen 1 in every layout above. A
+    secondary opened on screen 0 maximized on screen 1 (1440 wide, its work
+    area) and one opened on 1 maximized on 0; onState maximized
+    false → true.
+- [x] **Windows, rememberWindows** — restore phase, incl. a maximized window
   (normal rect kept), and no flash before the deferred show.
+  - One screen: back at local 150,120, 500x350. Maximized: saved
+    `maximized: true` with the normal rect 200,150 520x360; restored
+    maximized, un-maximizing landed on 200,150 520x360. (`getState()` has
+    no `maximized`; only onState does.)
+  - Two screens: back on screen 1 (150% too). Win+P single → that layout's
+    own placement; with it deleted → the cursor's screen, same local spot
+    (150,120, 500x350); extend again → back on screen 1 by uid.
+  - FIXED: **flash.** `webview_set_size`'s first call SHOWS main, and the
+    defer hide came after navigate, so main sat visible at the default spot
+    for ~20ms — a 2ms poll caught it in 2 of 5 restores (vis=1 at
+    442,442, hidden, then shown placed). Main now starts DWM-cloaked when
+    it will start hidden (deferred show or accessory) and is uncloaked
+    after the hide. After: 0 of 5 visible before the placed frame; a plain
+    app (no rememberWindows) shows exactly as before.
+  - FIXED (guard): once, after a Win+P detach with main on the vanishing
+    150% screen, the single-screen layout saved main as `116x0` at 0,0 and
+    restored it as a 116x1 window. Not reproduced in four more detaches
+    (equal and mixed DPI, main on the vanishing screen — all saved
+    500x350). The bridge now neither saves nor restores an empty content
+    box; with a planted 116x0 entry: before 116x1, after the default
+    400x300.
 - [ ] **Linux X11, two monitors** — probe `ok: true`; foregroundScreen via
   _NET_ACTIVE_WINDOW; uid looks like `DP-1/<mfr>/<model>`; `internal` true
   for eDP.

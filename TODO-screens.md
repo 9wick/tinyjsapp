@@ -9,8 +9,24 @@ is in.
 
 All four phases are built on all three launchers. macOS is tested, with a
 1x virtual display beside the 2x panel (`test/screens/vdisplay.m`). Windows
-compiles under MinGW-w64 and Linux compiles in an Ubuntu 22.04 container,
-but neither has run yet. The per-OS boxes are in TODO-verify.md under #70.
+is tested (2026-10-20, arm64 VM with two monitors at 100/125/150/200% in
+right/left/above layouts); only uid across a reboot / port move is still
+open. Linux compiles in an Ubuntu 22.04 container but hasn't run yet. The
+per-OS boxes are in TODO-verify.md under #70.
+
+Found and fixed during the Windows run:
+- A window moved FROM a higher-scale screen to straddle a lower-scale one
+  kept its old physical size, so Windows never rescaled it and it read back
+  through the wrong monitor. `match_monitor_dpi` hops it onto the target's
+  DPI first (`pos` and `spos`).
+- With rememberWindows, main flashed at the default spot (~20ms) because
+  the vendored `webview_set_size` shows the window before the defer hide.
+  Main now starts DWM-cloaked when it will start hidden.
+- One 116x0 placement got saved after a monitor removal (not reproduced).
+  The bridge now never saves or restores an empty content box.
+- Not fixed: re-adding a monitor sends two WM_DISPLAYCHANGE ~930ms apart,
+  past the 500ms debounce, so `screens-changed` fires twice with the same
+  list. A bridge-side "same list as last time" skip would collapse it.
 
 Where the build differs from the sketch below:
 - The window-state field is **`screenId`**, not `screen`: `getState().screen`
@@ -324,6 +340,7 @@ windows (video walls, a wide canvas across two screens) is a legit use. Keep
 `setPosition` literal; `ensureOnScreen` and `offscreenRescue` already cover
 "don't lose the window".
 
-Still unverified, needs hardware: Windows `monitorDevicePath` behaviour for
-identical monitors / port moves; Linux plug names on KDE Wayland;
+Still unverified, needs hardware: Windows `monitorDevicePath` across a
+reboot and a port move (identical monitors DO differ, by the PnP instance:
+`…&UID0#…` vs `…&UID1#…`); Linux plug names on KDE Wayland;
 `foregroundScreen` on X11 under GNOME vs KDE.
