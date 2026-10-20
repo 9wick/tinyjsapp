@@ -1124,10 +1124,9 @@ declare interface Tiny {
     /** `alert`/`confirm`/`prompt` are native panels with the message as the
      *  headline. A string second argument to `alert`/`confirm` is the
      *  detail; `prompt` rejects one (a TypeError — pass `{ default }`).
-     *  `ok`/`cancel` relabel the buttons on macOS and Linux; Windows shows
-     *  its own OK/Cancel. The page's bare `alert()`/`confirm()`/`prompt()`
-     *  are the browser primitives: one argument, origin (or app name) as
-     *  the headline, no custom labels. */
+     *  `ok`/`cancel` relabel the buttons. The page's bare
+     *  `alert()`/`confirm()`/`prompt()` are the browser primitives: one
+     *  argument, origin (or app name) as the headline, no custom labels. */
     alert(message: string, opts?: string | { detail?: string; ok?: string }): Promise<true>;
     confirm(message: string, opts?: string | { detail?: string; ok?: string; cancel?: string }): Promise<boolean>;
     prompt(message: string, opts?: { default?: string; ok?: string; cancel?: string }): Promise<string | null>;

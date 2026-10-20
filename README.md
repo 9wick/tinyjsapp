@@ -939,8 +939,8 @@ const doc = await tiny.dialog.saveFile({ types: ['docx'], name: 'report' });  //
 await tiny.dialog.alert('Heads up', 'optional detail');
 const ok   = await tiny.dialog.confirm('Delete everything?', { detail: '…', ok: 'Delete', cancel: 'Keep' });
 const name = await tiny.dialog.prompt('Your name?', { default: 'world' });  // string | null
-// ok/cancel labels: macOS + Linux (Windows keeps OK/Cancel). The page's bare
-// confirm() is the browser's own: one argument, no custom title or buttons.
+// The page's bare confirm() is the browser's own: one argument, no custom
+// title or buttons.
 ```
 
 ### Menus

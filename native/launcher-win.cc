@@ -1701,12 +1701,40 @@ static void dlg_item(std::vector<WORD> &t, DWORD style, short x, short y,
   t.push_back(0); // no creation data
 }
 
+// A button label as Windows draws it: a lone '&' would turn the next letter
+// into an underlined access key ("Save & Close" shows "Save _Close"), so
+// double it. Empty means "use the fallback".
+static std::wstring button_label(const std::string &label,
+                                 const wchar_t *fallback) {
+  if (label.empty())
+    return fallback;
+  std::wstring out;
+  for (wchar_t c : widen(label)) {
+    out += c;
+    if (c == L'&')
+      out += L'&';
+  }
+  return out;
+}
+
 // Raw core shared by the backend dialog op and the page's window.prompt()
 // (browser affordances): returns true on OK with the typed text in *out.
 // `owner` is the window the prompt belongs to — a page's window.prompt() in a
-// popup must be modal to THAT window, not to main (nullptr = main).
+// popup must be modal to THAT window, not to main (nullptr = main). Empty
+// labels keep OK/Cancel, which is all the browser's own prompt() ever passes.
 static bool run_prompt_raw(const std::string &message, const std::string &defval,
-                           std::wstring *out, HWND owner = nullptr) {
+                           std::wstring *out, HWND owner = nullptr,
+                           const std::string &okLabel = "",
+                           const std::string &cancelLabel = "") {
+  std::wstring okText = button_label(okLabel, L"OK");
+  std::wstring cancelText = button_label(cancelLabel, L"Cancel");
+  // Template units are dialog units, where an average Segoe UI character is
+  // 4 wide. A button grows past the stock 50 to fit its label, capped so the
+  // pair still fits the 224-wide content area.
+  auto fit = [](const std::wstring &s) {
+    return (short)std::min<size_t>(108, std::max<size_t>(50, s.size() * 4 + 12));
+  };
+  short okW = fit(okText), cancelW = fit(cancelText);
   std::vector<WORD> t;
   DLGTEMPLATE hdr = {};
   hdr.style = DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_SYSMENU | WS_POPUP |
@@ -1725,10 +1753,10 @@ static bool run_prompt_raw(const std::string &message, const std::string &defval
   dlg_item(t, SS_LEFT, 8, 8, 224, 18, 100, 0x0082, L"");
   dlg_item(t, ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 8, 30, 224, 13, 101,
            0x0081, L"");
-  dlg_item(t, BS_DEFPUSHBUTTON | WS_TABSTOP, 128, 56, 50, 14, IDOK, 0x0080,
-           L"OK");
-  dlg_item(t, BS_PUSHBUTTON | WS_TABSTOP, 182, 56, 50, 14, IDCANCEL, 0x0080,
-           L"Cancel");
+  dlg_item(t, BS_DEFPUSHBUTTON | WS_TABSTOP, 232 - cancelW - 4 - okW, 56, okW,
+           14, IDOK, 0x0080, okText);
+  dlg_item(t, BS_PUSHBUTTON | WS_TABSTOP, 232 - cancelW, 56, cancelW, 14,
+           IDCANCEL, 0x0080, cancelText);
   PromptState st;
   st.message = widen(message);
   st.value = widen(defval);
@@ -1741,10 +1769,150 @@ static bool run_prompt_raw(const std::string &message, const std::string &defval
 }
 
 static std::string run_prompt(const std::string &message,
-                              const std::string &defval) {
+                              const std::string &defval,
+                              const std::string &okLabel,
+                              const std::string &cancelLabel) {
   std::wstring value;
-  return run_prompt_raw(message, defval, &value) ? json_escape(narrow(value))
-                                                 : "null";
+  return run_prompt_raw(message, defval, &value, nullptr, okLabel, cancelLabel)
+             ? json_escape(narrow(value))
+             : "null";
+}
+
+// MessageBoxW can't name its buttons, so relabel them from a CBT hook:
+// HCBT_ACTIVATE arrives once the box is built and before it's shown. The hook
+// is thread-local, installed on the UI thread right before MessageBoxW and
+// removed right after. It handles the first dialog it sees and then stands
+// down, so a nested box (a dialog op dispatched inside this one's modal loop)
+// brings its own hook and labels.
+struct MsgBoxLabels {
+  std::wstring ok, cancel; // empty = leave Windows' own
+  bool done = false;
+};
+static MsgBoxLabels *g_msgbox_labels = nullptr;
+
+// A widened box paints its grey button band only as wide as the client it was
+// laid out in, leaving a white notch under the right-hand button. After each
+// paint, stretch the last laid-out column across the added width: that copies
+// the white body and the band alike, with no guessing at the band's height.
+static const wchar_t *MSGBOX_PROC = L"tinyjs.msgbox.proc";
+static const wchar_t *MSGBOX_WIDTH = L"tinyjs.msgbox.width";
+static LRESULT CALLBACK widened_msgbox_proc(HWND box, UINT msg, WPARAM wp,
+                                            LPARAM lp) {
+  WNDPROC orig = (WNDPROC)GetPropW(box, MSGBOX_PROC);
+  LRESULT r = CallWindowProcW(orig, box, msg, wp, lp);
+  if (msg == WM_PAINT) {
+    int laid = (int)(INT_PTR)GetPropW(box, MSGBOX_WIDTH);
+    RECT cr;
+    GetClientRect(box, &cr);
+    if (laid > 0 && cr.right > laid) {
+      // Children clipped out: the moved buttons sit in that strip.
+      HDC dc = GetDCEx(box, nullptr, DCX_CACHE | DCX_CLIPCHILDREN);
+      StretchBlt(dc, laid, 0, cr.right - laid, cr.bottom, dc, laid - 1, 0, 1,
+                 cr.bottom, SRCCOPY);
+      ReleaseDC(box, dc);
+    }
+  } else if (msg == WM_NCDESTROY) {
+    RemovePropW(box, MSGBOX_PROC);
+    RemovePropW(box, MSGBOX_WIDTH);
+  }
+  return r;
+}
+
+static void relabel_msgbox(HWND box, const MsgBoxLabels &l) {
+  HWND btns[2] = {GetDlgItem(box, IDOK), GetDlgItem(box, IDCANCEL)};
+  // MB_OK's lone button carries IDCANCEL's id (so Esc closes the box) while
+  // MessageBoxW still returns IDOK: it's the ok button whatever its id says.
+  if (!btns[0]) {
+    btns[0] = btns[1];
+    btns[1] = nullptr;
+  }
+  const std::wstring *texts[2] = {&l.ok, &l.cancel};
+  HFONT font = (HFONT)SendMessageW(box, WM_GETFONT, 0, 0);
+  HDC dc = GetDC(box);
+  HGDIOBJ old = SelectObject(dc, font);
+  int need = 0, n = 0;
+  RECT r[2] = {};
+  for (int i = 0; i < 2; i++) {
+    if (!btns[i])
+      continue;
+    n++;
+    if (!texts[i]->empty())
+      SetWindowTextW(btns[i], texts[i]->c_str());
+    wchar_t buf[256];
+    GetWindowTextW(btns[i], buf, 256);
+    RECT tr = {0, 0, 0, 0};
+    DrawTextW(dc, buf, -1, &tr, DT_CALCRECT | DT_SINGLELINE);
+    need = std::max(need, (int)(tr.right - tr.left) + 24);
+    GetWindowRect(btns[i], &r[i]);
+    MapWindowPoints(nullptr, box, (POINT *)&r[i], 2);
+  }
+  SelectObject(dc, old);
+  ReleaseDC(box, dc);
+  // The stock buttons fit "Cancel" and little more, so a longer label clips.
+  // Widen every button to the widest need, keep them right-aligned with their
+  // gap, and grow the box if they'd run past its left margin.
+  if (!n)
+    return;
+  const RECT &first = btns[0] ? r[0] : r[1];
+  const RECT &last = btns[1] ? r[1] : r[0];
+  if (need <= first.right - first.left)
+    return;
+  int gap = n == 2 ? r[1].left - r[0].right : 0;
+  int left = last.right - (n * need + (n - 1) * gap);
+  RECT cr;
+  GetClientRect(box, &cr);
+  int minLeft = cr.right - last.right; // the right margin, mirrored
+  if (left < minLeft) {
+    int grow = minLeft - left;
+    RECT wr;
+    GetWindowRect(box, &wr);
+    SetPropW(box, MSGBOX_WIDTH, (HANDLE)(INT_PTR)cr.right);
+    SetPropW(box, MSGBOX_PROC, (HANDLE)GetWindowLongPtrW(box, GWLP_WNDPROC));
+    SetWindowLongPtrW(box, GWLP_WNDPROC, (LONG_PTR)widened_msgbox_proc);
+    SetWindowPos(box, nullptr, wr.left - grow / 2, wr.top,
+                 wr.right - wr.left + grow, wr.bottom - wr.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    left += grow;
+  }
+  for (int i = 0; i < 2; i++) {
+    if (!btns[i])
+      continue;
+    SetWindowPos(btns[i], nullptr, left, r[i].top, need, r[i].bottom - r[i].top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    left += need + gap;
+  }
+}
+
+static LRESULT CALLBACK msgbox_cbt(int code, WPARAM wp, LPARAM lp) {
+  MsgBoxLabels *l = g_msgbox_labels;
+  if (code == HCBT_ACTIVATE && l && !l->done) {
+    wchar_t cls[16];
+    if (GetClassNameW((HWND)wp, cls, 16) && wcscmp(cls, L"#32770") == 0) {
+      l->done = true;
+      relabel_msgbox((HWND)wp, *l);
+    }
+  }
+  return CallNextHookEx(nullptr, code, wp, lp);
+}
+
+static int labelled_message_box(HWND owner, const std::wstring &text,
+                                const std::wstring &title, UINT flags,
+                                const std::string &okLabel,
+                                const std::string &cancelLabel) {
+  if (okLabel.empty() && cancelLabel.empty())
+    return MessageBoxW(owner, text.c_str(), title.c_str(), flags);
+  MsgBoxLabels l;
+  l.ok = button_label(okLabel, L"");
+  l.cancel = button_label(cancelLabel, L"");
+  MsgBoxLabels *prev = g_msgbox_labels;
+  g_msgbox_labels = &l;
+  HHOOK hook =
+      SetWindowsHookExW(WH_CBT, msgbox_cbt, nullptr, GetCurrentThreadId());
+  int r = MessageBoxW(owner, text.c_str(), title.c_str(), flags);
+  if (hook)
+    UnhookWindowsHookEx(hook);
+  g_msgbox_labels = prev;
+  return r;
 }
 
 static std::string run_file_dialog(const std::string &op,
@@ -1854,11 +2022,13 @@ static void do_dialog(webview_t w, void *arg) {
       text += "\n\n" + a(1);
     UINT flags = req->op == "confirm" ? (MB_OKCANCEL | MB_ICONQUESTION)
                                       : (MB_OK | MB_ICONINFORMATION);
-    int r = MessageBoxW(g_host, widen(text).c_str(), widen(g_app_name).c_str(),
-                        flags);
+    // args: message, detail, okLabel, cancelLabel ("" = Windows' own)
+    int r = labelled_message_box(g_host, widen(text), widen(g_app_name), flags,
+                                 a(2), req->op == "confirm" ? a(3) : "");
     json = req->op == "alert" ? "true" : (r == IDOK ? "true" : "false");
   } else if (req->op == "prompt") {
-    json = run_prompt(a(0).empty() ? g_app_name : a(0), a(1));
+    // args: message, default, okLabel, cancelLabel
+    json = run_prompt(a(0).empty() ? g_app_name : a(0), a(1), a(2), a(3));
   } else {
     // args (open/openmulti/save): typeFilter (comma-separated extensions),
     // then for save an optional suggested file name

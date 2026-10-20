@@ -1105,7 +1105,7 @@ await <b>tiny.dialog.saveFile</b>({ types: ['docx'], name: 'report' });   <i>// 
 await <b>tiny.dialog.alert</b>(message, { detail, ok });            <i>// or alert(message, detail)</i>
 await <b>tiny.dialog.confirm</b>(message, { detail, ok, cancel });   <i>// true | false; or confirm(message, detail)</i>
 await <b>tiny.dialog.prompt</b>(message, { default, ok, cancel });   <i>// string | null</i>
-<i>// ok / cancel relabel the buttons on macOS and Linux; Windows keeps OK/Cancel.</i>
+<i>// ok / cancel relabel the buttons.</i>
 <i>// The page's bare alert() / confirm() / prompt() are the browser's own: one</i>
 <i>// argument, the origin (or app name) as the headline, OK/Cancel only.</i></pre>
   </section>

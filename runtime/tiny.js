@@ -774,7 +774,7 @@
       saveFile: (opts = {}) => call('dialog.saveFile', { types: opts.types, name: opts.name }), // path | null
       // alert/confirm take { detail, ok, cancel } or just the detail string. A
       // string used to be spread into confirm's opts as { 0: 'D', ... } and
-      // vanish (#81). Button labels: macOS + Linux; Windows' MessageBox can't.
+      // vanish (#81). ok/cancel relabel the buttons on every platform.
       // The bare window.alert/confirm/prompt are the page's own synchronous
       // primitives (tiny_js_confirm etc. in the launchers) — not these.
       alert: async (message, opts) => call('dialog.alert', { message, ...dialogOpts('alert', opts, 'detail') }), // true
