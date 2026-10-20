@@ -5,6 +5,16 @@
   const call = (method, params) => window.__invoke(JSON.stringify({ method, params }));
   // a screen option can be an id or a screens() entry; the wire wants the id
   const scrId = (s) => (s && typeof s === 'object' ? s.id : s);
+  // tiny.dialog's second argument: an options object, or (when the dialog has
+  // a natural one) a bare string meaning that field. Anything else is a
+  // mistake worth hearing about, not something to drop silently.
+  const dialogOpts = (fn, opts, strField) => {
+    if (opts == null) return {};
+    if (typeof opts === 'string' && strField) return { [strField]: opts };
+    if (typeof opts === 'object' && !Array.isArray(opts)) return opts;
+    throw new TypeError(`tiny.dialog.${fn}(message, opts): opts must be an object`
+      + (strField ? ` or a ${strField} string` : '') + `, got ${Array.isArray(opts) ? 'an array' : typeof opts}`);
+  };
   // tiny.clipboard.onChange starts a watch only if this page hasn't one.
   let clipWatching = false;
   const handlers = {};
@@ -762,9 +772,14 @@
       openFiles: (opts = {}) => call('dialog.openFiles', { types: opts.types }),  // paths[] | null
       pickFolder: () => call('dialog.pickFolder'),                                // path | null
       saveFile: (opts = {}) => call('dialog.saveFile', { types: opts.types, name: opts.name }), // path | null
-      alert: (message, detail) => call('dialog.alert', { message, detail }),
-      confirm: (message, opts = {}) => call('dialog.confirm', { message, ...opts }), // true | false
-      prompt: (message, opts = {}) => call('dialog.prompt', { message, ...opts }),   // string | null
+      // alert/confirm take { detail, ok, cancel } or just the detail string. A
+      // string used to be spread into confirm's opts as { 0: 'D', ... } and
+      // vanish (#81). Button labels: macOS + Linux; Windows' MessageBox can't.
+      // The bare window.alert/confirm/prompt are the page's own synchronous
+      // primitives (tiny_js_confirm etc. in the launchers) — not these.
+      alert: async (message, opts) => call('dialog.alert', { message, ...dialogOpts('alert', opts, 'detail') }), // true
+      confirm: async (message, opts) => call('dialog.confirm', { message, ...dialogOpts('confirm', opts, 'detail') }), // true | false
+      prompt: async (message, opts) => call('dialog.prompt', { message, ...dialogOpts('prompt', opts) }),   // string | null
     },
 
     // System theme; also 'sleep'/'wake' events via tiny.api.on.

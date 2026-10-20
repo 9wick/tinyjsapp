@@ -227,9 +227,11 @@ await tiny.dialog.openFile({ types: ['md', 'markdown', 'txt'] });
 // saveFile({ name }) pre-fills the file name field (a name, not a path;
 // any folder part is dropped). The extension rule above still applies.
 await tiny.dialog.saveFile({ types: ['docx'], name: 'report' });
-await tiny.dialog.alert(message, detail);
-await tiny.dialog.confirm(message, { detail, ok, cancel });   // true | false
+await tiny.dialog.alert(message, { detail, ok });             // or (message, detail)
+await tiny.dialog.confirm(message, { detail, ok, cancel });   // true | false; or (message, detail)
 await tiny.dialog.prompt(message, { default, ok, cancel });   // string | null
+// ok/cancel labels: macOS + Linux only. Bare window.confirm() etc. are the
+// browser primitives: one argument, origin/app-name headline, OK/Cancel.
 ```
 
 ## Site wrappers: navigation / downloads / popups / find
