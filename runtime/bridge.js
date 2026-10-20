@@ -1258,7 +1258,9 @@ function layoutKey(list) {
 // { screen, x, y, width, height } with x/y local logical points, size
 // clamped to the target's work area. null = nothing usable saved.
 function placementFor(list, saved, fallback) {
-  if (!saved?.rect) return null;
+  // an empty content box is never a placement worth restoring (Windows once
+  // saved a 116x0 caught mid-display-change; restored, it came back 116x1)
+  if (!saved?.rect || !(saved.rect.width >= 1 && saved.rect.height >= 1)) return null;
   const s = matchScreenIn(list, saved.screen) ?? fallback ?? list.find((o) => o.primary) ?? list[0];
   if (!s) return null;
   const v = s.visible ?? s;
@@ -1890,6 +1892,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // hidden (incl. main before its deferred show) or minimized: keep the
     // placement we have rather than record a transient one
     if (!st || !st.visible || st.minimized) return;
+    if (!(st.width >= 1 && st.height >= 1)) return;   // mid-transition, see placementFor
     const list = screensCache ?? (await refreshScreens());
     const fullscreen = !!st.fullscreen, maximized = !fullscreen && !!lastWinState.get(wid)?.maximized;
     const key = layoutKey(list);

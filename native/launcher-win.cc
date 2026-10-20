@@ -2290,6 +2290,19 @@ static std::string screens_json() {
   return json + "]";
 }
 
+// Put a window on the target monitor's DPI before placing it there. Windows
+// rescales a window only when most of its PHYSICAL rect changes monitor, so a
+// 150% window sent to straddle a 100% neighbour (mostly on the 100% side in
+// DIPs) kept its 1.5x size, sat half-and-half physically, never rescaled, and
+// read back through the 150% monitor 100 DIPs off (#70). A hop inside the
+// target fires WM_DPICHANGED synchronously; the webview's handler resizes.
+static void match_monitor_dpi(HWND hwnd, const ScreenLayout &s) {
+  if (std::fabs(window_scale(hwnd) - s.scale) < 0.01)
+    return;
+  SetWindowPos(hwnd, nullptr, s.px.left, s.px.top, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 // WINOP pos: a global DIP top-left. The monitor is picked by where most of
 // the window WOULD be (its current size in DIPs), the same rule getState
 // reads it back by.
@@ -2302,6 +2315,7 @@ static void move_window_dip(HWND hwnd, double x, double y) {
       L, x, y, (r.right - r.left) / ws, (r.bottom - r.top) / ws);
   if (!s)
     return;
+  match_monitor_dpi(hwnd, *s);
   POINT p = dip_to_px(*s, x, y);
   // SWP_NOACTIVATE: lockstep group-drags reposition N windows per frame —
   // without it every move steals activation and the drag crawls.
@@ -2316,6 +2330,7 @@ static void move_window_on_screen(HWND hwnd, int idx, double x, double y,
   if (idx < 0 || idx >= (int)L.size())
     return;
   const ScreenLayout &s = L[idx];
+  match_monitor_dpi(hwnd, s);
   double k = px ? 1.0 : s.scale;
   SetWindowPos(hwnd, nullptr, (int)lround(s.px.left + x * k),
                (int)lround(s.px.top + y * k), 0, 0,
@@ -9285,6 +9300,22 @@ static int run(int argc, char **argv) {
     }
   }
 
+  // A main window that starts hidden (accessory, rememberWindows' deferred
+  // show) is cloaked until the hide below: webview_set_size's first call
+  // SHOWS the window, and with navigate in between it stayed on screen at the
+  // default spot long enough to be composed (~20ms, caught by a 2ms poll).
+  BOOL start_cloaked = FALSE;
+  {
+    char v[64];
+    DWORD na = GetEnvironmentVariableA("TINYJS_ACTIVATION", v, sizeof(v));
+    bool acc = na > 0 && na < sizeof(v) && strcmp(v, "accessory") == 0;
+    DWORD nd = GetEnvironmentVariableA("TINYJS_DEFER_SHOW", v, sizeof(v));
+    start_cloaked = acc || (nd > 0 && nd < sizeof(v) && strcmp(v, "1") == 0);
+    if (start_cloaked)
+      DwmSetWindowAttribute(g_hwnd, DWMWA_CLOAK, &start_cloaked,
+                            sizeof(start_cloaked));
+  }
+
   webview_set_title(g_w, title.c_str());
   // Size so the PAGE gets exactly the declared size, whatever the frame turns
   // out to be. webview_set_size runs AdjustWindowRect for the window's style,
@@ -9350,6 +9381,10 @@ static int run(int argc, char **argv) {
       ShowWindow(g_hwnd, SW_HIDE);
       SetTimer(g_hwnd, TIMER_DEFERSHOW, 3000, nullptr);
     }
+  }
+  if (start_cloaked) { // hidden now; showing it later needs no uncloak
+    BOOL off = FALSE;
+    DwmSetWindowAttribute(g_hwnd, DWMWA_CLOAK, &off, sizeof(off));
   }
 
   send_theme();
