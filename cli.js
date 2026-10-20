@@ -350,6 +350,120 @@ async function stageExecutables(exe, dev) {
   }
 }
 
+// Files for the person downloading the app — a README, a licence, install
+// notes — ship from extras/, OUTSIDE the app: beside the executable in the
+// Windows/Linux folder (so in the publish archive, and refreshed by each
+// update), and at the root of the macOS dmg next to the .app. The .app and
+// the macOS update zip never carry them — nobody looks inside a bundle they
+// dragged to /Applications. Picked like executables/: with no list,
+// everything at the top, overridden by name from extras/<os>/;
+// "extras": [...] lists paths inside the folder instead. Each lands by its
+// own name (a folder whole), next to files the build writes, so a name the
+// build uses fails — case-insensitively, as macOS and Windows compare them.
+const EXTRAS_DIR = 'extras';
+const EXTRAS_OS_DIR = /^(macos|windows|linux)$/;
+
+function extrasTaken(cfg) {
+  if (!IS_WIN && !IS_LINUX) return [cfg.title + '.app', 'Applications'];
+  const common = ['resources', 'executables', 'frontend', 'shared', 'bin', 'publish'];
+  return IS_WIN ? [cfg.name + '.exe', 'launcher.exe', ...common]
+                : [cfg.name, 'launcher', 'icon.png', ...common];
+}
+
+// Returns [{ name, src }] for this OS, [] when nothing ships.
+async function validateExtras(cfg) {
+  const list = cfg.extras;
+  if (list !== undefined && !Array.isArray(list)) fail('tinyjs.json "extras" must be an array of paths inside extras/ (got ' + JSON.stringify(list) + ')');
+  let st = null;
+  try { st = await tjs.lstat(EXTRAS_DIR); } catch {}
+  if (st?.isSymbolicLink) fail('extras/: symlinks are not supported');
+  if (st && !st.isDirectory) fail('extras/ must be a directory');
+  if (!st) {
+    if (list?.length) fail('tinyjs.json "extras" lists paths inside extras/, but the project has no extras/ folder');
+    return [];
+  }
+  const taken = extrasTaken(cfg).map((n) => n.toLowerCase());
+  const picked = new Map(); // lower-cased name -> { name, src, where, layer }
+  const check = async (src, where) => {
+    let fst;
+    try { fst = await tjs.lstat(src); } catch { fail(`${where}: not found or unreadable`); }
+    if (fst.isSymbolicLink) fail(`${where}: symlinks are not supported (${src})`);
+    if (!fst.isDirectory && !fst.isFile) fail(`${where}: expected a regular file or folder (${src})`);
+    if (fst.isDirectory) for await (const e of await tjs.readDir(src)) await check(src + '/' + e.name, where);
+  };
+  // A later layer replaces an earlier one's file of the same name; within a
+  // layer (or a list) two of them would land on each other.
+  const add = async (src, where, layer) => {
+    const name = src.replace(/^.*\//, '');
+    const key = name.toLowerCase();
+    if (picked.get(key)?.src === src) return;
+    await check(src, where);
+    if (taken.includes(key)) fail(`${where}: the build already writes a ${name} there — rename it`);
+    const had = picked.get(key);
+    if (had && had.layer === layer) fail(`${where}: two extras named ${name} would ship (${had.src}, from ${had.where}) — they land side by side, so names must differ`);
+    picked.set(key, { name, src, where, layer });
+  };
+  if (list === undefined) {
+    const layers = [EXTRAS_DIR, EXTRAS_DIR + '/' + EXEC_OS];
+    for (const [layer, dir] of layers.entries()) {
+      if (layer) {
+        let dst = null;
+        try { dst = await tjs.lstat(dir); } catch {}
+        if (!dst) continue;
+        if (dst.isSymbolicLink || !dst.isDirectory) fail(`extras: ${dir}: expected a folder (symlinks are not supported)`);
+      }
+      const names = [];
+      for await (const e of await tjs.readDir(dir)) names.push(e.name);
+      for (const name of names.sort()) {
+        if (JUNK_FILES.includes(name) || (!layer && EXTRAS_OS_DIR.test(name))) continue;
+        await add(dir + '/' + name, 'extras: ' + dir + '/' + name, layer);
+      }
+    }
+  } else {
+    // Same path rules as "resources".
+    for (const raw of list) {
+      const where = 'tinyjs.json extra ' + JSON.stringify(raw);
+      if (typeof raw !== 'string' || !raw || raw.includes('\0')) fail(where + ': expected a non-empty path inside extras/');
+      const p = raw.replace(/\\/g, '/');
+      if (p.startsWith('/') || p.includes(':')) fail(where + ': absolute, drive and UNC paths are not allowed');
+      const parts = p.split('/').filter((x) => x && x !== '.');
+      if (parts.includes('..')) fail(where + ': parent traversal is not allowed');
+      if (IS_WIN && parts.some((s) => /[. ]$/.test(s))) fail(where + ': Windows path components cannot end in a dot or space');
+      if (!parts.length) fail(where + ': that is extras/ itself — leave "extras" out to ship the whole folder');
+      for (let i = 1; i < parts.length; i++) {
+        let pst = null;
+        try { pst = await tjs.lstat(EXTRAS_DIR + '/' + parts.slice(0, i).join('/')); } catch {}
+        if (!pst) fail(where + ': not found');
+        if (pst.isSymbolicLink) fail(where + ': symlinks are not supported');
+      }
+      await add(EXTRAS_DIR + '/' + parts.join('/'), where, 0);
+    }
+  }
+  return [...picked.values()].map(({ name, src }) => ({ name, src }))
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
+// Copy one extra (a folder whole, minus OS junk), keeping exec bits — an
+// install.sh in a Linux tarball is meant to run.
+async function copyExtra(src, dest) {
+  const st = await tjs.lstat(src);
+  if (st.isDirectory) {
+    await tjs.makeDir(dest, { recursive: true });
+    for await (const e of await tjs.readDir(src))
+      if (!JUNK_FILES.includes(e.name)) await copyExtra(src + '/' + e.name, dest + '/' + e.name);
+  } else {
+    await copyFile(src, dest);
+    if (!IS_WIN && (st.mode & 0o111)) await tjs.chmod(dest, 0o755);
+  }
+}
+
+async function shipExtras(cfg, dest, label) {
+  const files = await validateExtras(cfg);
+  if (!files.length) return;
+  for (const { name, src } of files) await copyExtra(src, dest + '/' + name);
+  if (label) console.log(`==> extras: ${files.map((f) => f.name).join(', ')} → ${label}`);
+}
+
 // assets/ holds the files the OS and the build read, each by a known name:
 // the icon, the About panel's Credits, the macOS help book. Nothing else in
 // it ships, so anything unrecognised is most likely a page or data file put
@@ -385,6 +499,12 @@ async function warnUnusedAssets(cfg) {
   try { iter = await tjs.readDir('assets'); } catch { return; }
   for await (const e of iter) {
     if (used.has(e.name)) continue;
+    // A README or licence here was most likely meant for the download.
+    if (/^(read[ _-]?me|licen[cs]e|copying|install|changelog)\b/i.test(e.name)) {
+      console.log(`==> note: assets/${e.name} isn't used by the build — files for the person ` +
+        'downloading the app (a README, a licence) go in extras/');
+      continue;
+    }
     console.log(`==> note: assets/${e.name} isn't used by the build — assets/ is for the ` +
       'icon, Credits and help book; files for your page go in the frontend, data for your code in resources/');
   }
@@ -2490,7 +2610,8 @@ async function makeDmg(cfg, APP) {
   await tjs.makeDir(STAGE, { recursive: true });
   await run(['cp', '-R', APP, STAGE + '/']);
   await run(['ln', '-s', '/Applications', STAGE + '/Applications']);
-  const dmg = 'dist/' + cfg.name + '-' + (cfg.version || '0.0.0') + MAC_SUFFIX + '.dmg';
+  await shipExtras(cfg, STAGE, 'dmg');
+  const dmg ='dist/' + cfg.name + '-' + (cfg.version || '0.0.0') + MAC_SUFFIX + '.dmg';
   await run(['hdiutil', 'create', '-volname', cfg.title, '-srcfolder', STAGE,
              '-ov', '-quiet', '-format', 'UDZO', dmg]);
   console.log('    ' + dmg);
@@ -2568,6 +2689,8 @@ async function cmdBuild() {
   // being asked for. No-op unless this is a dev checkout.
   await ensureLauncherFresh();
   await warnUnusedAssets(cfg);
+  // A bad extras/ fails before the slow part, not after it.
+  const extras = await validateExtras(cfg);
   await generateBuild(cfg);
   const cwd = tjs.cwd;
 
@@ -2677,6 +2800,7 @@ async function cmdBuild() {
         console.log('    WARNING: could not embed ' + winIcon + ' into launcher.exe.');
       }
     }
+    await shipExtras(cfg, 'dist', 'dist/');
     await maybeWriteCliShim(cfg, null);
     console.log('==> done');
     console.log(`run it:  .\\dist\\${cfg.name}.exe`);
@@ -2692,6 +2816,7 @@ async function cmdBuild() {
     await run(['chmod', '+x', 'dist/launcher', 'dist/' + cfg.name]);
     const linIcon = cfg.icon || 'icon.png';
     if (await exists(linIcon)) await copyFile(linIcon, 'dist/icon.png');
+    await shipExtras(cfg, 'dist', 'dist/');
     await maybeWriteCliShim(cfg, null);
     console.log('==> done');
     console.log(`run it:  ./dist/${cfg.name}`);
@@ -3023,6 +3148,8 @@ async function cmdBuild() {
   // Note: this dmg holds the un-notarized .app — `notarize --dmg` rebuilds it
   // from the stapled bundle so it validates offline.
   if (args.includes('--dmg')) await makeDmg(cfg, APP);
+  else if (extras.length) console.log(`==> note: extras (${extras.map((f) => f.name).join(', ')}) ship in the dmg ` +
+    'only — the .app and the update zip never carry them; build or notarize with --dmg');
   await maybeWriteCliShim(cfg, APP);
   await reportMacArchs(cfg, APP);
 
@@ -3314,6 +3441,8 @@ async function cmdPublish() {
     // copyTree drops modes; sidecars need theirs back too.
     if (await exists(stage + '/' + cfg.name + '/executables'))
       await run(['chmod', '-R', '+x', stage + '/' + cfg.name + '/executables']);
+    // Extras too (an install.sh): copy them over again, modes and all.
+    await shipExtras(cfg, stage + '/' + cfg.name, null);
     await tjs.makeDir(PUB, { recursive: true });
     await run(['tar', '-czf', PUB + '/' + zipName, '-C', stage, cfg.name]);
   } else if (IS_WIN) {

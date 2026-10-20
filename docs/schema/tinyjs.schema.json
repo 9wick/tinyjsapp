@@ -35,6 +35,7 @@
         "helpBook": { "type": "string", "description": "macOS help book folder inside assets/." },
         "resources": { "$ref": "#/$defs/strings", "description": "Paths inside resources/. Omit to ship the whole folder; [] ships none." },
         "executables": { "$ref": "#/$defs/strings", "description": "Paths inside executables/. Omit for automatic platform selection; [] ships none." },
+        "extras": { "$ref": "#/$defs/strings", "description": "Paths inside extras/: files for the person downloading (README, licence), shipped beside the app in the Windows/Linux folder and at the macOS dmg root, never inside the app. Omit to ship the folder's top level plus extras/<os>/; [] ships none." },
         "executableEntitlements": {
           "type": "object",
           "description": "macOS sidecar filename to codesign entitlement keys. The CLI verifies filenames against shipped executables.",

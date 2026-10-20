@@ -8,6 +8,23 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
+
+`test/extras/check.py` (README there) — builds and publishes only, no window
+needed. The Windows and Linux code paths (copy into `dist/`, the publish
+staging, the Linux exec-bit re-copy, the taken-name list) have never run.
+
+- [x] **macOS** — `check.py` PASS: dmg root, not in the .app / update zip,
+  no-`--dmg` note, lists, errors; the .app in the dmg verifies ad-hoc and
+  signed with a Developer ID. *(2026-10-20, macOS 27.0, arm64.)*
+- [ ] **macOS, notarize** — `tinyjs notarize --dmg` with a Developer ID:
+  the rebuilt dmg still has the extras beside the stapled app.
+- [ ] **Windows** — `check.py` PASS; then open the publish zip in Explorer
+  and see `README.txt` beside `<name>.exe`; run an auto-update and see the
+  new version's README replace the old one.
+- [ ] **Linux** — `check.py` PASS (22.04 container is enough); extract the
+  tarball and run the shipped `install.sh` directly.
+
 ## #70 — multi-screen: one Windows DIP space, screen-relative placement, `rememberWindows` (`feat/screens-70`, 2026-10-20)
 
 Plan and research: TODO-screens.md. Probe: `test/screens/` (README there) —

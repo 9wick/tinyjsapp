@@ -221,6 +221,7 @@ myapp/
     My App Help/          #   optional: macOS help book ("macos": { "helpBook" })
   resources/              # optional: data your code reads — see "Bundled data resources"
   executables/            # optional: programs your code spawns — see "Bundled executables"
+  extras/                 # optional: README, licence… beside the app in the download — see "Download extras"
   src/backend/main.js     # backend: export const api = {...}; export function init(app) {}
   src/frontend/           # index.html + any local js/css/images
   src/shared/             # optional: code both sides import — see below
@@ -1718,6 +1719,74 @@ so `tinyjs dev` shows the Help menu without the book. Help Viewer caches
 books by version: rebuild with an edited book at the same `version` and it
 keeps showing the old copy (even from a fresh build in another folder).
 Bump `version` to see your changes.
+
+### Download extras (README, licence)
+
+Files for the person downloading your app (a README, a licence, install
+notes) go in an `extras/` folder. They ship next to the app, never inside
+it:
+
+| OS | Where they land |
+|---|---|
+| macOS | the root of the dmg, beside the .app and the Applications shortcut |
+| Windows | the app folder, beside `<name>.exe` (`dist/` and the publish zip) |
+| Linux | the app folder, beside `<name>` (`dist/` and the publish tarball) |
+
+The four folders, by who reads them:
+
+| Folder | Read by | Ships |
+|---|---|---|
+| `resources/` | your code | inside the app |
+| `executables/` | your backend, which spawns them | inside the app |
+| `assets/` | the OS (icon, Credits, help book) | inside the app, by name |
+| `extras/` | the person downloading | beside the app |
+
+With no list, a build ships everything at the top of `extras/`, then what's
+in `extras/<os>/` (`macos`, `windows` or `linux`), which replaces a file of
+the same name. A folder ships whole; `.DS_Store` and friends are skipped,
+and exec bits are kept, so an `install.sh` in a Linux tarball runs:
+
+```
+my-app/
+  extras/
+    LICENSE.txt           # every OS
+    README.txt            # Windows and Linux…
+    macos/README.txt      # …and the Mac's own, which mentions Gatekeeper
+```
+
+To pick the files yourself, list paths inside `extras/`. Each lands by its
+own name, wherever it sits in the folder; platform blocks replace the list
+for their OS, and `[]` ships nothing:
+
+```json
+{
+  "extras": ["LICENSE.txt", "README.txt"],
+  "macos": { "extras": ["LICENSE.txt", "macos/README.txt"] }
+}
+```
+
+Every build prints what it shipped (`==> extras: LICENSE.txt, README.txt → dmg`).
+Extras sit beside files the build writes, so a name the build uses fails it
+(`launcher.exe`, `<name>.exe`, `resources`, the `.app`, `Applications`, …),
+compared case-insensitively. So do two extras with the same name. Paths
+follow the `resources` rules (no `..`, absolute paths or symlinks).
+
+Some things to know:
+
+- **macOS: only the dmg carries them.** Build with `--dmg` (or let
+  `tinyjs notarize --dmg` rebuild it, which re-reads `extras/`); a build
+  without it notes that the extras went nowhere. The .app and the
+  `tinyjs publish` zip (the update payload) never carry them, since nobody
+  looks inside a bundle once it's in /Applications.
+- **Windows and Linux: updates replace them.** An update swaps the whole app
+  folder, so each version's extras replace the last one's (and anything a
+  user saved in that folder goes too).
+- **Needed after install?** Once the dmg is ejected, a Mac user no longer
+  has its README. For help people will need later, use something in the
+  app: Credits or a help book (see [App assets](#app-assets)), or a file in
+  `resources/` that a Help menu item opens.
+- `tinyjs dev` ignores `extras/`. A README-like file put in `assets/` gets a
+  note pointing here.
 
 ### Distributing to other people (Developer ID + notarization)
 
