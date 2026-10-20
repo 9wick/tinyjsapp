@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.57.10 — 2026-10-19
 
 - **`app.paths()` creates the `data`, `cache` and `logs` folders.** The
   docs said these are created on first write, but nothing created them,
