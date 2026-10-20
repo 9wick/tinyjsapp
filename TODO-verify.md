@@ -18,13 +18,16 @@ in cli.js's `cmdBuild`.
   file that can't be deleted (read-only subdir) stops the build with
   "couldn't clear dist/ — dist/locked/MyApp.exe is in use", exit 1.
   *(2026-10-19, scratch app.)*
-- [ ] **Windows paths** — same check, from `tinyjs dev` and from the
+- [x] **Windows paths** — same check, from `tinyjs dev` and from the
   built exe: `%LOCALAPPDATA%\<id>\Cache` and `\Logs` both appear, and the
-  page's `tiny.app.paths()` does the same.
-- [ ] **Windows busy dist/** — with the built app running, `tinyjs build`
+  page's `tiny.app.paths()` does the same. *(2026-10-19, fresh ids: dev
+  page, dev backend, built exe page — all three dirs exist, `Logs\file.log`
+  written. Control run with main's bridge.js: no Cache/Logs, ENOENT.)*
+- [x] **Windows busy dist/** — with the built app running, `tinyjs build`
   and `tinyjs publish` both print the "is in use … still running?" message
   naming `dist/<name>.exe` (or `launcher.exe`), not `EEXIST`. Quit the app
-  and the next build succeeds.
+  and the next build succeeds. *(2026-10-19: both named
+  `dist/launcher.exe`, exit 1; rebuild after quitting succeeded.)*
 - [ ] **Linux paths** — `~/.cache/<id>` and `~/.local/state/<id>` appear.
 
 ## macOS — Dock reopening after hide-on-close (2026-10-16)
