@@ -824,6 +824,34 @@ const esc = (s) => String(s ?? '')
 // Reverse of esc() / the launcher's wire_escape, for inbound tab fields.
 const unesc = (s) => String(s ?? '').replace(/\\(.)/g,
   (_, c) => c === 'n' ? '\n' : c === 't' ? '\t' : c === 'r' ? '\r' : c);
+// app.cookies (#46). A field with a control character or ';' can't be a
+// cookie and would be a header-splitting hazard in an engine that serialises
+// before it validates — refuse it here rather than trust three engines to.
+function cookieField(v, what) {
+  const s = String(v ?? '');
+  if (/[\x00-\x1f\x7f;]/.test(s)) throw new Error(`cookies: ${what} has a control character or ';'`);
+  return s;
+}
+function cookieURL(v) {
+  let u;
+  try { u = new URL(String(v)); } catch { throw new Error('cookies: bad url ' + v); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('cookies: url must be http(s)');
+  return u;
+}
+const cookieDomainNorm = (d) => String(d ?? '').toLowerCase().replace(/^\./, '');
+// Would a request to u carry c? RFC 6265 §5.4: domain-match (host-only when
+// the stored domain has no leading dot), path-match, secure only over https.
+function cookieMatchesURL(c, u) {
+  const host = u.hostname.toLowerCase();
+  const d = String(c.domain ?? '').toLowerCase();
+  const domainOk = d.startsWith('.')
+    ? host === d.slice(1) || host.endsWith(d)
+    : host === d;
+  const cp = c.path || '/';
+  const rp = u.pathname || '/';
+  const pathOk = rp === cp || (rp.startsWith(cp) && (cp.endsWith('/') || rp[cp.length] === '/'));
+  return domainOk && pathOk && (!c.secure || u.protocol === 'https:');
+}
 // tiny.audio.filters types -> libpipewire-module-filter-chain builtins.
 const FILTER_LABELS = {
   peaking: 'bq_peaking', lowshelf: 'bq_lowshelf', highshelf: 'bq_highshelf',
@@ -2171,6 +2199,75 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
         const r = await ask('SECRET', 'del\t' + esc(id || 'tinyjs-app') + '\t' + esc(key));
         if (!r?.ok) throw new Error(r?.error ?? 'keychain error');
         return true;
+      },
+    },
+    // The webview's own cookie jar (#46) — the one every window and a wrapped
+    // site share, HttpOnly cookies included (document.cookie can't see
+    // those). Backend only, on purpose: a page that could read the jar could
+    // read every site's session. Shape: { name, value, domain, path,
+    // expires (ms epoch | null = session), secure, httpOnly, sameSite
+    // ('lax'|'strict'|'none'|null) }. A leading '.' on domain means
+    // "and subdomains", as every engine reports it; without one the cookie
+    // is host-only.
+    cookies: {
+      // filter: { url?, name?, domain?, path? }. url keeps what a request to
+      // it would send (domain + path + secure match). Without url, Linux
+      // needs WebKitGTK 2.42+ to list the whole jar.
+      async get(filter = {}) {
+        let u = null;
+        if (filter.url != null) u = cookieURL(filter.url);
+        const r = await ask('COOKIES', 'get\t' + esc(u ? u.href : ''));
+        if (!r?.ok) throw new Error(r?.error ?? 'cookie store error');
+        return (r.cookies ?? []).filter((c) =>
+          (filter.name == null || c.name === filter.name) &&
+          (filter.domain == null || cookieDomainNorm(c.domain) === cookieDomainNorm(filter.domain)) &&
+          (filter.path == null || c.path === filter.path) &&
+          (!u || cookieMatchesURL(c, u)));
+      },
+      // { url?, domain?, name, value, path = '/', expires?, secure?,
+      //   httpOnly?, sameSite? } — url OR domain says where it belongs (url
+      // alone = host-only for its host). expires: Date or ms epoch; omit for
+      // a session cookie. Replaces any cookie with the same name/domain/path.
+      async set(c = {}) {
+        const name = cookieField(c.name, 'name');
+        if (!name) throw new Error('cookies.set: name is required');
+        const value = cookieField(c.value, 'value');
+        const u = c.url != null ? cookieURL(c.url) : null;
+        const domain = c.domain != null ? cookieField(c.domain, 'domain') : u ? u.hostname : '';
+        if (!domain) throw new Error('cookies.set: url or domain is required');
+        const path = c.path != null ? cookieField(c.path, 'path') : '/';
+        if (!path.startsWith('/')) throw new Error("cookies.set: path must start with '/'");
+        let expires = '';
+        if (c.expires != null) {
+          const ms = c.expires instanceof Date ? c.expires.getTime() : Number(c.expires);
+          if (!Number.isFinite(ms)) throw new Error('cookies.set: bad expires');
+          expires = String(Math.round(ms));
+        }
+        const sameSite = c.sameSite == null ? '' : String(c.sameSite).toLowerCase();
+        if (sameSite && !['lax', 'strict', 'none'].includes(sameSite)) {
+          throw new Error("cookies.set: sameSite is 'lax', 'strict' or 'none'");
+        }
+        const r = await ask('COOKIES', ['set', esc(name), esc(value), esc(domain), esc(path), expires,
+          c.secure ? '1' : '0', c.httpOnly ? '1' : '0', sameSite].join('\t'));
+        if (!r?.ok) throw new Error(r?.error ?? 'cookie store error');
+        return true;
+      },
+      // remove({ name, domain, path }) — one cookie, e.g. straight from
+      // get(); remove({ url, name? }) — everything get({ url, name }) would
+      // return (no name = log the url out). Resolves the number removed.
+      async remove(c = {}) {
+        const targets = c.url != null
+          ? await app.cookies.get({ url: c.url, name: c.name })
+          : [{ name: cookieField(c.name, 'name'), domain: cookieField(c.domain, 'domain'),
+               path: c.path != null ? cookieField(c.path, 'path') : '/' }];
+        let n = 0;
+        for (const t of targets) {
+          if (!t.name || !t.domain) throw new Error('cookies.remove: url, or name + domain, is required');
+          const r = await ask('COOKIES', ['delete', esc(t.name), esc(t.domain), esc(t.path)].join('\t'));
+          if (!r?.ok) throw new Error(r?.error ?? 'cookie store error');
+          n += r.removed ?? 0;
+        }
+        return n;
       },
     },
     // Touch ID (or the account-password sheet on Macs without it) — "the

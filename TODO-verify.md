@@ -8,6 +8,26 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #46 — `app.cookies`: the webview's cookie jar (`feat/cookies-46`, 2026-10-19)
+
+Backend-only `app.cookies.get/set/remove` over each engine's own store
+(`COOKIES` wire op): WKHTTPCookieStore, WebKitCookieManager, WebView2's
+ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
+
+- [x] **macOS** — every row of the probe table as expected; server.py saw
+  `injected=v1; sess=a b=c; sid=s3cret`. *(2026-10-19, macOS 27.)*
+- [ ] **Windows** — same probe. Compiled only (the cookie block, against
+  the WebView2 1.0.2903.40 header). Watch for: whether `domain` on a
+  url-only set comes back host-only (`127.0.0.1`, no dot), what
+  `sameSite` an unset cookie reports (`none` expected), and that
+  `removeExact` finds the cookie by its exact domain string.
+- [x] **Linux** — same probe; every row as expected, server.py saw
+  `sid=s3cret; injected=v1; sess=a b=c`. Unset SameSite reads `none`
+  here (macOS: `null`). *(2026-10-19, ubuntu:22.04 container on arm64,
+  Xvfb + dbus-run-session, WebKitGTK 2.50.4 — a real launcher and
+  WebKitGTK, but not a desktop session; x86_64 and pre-2.42 WebKitGTK
+  not run.)*
+
 ## `app.paths()` creates data/cache/logs; build names a busy dist/ (#71, #72, 2026-10-19)
 
 `makePathDirs` in bridge.js; the `exists('dist')` check after `rmTree('dist')`

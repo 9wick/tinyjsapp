@@ -1705,6 +1705,26 @@ export function <b>onWindowOpen</b>(info, app) { }  <i>// 'window' | 'external' 
     to the OS (e.g. open the mail client). Anything else, no handler, or no
     answer in ~400ms blocks it. <code>isMainFrame</code> is <code>null</code>
     where the engine can't tell (Linux and Windows).</p>
+    <p class="note"><b>Cookies.</b> <code>app.cookies</code> reads and writes
+    the webview's own jar — shared by every window and the wrapped site,
+    HttpOnly cookies included. Backend only: a page that could read the jar
+    could read every site's session, so if a page needs a cookie, hand it
+    over from your own <code>api</code> handler.</p>
+    <pre><i>// backend — keep a login, restore it later, log out</i>
+const [sid] = await <b>app.cookies.get</b>({ url: 'https://app.example.com', name: 'sid' });
+<i>// -&gt; { name, value, domain, path, expires (ms | null), secure, httpOnly, sameSite }</i>
+await app.secrets.set('sid', JSON.stringify(sid));   <i>// tokens go in secrets, not store</i>
+await <b>app.cookies.set</b>({ url: 'https://app.example.com', ...JSON.parse(await app.secrets.get('sid')) });
+await <b>app.cookies.remove</b>({ url: 'https://app.example.com' });   <i>// -&gt; number removed</i></pre>
+    <p class="note"><code>get</code> with a <code>url</code> returns what a
+    request to it would carry. <code>set</code> replaces the cookie with the
+    same name, domain and path; <code>url</code> alone makes it host-only, and
+    <code>domain: '.example.com'</code> covers subdomains. <code>path</code>
+    defaults to <code>/</code>, and leaving out <code>expires</code> (a
+    <code>Date</code> or ms) makes a session cookie. <code>remove</code> takes
+    a cookie straight from <code>get</code>, or <code>{ url, name? }</code>.
+    On Linux, <code>get()</code> without a <code>url</code> needs WebKitGTK
+    2.42+.</p>
   </section>
 
   <section id="open">

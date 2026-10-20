@@ -3014,6 +3014,168 @@ static void do_secret(const std::string& qid, const std::string& rest) {
   send_got(qid, "{\"ok\":false,\"error\":\"bad secret op\"}");
 }
 
+// --- app.cookies (#46): the default WebKitWebContext's cookie manager ---------
+// Every window uses the default context, so this is the whole app's jar,
+// HttpOnly included. The bridge filters; get answers what WebKit gives it.
+// COOKIES <qid> get\t<url>   ('' = whole jar, WebKitGTK 2.42+)
+// COOKIES <qid> set\t<name>\t<value>\t<domain>\t<path>\t<expiresMs>\t<secure01>\t<httpOnly01>\t<samesite>
+// COOKIES <qid> delete\t<name>\t<domain>\t<path>     GOT {ok, removed}
+static WebKitCookieManager* cookie_manager() {
+  return webkit_web_context_get_cookie_manager(webkit_web_context_get_default());
+}
+
+static std::string soup_cookie_json(SoupCookie* c) {
+  std::string expires = "null";
+  if (GDateTime* e = soup_cookie_get_expires(c))
+    expires = std::to_string((long long)g_date_time_to_unix(e) * 1000);
+  const char* same = "null";
+  switch (soup_cookie_get_same_site_policy(c)) {
+    case SOUP_SAME_SITE_POLICY_LAX: same = "\"lax\""; break;
+    case SOUP_SAME_SITE_POLICY_STRICT: same = "\"strict\""; break;
+    case SOUP_SAME_SITE_POLICY_NONE: same = "\"none\""; break;
+  }
+  auto str = [](const char* s) { return json_escape(s ? s : ""); };
+  return std::string("{\"name\":") + str(soup_cookie_get_name(c)) +
+         ",\"value\":" + str(soup_cookie_get_value(c)) +
+         ",\"domain\":" + str(soup_cookie_get_domain(c)) +
+         ",\"path\":" + str(soup_cookie_get_path(c)) +
+         ",\"expires\":" + expires +
+         ",\"secure\":" + (soup_cookie_get_secure(c) ? "true" : "false") +
+         ",\"httpOnly\":" + (soup_cookie_get_http_only(c) ? "true" : "false") +
+         ",\"sameSite\":" + same + "}";
+}
+
+struct CookieOp {
+  std::string qid, name, domain, path;
+  int left = 0, removed = 0;
+};
+
+static void cookies_got_list(CookieOp* op, GList* list, GError* err) {
+  if (err) {
+    send_got(op->qid, "{\"ok\":false,\"error\":" + json_escape(err->message) + "}");
+    g_error_free(err);
+  } else {
+    std::string json = "[";
+    for (GList* l = list; l; l = l->next) {
+      if (json.size() > 1) json += ",";
+      json += soup_cookie_json(static_cast<SoupCookie*>(l->data));
+    }
+    send_got(op->qid, "{\"ok\":true,\"cookies\":" + json + "]}");
+  }
+  g_list_free_full(list, (GDestroyNotify)soup_cookie_free);
+  delete op;
+}
+
+static void cookies_deleted(GObject* src, GAsyncResult* res, gpointer data) {
+  CookieOp* op = static_cast<CookieOp*>(data);
+  webkit_cookie_manager_delete_cookie_finish(WEBKIT_COOKIE_MANAGER(src), res, nullptr);
+  // Answer after the last deletion lands, so a get() straight after
+  // remove() can't still see it.
+  if (--op->left > 0) return;
+  send_got(op->qid, "{\"ok\":true,\"removed\":" + std::to_string(op->removed) + "}");
+  delete op;
+}
+
+static void do_cookies(const std::string& qid, const std::string& rest) {
+  auto f = split_tabs(rest);
+  std::string op = tab_field(f, 0);
+  auto field = [&](size_t i) { return wire_unescape(tab_field(f, i)); };
+  WebKitCookieManager* mgr = cookie_manager();
+
+  if (op == "get") {
+    std::string url = field(1);
+    CookieOp* o = new CookieOp{qid};
+    if (!url.empty()) {
+      webkit_cookie_manager_get_cookies(mgr, url.c_str(), nullptr,
+          [](GObject* src, GAsyncResult* res, gpointer data) {
+            GError* err = nullptr;
+            GList* l = webkit_cookie_manager_get_cookies_finish(
+                WEBKIT_COOKIE_MANAGER(src), res, &err);
+            cookies_got_list(static_cast<CookieOp*>(data), l, err);
+          }, o);
+      return;
+    }
+#if WEBKIT_CHECK_VERSION(2, 42, 0)
+    webkit_cookie_manager_get_all_cookies(mgr, nullptr,
+        [](GObject* src, GAsyncResult* res, gpointer data) {
+          GError* err = nullptr;
+          GList* l = webkit_cookie_manager_get_all_cookies_finish(
+              WEBKIT_COOKIE_MANAGER(src), res, &err);
+          cookies_got_list(static_cast<CookieOp*>(data), l, err);
+        }, o);
+#else
+    delete o;
+    got_unsupported(qid, "listing every cookie needs WebKitGTK 2.42+ (unsupported) — pass a url");
+#endif
+    return;
+  }
+
+  if (op == "set") {
+    std::string expires = field(5), same = field(8);
+    SoupCookie* c = soup_cookie_new(field(1).c_str(), field(2).c_str(),
+                                    field(3).c_str(), field(4).c_str(), -1);
+    if (!expires.empty()) {
+      GDateTime* dt = g_date_time_new_from_unix_utc(std::atoll(expires.c_str()) / 1000);
+      soup_cookie_set_expires(c, dt);
+      g_date_time_unref(dt);
+    }
+    soup_cookie_set_secure(c, field(6) == "1");
+    soup_cookie_set_http_only(c, field(7) == "1");
+    if (same == "lax") soup_cookie_set_same_site_policy(c, SOUP_SAME_SITE_POLICY_LAX);
+    else if (same == "strict") soup_cookie_set_same_site_policy(c, SOUP_SAME_SITE_POLICY_STRICT);
+    else if (same == "none") soup_cookie_set_same_site_policy(c, SOUP_SAME_SITE_POLICY_NONE);
+    webkit_cookie_manager_add_cookie(mgr, c, nullptr,
+        [](GObject* src, GAsyncResult* res, gpointer data) {
+          std::string* q = static_cast<std::string*>(data);
+          GError* err = nullptr;
+          if (webkit_cookie_manager_add_cookie_finish(WEBKIT_COOKIE_MANAGER(src), res, &err)) {
+            send_got(*q, "{\"ok\":true}");
+          } else {
+            send_got(*q, "{\"ok\":false,\"error\":" +
+                             json_escape(err ? err->message : "add_cookie failed") + "}");
+            if (err) g_error_free(err);
+          }
+          delete q;
+        }, new std::string(qid));
+    soup_cookie_free(c);  // add_cookie copies it into WebCore's Cookie
+    return;
+  }
+
+  if (op == "delete") {
+    // delete_cookie reports nothing about whether one existed, so look first:
+    // get_cookies for a URL inside the cookie's own domain + path returns it
+    // (https so secure ones are included), then match exactly.
+    CookieOp* o = new CookieOp{qid, field(1), field(2), field(3)};
+    std::string host = o->domain[0] == '.' ? o->domain.substr(1) : o->domain;
+    std::string url = "https://" + host + (o->path.empty() ? "/" : o->path);
+    webkit_cookie_manager_get_cookies(mgr, url.c_str(), nullptr,
+        [](GObject* src, GAsyncResult* res, gpointer data) {
+          CookieOp* o = static_cast<CookieOp*>(data);
+          WebKitCookieManager* mgr = WEBKIT_COOKIE_MANAGER(src);
+          GList* list = webkit_cookie_manager_get_cookies_finish(mgr, res, nullptr);
+          std::vector<SoupCookie*> hits;
+          for (GList* l = list; l; l = l->next) {
+            SoupCookie* c = static_cast<SoupCookie*>(l->data);
+            if (o->name == (soup_cookie_get_name(c) ?: "") &&
+                o->domain == (soup_cookie_get_domain(c) ?: "") &&
+                o->path == (soup_cookie_get_path(c) ?: ""))
+              hits.push_back(c);
+          }
+          o->left = o->removed = (int)hits.size();
+          if (hits.empty()) {
+            send_got(o->qid, "{\"ok\":true,\"removed\":0}");
+            delete o;
+          }
+          for (SoupCookie* c : hits)
+            webkit_cookie_manager_delete_cookie(mgr, c, nullptr, cookies_deleted, o);
+          g_list_free_full(list, (GDestroyNotify)soup_cookie_free);
+        }, o);
+    return;
+  }
+
+  send_got(qid, "{\"ok\":false,\"error\":\"bad cookies op\"}");
+}
+
 // --- power: login1 sleep inhibitor (+ ScreenSaver for display) ---------------
 
 static int g_inhibit_fd = -1;
@@ -7080,6 +7242,7 @@ static void handle_line(const std::string& line) {
   if (qid_op("POWER", qid, body)) { do_power(qid, body); return; }
   if (qid_op("SOUND", qid, body)) { do_sound(qid, body); return; }
   if (qid_op("SECRET", qid, body)) { do_secret(qid, body); return; }
+  if (qid_op("COOKIES", qid, body)) { do_cookies(qid, body); return; }
   if (qid_op("CAPTURE", qid, body)) { do_capture(qid, body); return; }
   if (qid_op("PDF", qid, body)) { do_pdf(qid, body, ""); return; }
   if (line.rfind("PDF@", 0) == 0) {                  // PDF@<winid> <qid> <path>

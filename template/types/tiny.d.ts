@@ -662,6 +662,50 @@ declare interface TinySecrets {
   delete(key: string): Promise<boolean>;
 }
 
+/** One cookie in the webview's jar (app.cookies). A leading '.' on domain
+ *  means "and its subdomains"; without one the cookie is host-only. */
+declare interface TinyCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  /** ms since the epoch; null = session cookie */
+  expires: number | null;
+  secure: boolean;
+  httpOnly: boolean;
+  /** WebKit (macOS) reports SameSite=None as null */
+  sameSite: 'lax' | 'strict' | 'none' | null;
+}
+
+declare interface TinyCookieInit {
+  name: string;
+  value: string;
+  /** where it belongs: url alone = host-only for its host */
+  url?: string;
+  /** '.example.com' covers subdomains; needed when url is omitted */
+  domain?: string;
+  /** default '/' */
+  path?: string;
+  /** Date or ms since the epoch; omit for a session cookie */
+  expires?: Date | number;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: 'lax' | 'strict' | 'none';
+}
+
+/** The webview's own cookie jar — shared by every window and a wrapped
+ *  site, HttpOnly cookies included. Backend only. */
+declare interface TinyCookies {
+  /** url keeps what a request to it would carry (domain, path, secure).
+   *  Without url, Linux needs WebKitGTK 2.42+. */
+  get(filter?: { url?: string; name?: string; domain?: string; path?: string }): Promise<TinyCookie[]>;
+  /** replaces any cookie with the same name/domain/path */
+  set(cookie: TinyCookieInit): Promise<true>;
+  /** one cookie by name + domain (+ path, default '/') — e.g. straight from
+   *  get() — or everything get({ url, name }) matches; resolves the count */
+  remove(target: { name: string; domain: string; path?: string } | { url: string; name?: string }): Promise<number>;
+}
+
 /** Fired by "update": { "auto": … } when a newer version is available. */
 declare interface TinyUpdateInfo {
   current: string;
@@ -1509,6 +1553,8 @@ declare interface TinyApp {
    *  bounding box — @2x on macOS/Linux, exact pixels on Windows */
   thumbnail(path: string, size?: number): Promise<TinyThumbnail>;
   secrets: TinySecrets;
+  /** the webview's cookie jar, HttpOnly included (backend only) */
+  cookies: TinyCookies;
   /** Touch ID (or the account-password sheet); false covers cancel */
   authenticate(reason?: string): Promise<boolean>;
   nowPlaying: {

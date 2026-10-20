@@ -324,7 +324,8 @@ export function init(app) {          // window is up
   // printToPDF(path), icon(png), presence(mode),
   // macos.applescript(source)/quickLook(paths),
   // battery(), wifi(),
-  // spotlight(query)
+  // spotlight(query),
+  // cookies.get(filter)/set(cookie)/remove(target)  (backend only)
 }
 
 export function onMenu(id, app) {}   // optional: handle menu clicks backend-side
@@ -1983,6 +1984,31 @@ The same page also runs against a built `dist/<name>` or the `.app`'s
   platforms; the per-engine caveats (a denied navigation still made its
   request on Linux, an asked POST re-issues as a GET on Windows, popups keep
   default chrome everywhere) are in TODO-site-wrapper.md.
+- **Cookies (`app.cookies`, backend only).** The webview's own jar — the one
+  every window and a wrapped site share — including the HttpOnly cookies
+  `document.cookie` can't see. The use it was built for: a site logs in,
+  the backend keeps the session, and later pages skip the login.
+
+  ```js
+  // after the user signs in on the wrapped site
+  const [sid] = await app.cookies.get({ url: 'https://app.example.com', name: 'sid' });
+  await app.secrets.set('sid', JSON.stringify(sid));       // not tiny.store
+  // next launch, before loading a page that needs it
+  await app.cookies.set({ url: 'https://app.example.com', ...JSON.parse(await app.secrets.get('sid')) });
+  await app.cookies.remove({ url: 'https://app.example.com' });  // log out
+  ```
+
+  `get({ url?, name?, domain?, path? })` → `[{ name, value, domain, path,
+  expires (ms | null = session), secure, httpOnly, sameSite }]`; with `url`
+  you get what a request to it would carry. `set({ url | domain, name,
+  value, path = '/', expires?, secure?, httpOnly?, sameSite? })` replaces a
+  cookie with the same name/domain/path; `url` alone makes it host-only, a
+  `domain` of `'.example.com'` covers subdomains. `remove()` takes a cookie
+  from `get()` (name + domain + path) or `{ url, name? }`, and resolves the
+  number removed. Names and values with control characters or `;` are
+  refused. Pages get no cookie API: a page that could read the jar could
+  read every site's session — if one needs a cookie, hand it over from your
+  own `api` handler. Linux needs WebKitGTK 2.42+ for `get()` without a `url`.
 
 ### On-device AI (`tiny.macos.ai`)
 
