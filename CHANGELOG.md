@@ -4,6 +4,21 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.59.1 — 2026-10-20
+
+- **`tiny.dialog.confirm(message, 'detail')` shows the detail.** A string
+  second argument was spread into the options as `{ 0: 'D', 1: 'e', … }`,
+  so the detail and any button labels were silently dropped. `confirm` and
+  `alert` now take either the detail string or `{ detail, ok, cancel }`,
+  and `alert` can relabel its button (`{ ok: 'Got it' }`). `prompt` rejects
+  a non-object second argument with a `TypeError` instead of ignoring it.
+  Button labels apply on macOS and Linux; Windows still shows its own
+  OK/Cancel. The docs now point out that the page's bare `confirm()` is the
+  browser's own: one argument, the app name (or the site's origin) as the
+  headline, OK/Cancel only. Use `tiny.dialog.confirm` for anything more.
+  ([#81](https://github.com/tarwin/tinyjsapp/issues/81), thanks to
+  [@Blatman](https://github.com/Blatman) for the report.)
+
 ## 0.59.0 — 2026-10-20
 
 - **Windows: one coordinate space across monitors with different
