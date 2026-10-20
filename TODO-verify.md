@@ -28,7 +28,11 @@ in cli.js's `cmdBuild`.
   naming `dist/<name>.exe` (or `launcher.exe`), not `EEXIST`. Quit the app
   and the next build succeeds. *(2026-10-19: both named
   `dist/launcher.exe`, exit 1; rebuild after quitting succeeded.)*
-- [ ] **Linux paths** — `~/.cache/<id>` and `~/.local/state/<id>` appear.
+- [x] **Linux paths** — `~/.cache/<id>` and `~/.local/state/<id>` appear.
+  *(2026-10-19, arm64 VM, fresh ids: dev page, dev backend, built app page —
+  all three dirs exist, `file.log` written into `paths.logs`. Control run
+  with main's bridge.js: data + cache already existed (something else makes
+  them on Linux), `~/.local/state/<id>` didn't, write failed ENOENT.)*
 
 ## macOS — Dock reopening after hide-on-close (2026-10-16)
 
