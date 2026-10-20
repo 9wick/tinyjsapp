@@ -37,3 +37,6 @@ It checks:
 
 - 2026-10-20, macOS 27.0 arm64: `check.py` PASS, ad-hoc and with a
   Developer ID identity.
+- 2026-10-20, Windows 11 26200: `check.py` PASS, symlink case SKIPped (no
+  Developer Mode / admin to create one). Junctions — which need neither —
+  were checked by hand and are rejected; see TODO-verify.md.

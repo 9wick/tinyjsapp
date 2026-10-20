@@ -24,9 +24,28 @@ staging, the Linux exec-bit re-copy, the taken-name list) have never run.
   `macos/` README won, `docs/` whole, `install.sh` still 755; `stapler
   validate` OK, `codesign --verify --deep --strict` OK, `spctl`
   accepted as Notarized Developer ID.)*
-- [ ] **Windows** — `check.py` PASS; then open the publish zip in Explorer
+- [x] **Windows** — `check.py` PASS; then open the publish zip in Explorer
   and see `README.txt` beside `<name>.exe`; run an auto-update and see the
-  new version's README replace the old one.
+  new version's README replace the old one. *(2026-10-20, Windows 11
+  26200: `check.py` PASS except the symlink case, SKIPped — creating a
+  symlink needs Developer Mode or admin. Junctions need neither, so they
+  were tried by hand: `extras/` itself, a top-level folder, one nested in a
+  folder, one in `extras/windows/`, and a list entry reached through one
+  all fail the build ("symlinks are not supported"; libuv's lstat reports
+  a junction as a link) and nothing lands in `dist/`. Publish zip listed:
+  `upapp/README.txt` beside `upapp/upapp.exe`, `docs/` whole. Real update
+  0.1.0 → 0.2.0 from a localhost manifest: check → install → relaunch
+  reported 0.2.0, and `README.txt` read the v0.2.0 text.)*
+- [ ] **Windows: README's "updates replace them" is not what happens.**
+  The same update left `OLD-ONLY-IN-V1.txt` (dropped from v0.2.0's
+  extras), `docs/a.txt` (v0.2.0 ships `docs/b.txt`, so `docs/` now holds
+  both) and a user's `USER-SAVED.txt`. `winSwapDir` overlays file by file
+  and prunes only `WIN_OWNED_DIRS` (`executables`, `resources`), on purpose:
+  the Shelf's marker lives in that folder. Same name → replaced; dropped
+  or renamed → kept forever. Either the README's Windows/Linux bullet gets
+  split per OS, or the updater learns which files were the previous
+  version's extras (a list written at build time) and prunes those.
+  Linux not checked — it may really swap the folder.
 - [ ] **Linux** — `check.py` PASS (22.04 container is enough); extract the
   tarball and run the shipped `install.sh` directly.
 
