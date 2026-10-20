@@ -184,11 +184,34 @@ static bool g_asleep = false;
 // a windowless launcher never creates — there the work rides a message to the
 // host window instead, and the do_* handlers get a null webview_t (any that
 // touch it check first).
+//
+// Once webview_run has returned, queued work is dropped: webview_destroy pumps
+// messages while it tears the engine down, and an EVAL the bridge sent just
+// before quitting (amp's satellites push window-state as main closes) ran
+// eval on the half-destroyed engine — an access violation on every amp quit,
+// silent until 0.58.1 started reporting the launcher's exit status. And the
+// pipe thread must not post at all once destroy has begun (webview_dispatch
+// on the freed engine was the other crash): it posts under g_dispatch_mx, and
+// run() takes the same lock to set g_stopping before webview_destroy.
 typedef void (*tiny_fn)(webview_t, void *);
+static std::atomic<bool> g_stopping{false};
+static std::mutex g_dispatch_mx;
+struct TinyDispatch {
+  tiny_fn fn;
+  void *arg;
+};
+static void tiny_dispatch_run(webview_t w, void *a) {
+  TinyDispatch *d = static_cast<TinyDispatch *>(a);
+  if (!g_stopping)
+    d->fn(w, d->arg); // when stopping, arg leaks: the process is exiting
+  delete d;
+}
 static void tiny_dispatch(tiny_fn fn, void *arg) {
-  if (g_w)
-    webview_dispatch(g_w, fn, arg);
-  else
+  if (g_w) {
+    std::lock_guard<std::mutex> lk(g_dispatch_mx);
+    if (!g_stopping) // webview_dispatch only posts; holding the lock is cheap
+      webview_dispatch(g_w, tiny_dispatch_run, new TinyDispatch{fn, arg});
+  } else
     PostMessageW(g_host, WM_TINY_DISPATCH, (WPARAM)fn, (LPARAM)arg);
 }
 
@@ -2296,10 +2319,18 @@ static std::string screens_json() {
 // DIPs) kept its 1.5x size, sat half-and-half physically, never rescaled, and
 // read back through the 150% monitor 100 DIPs off (#70). A hop inside the
 // target fires WM_DPICHANGED synchronously; the webview's handler resizes.
-static void match_monitor_dpi(HWND hwnd, const ScreenLayout &s) {
+// The hop goes to the spot nearest `want` (the final physical top-left) that
+// keeps the window inside the target, so a drag across (amp's lockstep group
+// moves call this every frame) never jumps to the monitor's corner.
+static void match_monitor_dpi(HWND hwnd, const ScreenLayout &s, POINT want) {
   if (std::fabs(window_scale(hwnd) - s.scale) < 0.01)
     return;
-  SetWindowPos(hwnd, nullptr, s.px.left, s.px.top, 0, 0,
+  RECT r;
+  GetWindowRect(hwnd, &r);
+  long w = r.right - r.left, h = r.bottom - r.top;
+  long x = (std::max)(s.px.left, (std::min)(want.x, s.px.right - w));
+  long y = (std::max)(s.px.top, (std::min)(want.y, s.px.bottom - h));
+  SetWindowPos(hwnd, nullptr, x, y, 0, 0,
                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -2315,8 +2346,8 @@ static void move_window_dip(HWND hwnd, double x, double y) {
       L, x, y, (r.right - r.left) / ws, (r.bottom - r.top) / ws);
   if (!s)
     return;
-  match_monitor_dpi(hwnd, *s);
   POINT p = dip_to_px(*s, x, y);
+  match_monitor_dpi(hwnd, *s, p);
   // SWP_NOACTIVATE: lockstep group-drags reposition N windows per frame —
   // without it every move steals activation and the drag crawls.
   SetWindowPos(hwnd, nullptr, p.x, p.y, 0, 0,
@@ -2330,10 +2361,10 @@ static void move_window_on_screen(HWND hwnd, int idx, double x, double y,
   if (idx < 0 || idx >= (int)L.size())
     return;
   const ScreenLayout &s = L[idx];
-  match_monitor_dpi(hwnd, s);
   double k = px ? 1.0 : s.scale;
-  SetWindowPos(hwnd, nullptr, (int)lround(s.px.left + x * k),
-               (int)lround(s.px.top + y * k), 0, 0,
+  POINT p = {(LONG)lround(s.px.left + x * k), (LONG)lround(s.px.top + y * k)};
+  match_monitor_dpi(hwnd, s, p);
+  SetWindowPos(hwnd, nullptr, p.x, p.y, 0, 0,
                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -5410,6 +5441,21 @@ struct SecCtrlHandler
   }
 };
 
+static std::map<HWND, UINT> g_secwin_old_dpi; // WM_GETDPISCALEDSIZE -> WM_DPICHANGED
+
+// Resize so the CLIENT (the page's box) is exactly cw x ch physical pixels,
+// whatever the frame and menu row measure on this monitor. Top-left stays.
+static void fit_client(HWND hwnd, int cw, int ch) {
+  RECT o, c;
+  GetWindowRect(hwnd, &o);
+  GetClientRect(hwnd, &c);
+  if (c.right == cw && c.bottom == ch)
+    return;
+  SetWindowPos(hwnd, nullptr, 0, 0, (o.right - o.left) + cw - c.right,
+               (o.bottom - o.top) + ch - c.bottom,
+               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 static LRESULT CALLBACK secwin_proc(HWND hwnd, UINT msg, WPARAM wp,
                                     LPARAM lp) {
   switch (msg) {
@@ -5453,6 +5499,31 @@ static LRESULT CALLBACK secwin_proc(HWND hwnd, UINT msg, WPARAM wp,
   case WM_EXITSIZEMOVE:
     geom_msg(hwnd, msg);
     break;
+  // Keep a secondary's size in DIPs across a DPI change, as main's vendored
+  // handler does. Without this one kept its PHYSICAL size: 1568x1060 on a
+  // 100% screen came out 1045x707 on a 150% one (#70). The old DPI is only
+  // readable here, before the change; WM_DPICHANGED follows at once.
+  case 0x02E4 /* WM_GETDPISCALEDSIZE */:
+    g_secwin_old_dpi[hwnd] = (UINT)lround(window_scale(hwnd) * 96);
+    return FALSE; // let Windows suggest; WM_DPICHANGED sets the real size
+  case 0x02E0 /* WM_DPICHANGED */: {
+    const RECT *sug = (const RECT *)lp;
+    UINT nd = HIWORD(wp);
+    auto it = g_secwin_old_dpi.find(hwnd);
+    UINT od = it != g_secwin_old_dpi.end() ? it->second : 0;
+    if (it != g_secwin_old_dpi.end())
+      g_secwin_old_dpi.erase(it);
+    RECT c;
+    GetClientRect(hwnd, &c);
+    SetWindowPos(hwnd, nullptr, sug->left, sug->top, sug->right - sug->left,
+                 sug->bottom - sug->top, SWP_NOZORDER | SWP_NOACTIVATE);
+    // the frame doesn't scale linearly with DPI: set the page box exactly
+    if (od && nd) {
+      double k = (double)nd / od;
+      fit_client(hwnd, (int)lround(c.right * k), (int)lround(c.bottom * k));
+    }
+    return 0;
+  }
   case WM_ACTIVATE:
     emit_winstate(hwnd, LOWORD(wp) != WA_INACTIVE);
     break;
@@ -5791,6 +5862,10 @@ static void do_winopen(webview_t, void *arg) {
   // first paint, so a new window neither flashes a bar into place nor opens
   // a menu-bar's-worth short: attach_menu hands the row back to the frame.
   render_menu(hwnd);
+  // AdjustWindowRect above measured the frame at the SYSTEM DPI; on a monitor
+  // of another scale the real frame differs and the page opened short
+  // (600x400 asked on a 150% screen gave 596x389). Measure and correct.
+  fit_client(hwnd, (int)lround(wr->width * sc), (int)lround(wr->height * sc));
   ShowWindow(hwnd, SW_SHOW);
   SecCtrlHandler *ch = new SecCtrlHandler();
   ch->winid = wr->id;
@@ -7348,6 +7423,27 @@ static LRESULT CALLBACK tiny_wndproc(HWND hwnd, UINT msg, WPARAM wp,
       return r;
     }
     break;
+  // The library's own WM_DPICHANGED sizes the frame for the scaled client but
+  // leaves the menu bar out of its sum, so a window with a menu lost one menu
+  // bar of height per screen crossing (Tiny Deck: 720 -> 700 -> 680). Let it
+  // run, then fit the client to the scaled size exactly as secondaries do.
+  case 0x02E4 /* WM_GETDPISCALEDSIZE */:
+    g_secwin_old_dpi[hwnd] = (UINT)lround(window_scale(hwnd) * 96);
+    break;
+  case 0x02E0 /* WM_DPICHANGED */: {
+    auto it = g_secwin_old_dpi.find(hwnd);
+    UINT od = it != g_secwin_old_dpi.end() ? it->second : 0, nd = HIWORD(wp);
+    if (it != g_secwin_old_dpi.end())
+      g_secwin_old_dpi.erase(it);
+    RECT c;
+    GetClientRect(hwnd, &c);
+    LRESULT r = CallWindowProcW(g_orig_wndproc, hwnd, msg, wp, lp);
+    if (od && nd && !IsZoomed(hwnd)) {
+      double k = (double)nd / od;
+      fit_client(hwnd, (int)lround(c.right * k), (int)lround(c.bottom * k));
+    }
+    return r;
+  }
   case WM_TINY_DISPATCH: // windowless tiny_dispatch
     ((tiny_fn)wp)(g_w, (void *)lp);
     return 0;
@@ -9391,6 +9487,10 @@ static int run(int argc, char **argv) {
   std::thread(pipe_read_loop).detach();
 
   webview_run(g_w);
+  {
+    std::lock_guard<std::mutex> lk(g_dispatch_mx); // see tiny_dispatch
+    g_stopping = true;
+  }
   webview_destroy(g_w);
   if (g_tray_added) {
     tray_ensure_icon_struct();

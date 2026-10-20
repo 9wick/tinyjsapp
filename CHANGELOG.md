@@ -37,6 +37,15 @@ https://tinyjs.app/changelog.
   is shown once it has been placed. Off by default.
   ([#70](https://github.com/tarwin/tinyjsapp/issues/70), thanks to
   [@lionel-rowe](https://github.com/lionel-rowe) for the report.)
+- **Windows: windows keep their size when moved to a screen with a different
+  scale.** A secondary window kept its pixel size, so a 600×400 window
+  dragged from a 100% screen to a 150% one came out 400×267, and one opened
+  on a scaled screen started a few points short. A main window with a menu
+  bar lost the bar's height on every crossing (720 → 700 → 680).
+- **Windows: no more crash on quit.** An app that was still sending updates
+  to its windows as it quit could make the launcher crash during teardown
+  (amp did on every quit). Since 0.58.1 that showed up as
+  `webview launcher exited with status -1073741819` and a non-zero exit code.
 
 ## 0.58.1 — 2026-10-19
 

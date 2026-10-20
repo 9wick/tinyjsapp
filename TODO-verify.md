@@ -67,6 +67,17 @@ a broadcast spy) was not committed.
   - Slide across (40 SetWindowPos steps from another process — the same
     WM_MOVE path a drag takes, but not a mouse drag): one onState 0 → 1;
     the other way one 1 → 0.
+  - Sizes across 100% ↔ 150% (fixed after the first pass): secondaries
+    opened or moved either way read exactly 600x400; Tiny Deck (has a menu
+    bar) hopped 4× at 1100x720, 800x500, 640x400, 500x320, exact every
+    time. Kitchen-sink's Screens card driven over CDP: place per screen,
+    px placement 640x400 px at (32,32) px, matchScreen with a wrong uid,
+    foregroundScreen, fullscreen on the other screen, rememberWindows
+    reopening on screen 1.
+  - amp at 100/150: docked group moves in lockstep across and back (CDP
+    drag), renders right on 150%, quits with exit 0 (crashed before; see
+    TODO-screens.md). Real-mouse drag across mixed DPI NOT done — see the
+    WebView2 screenX note there.
 - [ ] **Windows, uid** — stable across a reboot; two identical monitors get
   different uids; note what happens when one moves to another port.
   - Two identical panels (both "Parallels Vu"): different uids,

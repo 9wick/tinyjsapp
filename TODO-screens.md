@@ -24,6 +24,26 @@ Found and fixed during the Windows run:
   Main now starts DWM-cloaked when it will start hidden.
 - One 116x0 placement got saved after a monitor removal (not reproduced).
   The bridge now never saves or restores an empty content box.
+- Size across a scale change: secondaries kept their physical size
+  (secwin_proc had no WM_DPICHANGED; 600x400 DIP opened on 150% came out
+  596x389, AdjustWindowRect used the system DPI), and main lost its menu
+  bar's height per crossing (the vendored handler sums the frame without
+  the menu: Tiny Deck 720 → 700 → 680). Both now fit the client to
+  old size × new/old DPI after the change. A window narrower than its own
+  menu bar still drifts, because the bar wraps differently per DPI.
+- Not #70, found testing amp: the launcher crashed on quit (0xC0000005)
+  whenever the bridge was still sending EVALs (amp's satellites push
+  window-state as main closes). Queued dispatches ran on the
+  half-destroyed engine, and the pipe thread could post to it. tiny_dispatch
+  now stops both once webview_run returns. Pre-existing; 0.58.1 made it
+  visible by passing the exit status on.
+- Open, for apps: WebView2's own screen model disagrees with ours on mixed
+  DPI. On a 150% screen at x 3456, `screen.availLeft` reads 2304 (physical
+  / own scale) while `window.screenX` reads our space and goes stale after
+  a programmatic move. An app dragging by `e.screenX` deltas (amp's
+  drag.js) may jump at the boundary with a real mouse. CDP-synthesized
+  drags can't show it; needs a hand drag on mixed DPI. If it jumps, drag
+  by `clientX` deltas against getState() instead.
 - Not fixed: re-adding a monitor sends two WM_DISPLAYCHANGE ~930ms apart,
   past the 500ms debounce, so `screens-changed` fires twice with the same
   list. A bridge-side "same list as last time" skip would collapse it.
