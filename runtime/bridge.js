@@ -3723,12 +3723,20 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
             push('theme', lastTheme);
           } else if (kind === 'screens') {
             // plugged/unplugged/rearranged/rescaled — pages get the fresh
-            // list, the backend the usual onSystem('screens', null)
-            refreshScreens().then((list) => push('screens-changed', list), () => {});
+            // list, the backend the usual onSystem('screens', null). Only
+            // when screens() really changed: macOS also posts its screen-
+            // parameters notification around a window entering or leaving
+            // fullscreen, with nothing different to report.
+            const before = JSON.stringify(screensCache);
+            refreshScreens().then((list) => {
+              if (JSON.stringify(list) === before) return;
+              push('screens-changed', list);
+              fire('onSystem', onSystem, kind, null, app);
+            }, () => {});
           } else {
             push(kind, {}); // 'sleep' | 'wake'
           }
-          fire('onSystem', onSystem, kind, value ?? null, app);
+          if (kind !== 'screens') fire('onSystem', onSystem, kind, value ?? null, app);
         } else if (line.startsWith('AITOOL ')) {
           // The model wants a tool run. The launcher thread that asked is
           // BLOCKED until we answer, so answer on every path — including a

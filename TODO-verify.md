@@ -28,9 +28,27 @@ unplug. Linux launcher compiles (Ubuntu 22.04 container) but has never run.
   as a NEW id (6 → 9) with the same uid → back on it. `screens-changed`
   reached backend (`onSystem('screens')`) and page (`[1, 8]` then `[1]`).
   *(2026-10-20, macOS 27.0.1, M-series.)*
-- [ ] **macOS, deferred show** — with rememberWindows the main window never
+- [x] **macOS, deferred show** — with rememberWindows the main window never
   appears at the default spot before jumping (watch it, or screen-record a
-  launch).
+  launch). *(2026-10-20: CGWindowList polled every 5ms through a restore
+  launch — the first on-screen frame is already at the restored spot,
+  growing 492x376 → 500x382 over ~0.1s, which is AppKit's open animation;
+  nothing at the default centred position.)*
+- [x] **macOS re-check after the Windows/Linux fixes (`aceea9e`)** — probe
+  `ok: true` and restore exact on THREE screens: 2x built-in, a real 2x
+  external (YOGA Pad Pro, 1080x675) and the 1x virtual display. Kitchen
+  sink `feat/screens` (examples repo) driven by an injected script through
+  the Screens card: send-to-screen on all three, pixel-exact 640x400 px at
+  (32, 32) px on 1x, matchScreen with a wrong uid, fullscreen on the next
+  screen and back, foregroundScreen — no page errors. On the 1080x675
+  external a 1100x720 window is shrunk and nudged up by AppKit to fit
+  (local y 31, not 40): OS behaviour, not ours. Found + fixed: macOS posts
+  its screen-parameters notification on fullscreen enter/exit, so
+  `screens-changed` fired twice with an unchanged list; the bridge now only
+  emits when screens() actually changed (unplug/replug still gives exactly
+  2 events). That dedupe is bridge-side, so it applies on every OS —
+  worth one plug/unplug re-check on Windows and Linux.
+  *(2026-10-20, macOS 27.0.1.)*
 
 Windows runs: Windows 11 arm64 in Parallels, launcher rebuilt from the branch
 by `tinyjs dev`. Second screen = an external on the Mac passed through as a
