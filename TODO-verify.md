@@ -17,8 +17,13 @@ staging, the Linux exec-bit re-copy, the taken-name list) have never run.
 - [x] **macOS** — `check.py` PASS: dmg root, not in the .app / update zip,
   no-`--dmg` note, lists, errors; the .app in the dmg verifies ad-hoc and
   signed with a Developer ID. *(2026-10-20, macOS 27.0, arm64.)*
-- [ ] **macOS, notarize** — `tinyjs notarize --dmg` with a Developer ID:
+- [x] **macOS, notarize** — `tinyjs notarize --dmg` with a Developer ID:
   the rebuilt dmg still has the extras beside the stapled app.
+  *(2026-10-20, macOS 27.0 arm64: throwaway app with root + `macos/`
+  README, LICENSE, `docs/`, `install.sh`. Apple: Accepted. Mounted dmg:
+  `macos/` README won, `docs/` whole, `install.sh` still 755; `stapler
+  validate` OK, `codesign --verify --deep --strict` OK, `spctl`
+  accepted as Notarized Developer ID.)*
 - [ ] **Windows** — `check.py` PASS; then open the publish zip in Explorer
   and see `README.txt` beside `<name>.exe`; run an auto-update and see the
   new version's README replace the old one.
