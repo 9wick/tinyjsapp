@@ -4,6 +4,24 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.58.1 — 2026-10-19
+
+- **Linux: apps start on NVIDIA + Wayland.** With NVIDIA's proprietary
+  driver on a Wayland session, the window opened and the app died within a
+  second, before the page loaded. The cause was the driver's explicit-sync
+  path: the compositor rejected the window's surface, and GTK exited. The
+  stock WebKitGTK MiniBrowser dies the same way. The launcher now sets the
+  driver's own opt-out, `__NV_DISABLE_EXPLICIT_SYNC=1`, when it finds the
+  NVIDIA driver on Wayland. GPU acceleration stays on and fullscreen video
+  works, which the `WEBKIT_DISABLE_*` workarounds broke. If you have already
+  set the variable yourself, including to `0`, your value is kept.
+- **A crashed webview no longer looks like a normal quit.** When the
+  launcher died, `tinyjs dev` and built apps still exited with code 0 and
+  printed nothing. They now print `tinyjs: webview launcher exited with
+  status N` (or `killed by <signal>`) and exit with a non-zero code. Thanks
+  to [@AbrLis](https://github.com/AbrLis) for the report and for tracking
+  down the cause ([#78](https://github.com/tarwin/tinyjsapp/issues/78)).
+
 ## 0.58.0 — 2026-10-19
 
 - **`app.cookies`: read and write the webview's cookies from the

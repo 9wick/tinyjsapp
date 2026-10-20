@@ -175,6 +175,14 @@
   <section>
 
     <div class="rel">
+      <h2>0.58.1 <span class="date">2026-10-19</span></h2>
+      <ul>
+        <li><b>Linux: apps start on NVIDIA + Wayland.</b> With NVIDIA&rsquo;s proprietary driver on a Wayland session, the window opened and the app died within a second, before the page loaded. The cause was the driver&rsquo;s explicit-sync path: the compositor rejected the window&rsquo;s surface, and GTK exited. The stock WebKitGTK MiniBrowser dies the same way. The launcher now sets the driver&rsquo;s own opt-out, <code>__NV_DISABLE_EXPLICIT_SYNC=1</code>, when it finds the NVIDIA driver on Wayland. GPU acceleration stays on and fullscreen video works, which the <code>WEBKIT_DISABLE_*</code> workarounds broke. If you have already set the variable yourself, including to <code>0</code>, your value is kept.</li>
+        <li><b>A crashed webview no longer looks like a normal quit.</b> When the launcher died, <code>tinyjs dev</code> and built apps still exited with code 0 and printed nothing. They now print <code>tinyjs: webview launcher exited with status N</code> (or <code>killed by &lt;signal&gt;</code>) and exit with a non-zero code. Thanks to <a href="https://github.com/AbrLis">@AbrLis</a> for the report and for tracking down the cause (<a href="https://github.com/tarwin/tinyjsapp/issues/78">#78</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.58.0 <span class="date">2026-10-19</span></h2>
       <ul>
         <li><b><code>app.cookies</code>: read and write the webview&rsquo;s cookies from the backend.</b> The backend can now see the same cookie jar the app&rsquo;s windows and a wrapped site use, including HttpOnly cookies that <code>document.cookie</code> can&rsquo;t reach. <code>get({ url?, name?, domain?, path? })</code> lists them (with a <code>url</code>, the ones a request to it would carry), <code>set({ url | domain, name, value, &hellip; })</code> adds or replaces one, and <code>remove()</code> deletes one cookie or everything for a url. The case it was built for: a site logs in, the app keeps the session (in <code>app.secrets</code>), and a later launch restores it so the user skips the login. <code>set()</code> defaults <code>sameSite</code> to <code>'lax'</code> on every OS. A cookie a site set without SameSite reads as that engine&rsquo;s own default (<code>'none'</code> on macOS, <code>'lax'</code> on Windows, either on Linux by WebKitGTK version). Pages get no cookie API: a page that could read the jar could read every site&rsquo;s session. All three OSes. Thanks to <a href="https://github.com/zhuyuanmin">@zhuyuanmin</a> for the request and <a href="https://github.com/slabbdev">@slabbdev</a> for helping scope it (<a href="https://github.com/tarwin/tinyjsapp/issues/46">#46</a>).</li>
