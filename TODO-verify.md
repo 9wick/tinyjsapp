@@ -46,8 +46,20 @@ staging, the Linux exec-bit re-copy, the taken-name list) have never run.
   split per OS, or the updater learns which files were the previous
   version's extras (a list written at build time) and prunes those.
   Linux not checked — it may really swap the folder.
-- [ ] **Linux** — `check.py` PASS (22.04 container is enough); extract the
-  tarball and run the shipped `install.sh` directly.
+  Linux checked (2026-10-20): it does — the README is right for Linux, so
+  the fix is the Windows half only.
+- [x] **Linux** — `check.py` PASS (22.04 container is enough); extract the
+  tarball and run the shipped `install.sh` directly. *(2026-10-20, Ubuntu
+  24.04 arm64 host: `check.py` all PASS. Publish tarball: one `upapp/`
+  with `launcher`, the backend, `README.txt`, `docs/`, `install.sh` 755;
+  extracted, `install.sh` ran both by absolute path and as `./install.sh`.
+  Real update 0.1.0 → 0.2.0 from a localhost manifest, installed folder
+  holding v1's extras + a user's `USER-SAVED.txt`: relaunched as 0.2.0, and
+  the folder is exactly v0.2.0's — new `README.txt`, `docs/b.txt` only,
+  `OLD-ONLY-IN-V1.txt` and `USER-SAVED.txt` gone, `install.sh` still 755.
+  Same with `TMPDIR=/dev/shm` (tmpfs, so the cross-filesystem copyTree
+  path instead of rename): identical result, exec bits kept, no
+  `tinyjs-update-*` left behind.)*
 
 ## #70 — multi-screen: one Windows DIP space, screen-relative placement, `rememberWindows` (`feat/screens-70`, 2026-10-20)
 
