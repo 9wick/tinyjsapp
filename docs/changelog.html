@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.57.9 <span class="date">2026-10-19</span></h2>
+      <ul>
+        <li><b>Linux: <code>win.onDrop</code> fires once, when the file is released.</b> It fired while a file was still being dragged over the window, every time the drag entered it, and not at the release itself, so a page couldn&rsquo;t tell a held file from a dropped one. Now it fires exactly once, on release, and a drag that leaves the window without dropping sends nothing. macOS and Windows already behaved this way. Thanks to <a href="https://github.com/AbrLis">@AbrLis</a> for the detailed report (<a href="https://github.com/tarwin/tinyjsapp/issues/77">#77</a>).</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.57.8 <span class="date">2026-10-19</span></h2>
       <ul>
         <li><b>macOS: clicking the Dock icon brings back a window hidden by <code>setHideOnClose(true)</code>.</b> The red close button hid the main window as expected, but nothing brought it back: clicking the app&rsquo;s Dock icon did nothing. Now it shows the same window again, with its page state intact. A visible or minimized window, and an app with <code>"mainWindow": false</code>, behave as before. Windows and Linux already showed the window when the app is launched again. Thanks to <a href="https://github.com/9wick">@9wick</a> for the fix (<a href="https://github.com/tarwin/tinyjsapp/pull/73">#73</a>).</li>

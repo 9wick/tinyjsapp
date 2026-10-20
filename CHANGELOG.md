@@ -4,6 +4,17 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.57.9 — 2026-10-19
+
+- **Linux: `win.onDrop` fires once, when the file is released.** It fired
+  while a file was still being dragged over the window, every time the drag
+  entered it, and not at the release itself, so a page couldn't tell a
+  held file from a dropped one. Now it fires exactly once, on release, and
+  a drag that leaves the window without dropping sends nothing. macOS and
+  Windows already behaved this way. Thanks to
+  [@AbrLis](https://github.com/AbrLis) for the detailed report
+  ([#77](https://github.com/tarwin/tinyjsapp/issues/77)).
+
 ## 0.57.8 — 2026-10-19
 
 - **macOS: clicking the Dock icon brings back a window hidden by
