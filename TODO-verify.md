@@ -28,6 +28,11 @@ ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
   Xvfb + dbus-run-session, WebKitGTK 2.50.4 — a real launcher and
   WebKitGTK, but not a desktop session; x86_64 and pre-2.42 WebKitGTK
   not run.)*
+  Re-run on the VM's real Wayland desktop (WebKitGTK 2.52.6, arm64, clean
+  jar): every row as expected, server.py saw `sid=s3cret; injected=v1;
+  sess=a b=c`, `all` = 2. But unset SameSite (`vis`) reads `lax` here, not
+  `none` as in the 2.50.4 container — it varies by WebKitGTK version, so
+  don't document a fixed value. *(2026-10-19.)*
 
 ## `app.paths()` creates data/cache/logs; build names a busy dist/ (#71, #72, 2026-10-19)
 
