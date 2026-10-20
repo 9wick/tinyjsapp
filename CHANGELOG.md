@@ -4,6 +4,16 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.59.2 — 2026-10-20
+
+- **Windows: `tiny.dialog` button labels.** `alert`, `confirm` and
+  `prompt` now show the `ok` and `cancel` labels you pass, as macOS and
+  Linux already did; before, Windows always showed OK/Cancel. Buttons grow
+  to fit a long label, and the box widens if they need the room. A `&` in a
+  label shows as a `&` rather than underlining the next letter. The page's
+  own `prompt()` keeps OK/Cancel.
+  ([#81](https://github.com/tarwin/tinyjsapp/issues/81))
+
 ## 0.59.1 — 2026-10-20
 
 - **`tiny.dialog.confirm(message, 'detail')` shows the detail.** A string

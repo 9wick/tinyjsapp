@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.59.2 <span class="date">2026-10-20</span></h2>
+      <ul>
+        <li><b>Windows: <code>tiny.dialog</code> button labels.</b> <code>alert</code>, <code>confirm</code> and <code>prompt</code> now show the <code>ok</code> and <code>cancel</code> labels you pass, as macOS and Linux already did; before, Windows always showed OK/Cancel. Buttons grow to fit a long label, and the box widens if they need the room. A <code>&amp;</code> in a label shows as a <code>&amp;</code> rather than underlining the next letter. The page&rsquo;s own <code>prompt()</code> keeps OK/Cancel. (<a href="https://github.com/tarwin/tinyjsapp/issues/81">#81</a>)</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.59.1 <span class="date">2026-10-20</span></h2>
       <ul>
         <li><b><code>tiny.dialog.confirm(message, 'detail')</code> shows the detail.</b> A string second argument was spread into the options as <code>{ 0: 'D', 1: 'e', … }</code>, so the detail and any button labels were silently dropped. <code>confirm</code> and <code>alert</code> now take either the detail string or <code>{ detail, ok, cancel }</code>, and <code>alert</code> can relabel its button (<code>{ ok: 'Got it' }</code>). <code>prompt</code> rejects a non-object second argument with a <code>TypeError</code> instead of ignoring it. Button labels apply on macOS and Linux; Windows still shows its own OK/Cancel. The docs now point out that the page&rsquo;s bare <code>confirm()</code> is the browser&rsquo;s own: one argument, the app name (or the site&rsquo;s origin) as the headline, OK/Cancel only. Use <code>tiny.dialog.confirm</code> for anything more. (<a href="https://github.com/tarwin/tinyjsapp/issues/81">#81</a>, thanks to <a href="https://github.com/Blatman">@Blatman</a> for the report.)</li>
