@@ -1426,8 +1426,16 @@ await watchTree(FRONTEND, () => {
 `;
   }
 
+  // Pass the launcher's death on (#78): GDK _exit(1)s on a Wayland protocol
+  // error, and a flat exit(0) made that crash look like a normal quit.
   entry += `
-await app.done;
+const launcherSt = await app.done;
+if (launcherSt?.term_signal || launcherSt?.exit_status) {
+  console.error('tinyjs: webview launcher ' + (launcherSt.term_signal
+    ? 'killed by ' + launcherSt.term_signal
+    : 'exited with status ' + launcherSt.exit_status));
+  tjs.exit(launcherSt.exit_status || 1);
+}
 tjs.exit(0);
 `;
   await tjs.writeFile(B + '/entry.js', enc.encode(entry));

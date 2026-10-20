@@ -8,6 +8,24 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #78 — NVIDIA + Wayland: launcher sets `__NV_DISABLE_EXPLICIT_SYNC=1` (2026-10-19)
+
+The proprietary NVIDIA driver's explicit-sync path got the launcher's
+Wayland connection killed (GDK `Error 71` → `_exit(1)`) before the page
+loaded; stock MiniBrowser died the same way. The reporter confirmed that
+`__NV_DISABLE_EXPLICIT_SYNC=1` alone fixes it, with GPU compositing and
+fullscreen video still working. The launcher now sets it before `gtk_init`
+when `WAYLAND_DISPLAY` is set and `/proc/driver/nvidia/version` exists, and
+leaves it alone if the user has already set it. No NVIDIA machine here.
+
+- [ ] **Linux, NVIDIA + Wayland** — an app launches with no env vars, and
+  `video.webkitEnterFullscreen()` shows the picture. (Reporter's box:
+  CachyOS, KDE 6.7.5, RTX 4060, driver 615.78.08, WebKitGTK 2.52.6.)
+- [x] **Linux, non-NVIDIA (VM, Wayland)** — the gate stays closed and the
+  app runs as before; a self-quitting page exits 0, and a SIGABRT'd
+  launcher now prints `tinyjs: webview launcher killed by SIGABRT` and
+  exits 1 (it used to exit 0). *(2026-10-19, arm64 VM.)*
+
 ## #46 — `app.cookies`: the webview's cookie jar (`feat/cookies-46`, 2026-10-19)
 
 Backend-only `app.cookies.get/set/remove` over each engine's own store

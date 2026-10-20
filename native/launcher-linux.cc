@@ -7507,6 +7507,15 @@ int main(int argc, char** argv) {
         "or a virtual display (e.g. xvfb-run).\n");
     return 3;
   }
+  // NVIDIA's proprietary driver + Wayland: its EGL explicit-sync path makes
+  // the compositor reject our surface (GDK "Error 71", then _exit(1)) before
+  // the page loads — stock MiniBrowser dies the same way (#78). The driver's
+  // own opt-out keeps GPU compositing (unlike WEBKIT_DISABLE_*, which also
+  // blacked out fullscreen video). Set before gtk_init so our EGL and the
+  // WebKit children (they inherit environ) all see it; a user's explicit
+  // value, including 0, wins.
+  if (getenv("WAYLAND_DISPLAY") && access("/proc/driver/nvidia/version", F_OK) == 0)
+    setenv("__NV_DISABLE_EXPLICIT_SYNC", "1", 0);
   if (!gtk_init_check(&argc, &argv)) {
     const char* d = getenv("DISPLAY");
     if (!d) d = getenv("WAYLAND_DISPLAY");
