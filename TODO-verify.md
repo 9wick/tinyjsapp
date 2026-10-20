@@ -8,6 +8,63 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
+
+`test/extras/check.py` (README there) — builds and publishes only, no window
+needed. Done on all three OSes, including a real auto-update on Windows and
+Linux; nothing owed.
+
+- [x] **macOS** — `check.py` PASS: dmg root, not in the .app / update zip,
+  no-`--dmg` note, lists, errors; the .app in the dmg verifies ad-hoc and
+  signed with a Developer ID. *(2026-10-20, macOS 27.0, arm64.)*
+- [x] **macOS, notarize** — `tinyjs notarize --dmg` with a Developer ID:
+  the rebuilt dmg still has the extras beside the stapled app.
+  *(2026-10-20, macOS 27.0 arm64: throwaway app with root + `macos/`
+  README, LICENSE, `docs/`, `install.sh`. Apple: Accepted. Mounted dmg:
+  `macos/` README won, `docs/` whole, `install.sh` still 755; `stapler
+  validate` OK, `codesign --verify --deep --strict` OK, `spctl`
+  accepted as Notarized Developer ID.)*
+- [x] **Windows** — `check.py` PASS; then open the publish zip in Explorer
+  and see `README.txt` beside `<name>.exe`; run an auto-update and see the
+  new version's README replace the old one. *(2026-10-20, Windows 11
+  26200: `check.py` PASS except the symlink case, SKIPped — creating a
+  symlink needs Developer Mode or admin. Junctions need neither, so they
+  were tried by hand: `extras/` itself, a top-level folder, one nested in a
+  folder, one in `extras/windows/`, and a list entry reached through one
+  all fail the build ("symlinks are not supported"; libuv's lstat reports
+  a junction as a link) and nothing lands in `dist/`. Publish zip listed:
+  `upapp/README.txt` beside `upapp/upapp.exe`, `docs/` whole. Real update
+  0.1.0 → 0.2.0 from a localhost manifest: check → install → relaunch
+  reported 0.2.0, and `README.txt` read the v0.2.0 text.)*
+- [x] **Windows: README's "updates replace them" is not what happens.**
+  Resolved as docs (2026-10-20): README and skill/references/release.md now
+  describe Windows separately (overwrite by name; dropped or renamed extras
+  and user files stay). Pruning the previous version's extras stays an
+  option if renaming extras between versions turns out to matter.
+  The same update left `OLD-ONLY-IN-V1.txt` (dropped from v0.2.0's
+  extras), `docs/a.txt` (v0.2.0 ships `docs/b.txt`, so `docs/` now holds
+  both) and a user's `USER-SAVED.txt`. `winSwapDir` overlays file by file
+  and prunes only `WIN_OWNED_DIRS` (`executables`, `resources`), on purpose:
+  the Shelf's marker lives in that folder. Same name → replaced; dropped
+  or renamed → kept forever. Either the README's Windows/Linux bullet gets
+  split per OS, or the updater learns which files were the previous
+  version's extras (a list written at build time) and prunes those.
+  Linux not checked — it may really swap the folder.
+  Linux checked (2026-10-20): it does — the README is right for Linux, so
+  the fix is the Windows half only.
+- [x] **Linux** — `check.py` PASS (22.04 container is enough); extract the
+  tarball and run the shipped `install.sh` directly. *(2026-10-20, Ubuntu
+  24.04 arm64 host: `check.py` all PASS. Publish tarball: one `upapp/`
+  with `launcher`, the backend, `README.txt`, `docs/`, `install.sh` 755;
+  extracted, `install.sh` ran both by absolute path and as `./install.sh`.
+  Real update 0.1.0 → 0.2.0 from a localhost manifest, installed folder
+  holding v1's extras + a user's `USER-SAVED.txt`: relaunched as 0.2.0, and
+  the folder is exactly v0.2.0's — new `README.txt`, `docs/b.txt` only,
+  `OLD-ONLY-IN-V1.txt` and `USER-SAVED.txt` gone, `install.sh` still 755.
+  Same with `TMPDIR=/dev/shm` (tmpfs, so the cross-filesystem copyTree
+  path instead of rename): identical result, exec bits kept, no
+  `tinyjs-update-*` left behind.)*
+
 ## #70 — multi-screen: one Windows DIP space, screen-relative placement, `rememberWindows` (`feat/screens-70`, 2026-10-20)
 
 Plan and research: TODO-screens.md. Probe: `test/screens/` (README there) —
@@ -49,6 +106,32 @@ unplug. Linux launcher compiles (Ubuntu 22.04 container) but has never run.
   2 events). That dedupe is bridge-side, so it applies on every OS —
   worth one plug/unplug re-check on Windows and Linux.
   *(2026-10-20, macOS 27.0.1.)*
+  - [x] **Linux** — the dedupe as committed SWALLOWED real changes: it
+    compared against screensCache, which every app.screens() / screenAt()
+    / screenFor() / foregroundScreen() / matchScreen() refreshes, so a
+    query landing between the change and its `SYS screens` (the Linux
+    launcher waits 500ms for the burst to settle) made the new list look
+    old. Headless rig (two virtual monitors), unplug + replug Meta-1 with a
+    backend polling app.screens() every 200ms (kitchen-sink's Desktop tab
+    polls twice a second): 0 events. Now compared against the last list
+    ANNOUNCED (seeded at boot). After: plain 2 + 2 (`[[0], [0, 1]]`),
+    polling 2 + 2, fullscreen in/out alone 0 — and 0 for fullscreen on the
+    real one-screen desktop, Wayland and X11. *(2026-10-20.)*
+  - [x] **Windows** — reproduced, then fixed. One display in the VM today
+    (no second Parallels display attached), so the real change is a
+    RESCALE: the watch probe (scratch copy + a 200ms backend app.screens()
+    poller + an optional fullscreen in/out) while DisplayConfigSetDeviceInfo
+    takes the display 200% → 175% → 200% (GetDpiForMonitor read back
+    168 / 192 each time). Old bridge (`06e9ccc`) + poller: 0 onSystem, 0
+    page events — swallowed on Windows too. Fixed bridge: 2 + 2 without the
+    poller, 2 + 2 with it (77 polls); fullscreen in/out + poller alone: 0.
+    *(2026-10-20, Windows 11 26200 arm64 / Parallels.)*
+  - [ ] **Windows, plug/unplug** — the same with a second display removed
+    and re-added (Win+P "PC screen only" → "Extend", as above). Needs a
+    second Parallels display attached.
+  - [ ] **macOS** — re-run the plug/unplug and fullscreen checks on the
+    fixed dedupe, once with something polling screens() (the kitchen-sink
+    Desktop tab open is enough).
 
 Windows runs: Windows 11 arm64 in Parallels, launcher rebuilt from the branch
 by `tinyjs dev`. Second screen = an external on the Mac passed through as a

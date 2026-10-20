@@ -294,6 +294,7 @@
     <a href="#executables">executables</a>
     <a href="#shared">shared code</a>
     <a href="#assets">assets</a>
+    <a href="#extras">extras</a>
     <a href="#config">tinyjs.json</a>
     <span class="toc-group">api</span>
     <a href="#backend">backend</a>
@@ -580,6 +581,39 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
     no code — <code>{ role: 'help' }</code> adds your own items. Built apps
     only: dev has no bundle for Help Viewer to find. Help Viewer caches books
     by version, so bump <code>version</code> to see an edited book.</p>
+  </section>
+
+  <section id="extras">
+    <h2>Download extras (README, licence)</h2>
+    <p>Files for the person downloading your app (a README, a licence, install
+    notes) go in <code>extras/</code>. They ship next to the app, never inside
+    it: at the root of the macOS dmg beside the .app and the Applications
+    shortcut, and in the Windows/Linux app folder beside the executable
+    (<code>dist/</code> and the publish archive).</p>
+    <pre>my-app/
+  extras/
+    LICENSE.txt           <i>// every OS</i>
+    README.txt            <i>// Windows and Linux…</i>
+    macos/README.txt      <i>// …and the Mac's own, which mentions Gatekeeper</i></pre>
+    <p>With no list, a build ships the top of <code>extras/</code>, then
+    <code>extras/&lt;os&gt;/</code>, which replaces a file of the same name.
+    Folders ship whole and exec bits are kept, so an <code>install.sh</code>
+    in a Linux tarball runs. Or list paths inside <code>extras/</code>; each
+    lands by its own name, platform blocks replace the list, <code>[]</code>
+    ships nothing:</p>
+    <pre>{ "extras": ["LICENSE.txt", "README.txt"],
+  "macos": { "extras": ["LICENSE.txt", "macos/README.txt"] } }</pre>
+    <p>A name the build already writes there (<code>launcher.exe</code>, the
+    .app, <code>Applications</code>, <code>resources</code>, …) fails the
+    build, compared case-insensitively; so do two extras with one name. Each
+    build prints what it shipped.</p>
+    <p><b>macOS: only the dmg carries them.</b> Build with <code>--dmg</code>,
+    or let <code>tinyjs notarize --dmg</code> rebuild it; the .app and the
+    update zip never do. <b>Updates:</b> on Linux an update replaces the whole
+    app folder, extras included. On Windows it copies the new files over the
+    old by name, so an extra you drop or rename stays behind. For help people
+    need after installing, use the app itself: Credits, a help book, or a
+    Help menu item opening a file in <code>resources/</code>.</p>
   </section>
 
   <section id="config">

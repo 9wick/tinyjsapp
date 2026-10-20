@@ -121,6 +121,9 @@ executables/         sidecar binaries → (await app.paths()).executables (flat)
                      this OS's binaries from the top, overridden by name from
                      <os>/ then <os>-arm64|-x86_64/; signed into
                      Contents/Helpers on macOS
+extras/              README, licence… for the person downloading: shipped
+                     BESIDE the app (macOS dmg root, Windows/Linux app
+                     folder), never inside it. Top level + <os>/ overrides
 src/backend/main.js  backend
 src/frontend/        index.html + assets — served as real files (file://),
                      so relative paths just work
