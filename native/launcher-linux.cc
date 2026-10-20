@@ -745,9 +745,23 @@ static gboolean on_context_menu(WebKitWebView* wv, WebKitContextMenu* menu,
 // ------------------------------------------------------------ drop files ----
 
 // WebKitGTK delivers HTML5 drops to the page itself but real filesystem paths
-// only travel in the text/uri-list selection — observe it as it arrives and
-// emit DROP alongside (the page still gets its HTML5 event).
-static void on_drag_data_received(GtkWidget*, GdkDragContext*, gint, gint,
+// only travel in the text/uri-list selection. WebKit requests that selection
+// when a drag ENTERS the view (to answer dragover), not when it's released
+// (#77: DROP fired on every drag-in) — so cache the paths per drag context
+// and emit DROP from drag-drop. If the data is still in flight at drop time
+// the drop is remembered and DROP goes out when it lands. Both slots hold a
+// ref so a freed context's address can't alias the next drag's.
+static GdkDragContext* g_drag_ctx = nullptr;   // context g_drag_json belongs to
+static std::string g_drag_json;
+static GdkDragContext* g_drop_waiting = nullptr;  // dropped before its data came
+
+static void drag_slot_set(GdkDragContext** slot, GdkDragContext* ctx) {
+  if (ctx) g_object_ref(ctx);
+  if (*slot) g_object_unref(*slot);
+  *slot = ctx;
+}
+
+static void on_drag_data_received(GtkWidget*, GdkDragContext* ctx, gint, gint,
                                   GtkSelectionData* data, guint, guint, gpointer) {
   GdkAtom target = gtk_selection_data_get_data_type(data);
   char* name = gdk_atom_name(target);
@@ -768,7 +782,29 @@ static void on_drag_data_received(GtkWidget*, GdkDragContext*, gint, gint,
   }
   json += "]";
   g_strfreev(uris);
-  if (any) pipe_write_line("DROP " + json);
+  if (!any) return;
+  if (ctx && ctx == g_drop_waiting) {
+    drag_slot_set(&g_drop_waiting, nullptr);
+    pipe_write_line("DROP " + json);
+    return;
+  }
+  drag_slot_set(&g_drag_ctx, ctx);
+  g_drag_json = json;
+}
+
+// Runs before WebKit's own drag-drop (class handler) and lets it proceed.
+// GTK emits drag-leave just before drag-drop, so the cache can't be cleared
+// on leave; a later drag simply replaces it.
+static gboolean on_drag_drop(GtkWidget*, GdkDragContext* ctx, gint, gint, guint, gpointer) {
+  if (ctx && ctx == g_drag_ctx) {
+    std::string json = g_drag_json;
+    drag_slot_set(&g_drag_ctx, nullptr);
+    g_drag_json.clear();
+    pipe_write_line("DROP " + json);
+  } else {
+    drag_slot_set(&g_drop_waiting, ctx);
+  }
+  return FALSE;
 }
 
 // ------------------------------------------------------------- webview ------
@@ -6482,6 +6518,7 @@ static WebKitWebView* make_webview(const std::string& winid, WebKitWebView* rela
   g_signal_connect(wv, "create", G_CALLBACK(on_create_webview), nullptr);
   g_signal_connect_after(wv, "drag-data-received",
                          G_CALLBACK(on_drag_data_received), nullptr);
+  g_signal_connect(wv, "drag-drop", G_CALLBACK(on_drag_drop), nullptr);
   // Track the live left-button press so DRAGWIN can start a real move-drag
   // (needs the press's device + serial, lost by the round-trip otherwise).
   gtk_widget_add_events(GTK_WIDGET(wv), GDK_BUTTON_PRESS_MASK);
