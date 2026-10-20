@@ -4,6 +4,25 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## 0.58.0 — 2026-10-19
+
+- **`app.cookies`: read and write the webview's cookies from the
+  backend.** The backend can now see the same cookie jar the app's windows
+  and a wrapped site use, including HttpOnly cookies that `document.cookie`
+  can't reach. `get({ url?, name?, domain?, path? })` lists them (with a
+  `url`, the ones a request to it would carry), `set({ url | domain, name,
+  value, … })` adds or replaces one, and `remove()` deletes one cookie or
+  everything for a url. The case it was built for: a site logs in, the app
+  keeps the session (in `app.secrets`), and a later launch restores it so
+  the user skips the login. `set()` defaults `sameSite` to `'lax'` on every
+  OS. A cookie a site set without SameSite reads as that engine's own
+  default (`'none'` on macOS, `'lax'` on Windows, either on Linux by
+  WebKitGTK version). Pages get no cookie API: a page that could read the
+  jar could read every site's session. All three OSes. Thanks to
+  [@zhuyuanmin](https://github.com/zhuyuanmin) for the request and
+  [@slabbdev](https://github.com/slabbdev) for helping scope it
+  ([#46](https://github.com/tarwin/tinyjsapp/issues/46)).
+
 ## 0.57.10 — 2026-10-19
 
 - **`app.paths()` creates the `data`, `cache` and `logs` folders.** The
