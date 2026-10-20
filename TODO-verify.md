@@ -39,7 +39,10 @@ ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
   Probe: `session` should be `[["a b=c", null, "lax"]]` everywhere.
   - [x] **macOS** — `session` `lax`; `vis` reads `none`; every other row
     unchanged. *(2026-10-19.)*
-  - [ ] **Windows** — `session` `lax` (expected unchanged: `vis` `lax`).
+  - [x] **Windows** — `session` `lax` (expected unchanged: `vis` `lax`).
+    *(2026-10-19, Windows 11 arm64, clean jar: `session`
+    `[["a b=c", null, "lax"]]`, `vis` `lax`, every other row unchanged;
+    server.py saw `sid=s3cret; injected=v1; sess=a b=c`.)*
   - [ ] **Linux** — `session` `lax` on WebKitGTK 2.50 AND 2.52 (`vis`
     still varies by version; that's documented, not a bug).
 
