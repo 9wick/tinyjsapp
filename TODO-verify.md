@@ -102,6 +102,20 @@ unplug. Linux launcher compiles (Ubuntu 22.04 container) but has never run.
   2 events). That dedupe is bridge-side, so it applies on every OS —
   worth one plug/unplug re-check on Windows and Linux.
   *(2026-10-20, macOS 27.0.1.)*
+  - [x] **Linux** — the dedupe as committed SWALLOWED real changes: it
+    compared against screensCache, which every app.screens() / screenAt()
+    / screenFor() / foregroundScreen() / matchScreen() refreshes, so a
+    query landing between the change and its `SYS screens` (the Linux
+    launcher waits 500ms for the burst to settle) made the new list look
+    old. Headless rig (two virtual monitors), unplug + replug Meta-1 with a
+    backend polling app.screens() every 200ms (kitchen-sink's Desktop tab
+    polls twice a second): 0 events. Now compared against the last list
+    ANNOUNCED (seeded at boot). After: plain 2 + 2 (`[[0], [0, 1]]`),
+    polling 2 + 2, fullscreen in/out alone 0 — and 0 for fullscreen on the
+    real one-screen desktop, Wayland and X11. *(2026-10-20.)*
+  - [ ] **macOS + Windows** — re-run the plug/unplug and fullscreen checks
+    on the fixed dedupe, once with something polling screens() (the
+    kitchen-sink Desktop tab open is enough).
 
 Windows runs: Windows 11 arm64 in Parallels, launcher rebuilt from the branch
 by `tinyjs dev`. Second screen = an external on the Mac passed through as a

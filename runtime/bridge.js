@@ -1862,6 +1862,11 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   // round-trip.
   let screensCache = null;
   const refreshScreens = async () => (screensCache = (await query('screens')) || []);
+  // The list the last screens-changed announced (JSON; boot's counts). Not
+  // screensCache: every app.screens()/screenAt()/… refreshes that, so a
+  // query landing between the change and its `SYS screens` (Linux waits
+  // 500ms for a burst to settle) made the real change look like no change.
+  let screensAnnounced = null;
 
   // ── remembered placement ("rememberWindows": true) ────────────────────────
   // Kept per screen LAYOUT (the set of plugged-in screens), per window id:
@@ -2954,7 +2959,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   // rememberWindows load the saved placements, put main back, THEN show it —
   // the launcher built it hidden (TINYJS_DEFER_SHOW / TinyjsDeferShow).
   (async () => {
-    try { await refreshScreens(); } catch {}
+    try { screensAnnounced = JSON.stringify(await refreshScreens()); } catch {}
     if (!rememberWindows) return;
     send('WINOP geom 1');
     try {
@@ -3727,9 +3732,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
             // when screens() really changed: macOS also posts its screen-
             // parameters notification around a window entering or leaving
             // fullscreen, with nothing different to report.
-            const before = JSON.stringify(screensCache);
             refreshScreens().then((list) => {
-              if (JSON.stringify(list) === before) return;
+              const now = JSON.stringify(list);
+              if (now === screensAnnounced) return;
+              screensAnnounced = now;
               push('screens-changed', list);
               fire('onSystem', onSystem, kind, null, app);
             }, () => {});

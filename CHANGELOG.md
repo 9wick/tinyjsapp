@@ -4,6 +4,16 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`onScreensChanged` / `onSystem('screens')` no longer miss a real
+  change.** Since 0.59.0 a screen being plugged in, unplugged or rescaled
+  went unreported if the app called `screens()`, `screenAt()`,
+  `screenFor()`, `foregroundScreen()` or `matchScreen()` around the same
+  moment. Polling `screens()`, as a screen map does, could swallow every
+  change. Reports where nothing changed, such as macOS's around fullscreen,
+  are still dropped.
+
 ## 0.59.2 — 2026-10-20
 
 - **Windows: `tiny.dialog` button labels.** `alert`, `confirm` and
