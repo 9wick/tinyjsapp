@@ -4,6 +4,23 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`app.paths()` creates the `data`, `cache` and `logs` folders.** The
+  docs said these are created on first write, but nothing created them,
+  so writing a log file into `paths.logs` failed until the app made the
+  folder itself. They now exist by the time `paths()` resolves, from the
+  page (`tiny.app.paths()`) and the backend alike, on all three OSes.
+  Thanks to [@sheffieldnikki](https://github.com/sheffieldnikki) for the
+  report ([#71](https://github.com/tarwin/tinyjsapp/issues/71)).
+- **`tinyjs build` and `publish` say when the app is still running.**
+  Windows can't delete a running `.exe`, so rebuilding with the app open
+  failed with a bare `Error: EEXIST: file already exists`. The build now
+  stops with `couldn't clear dist/ — dist/<name>.exe is in use`, and asks
+  whether the app is still running. Thanks to
+  [@sheffieldnikki](https://github.com/sheffieldnikki) for the report
+  ([#72](https://github.com/tarwin/tinyjsapp/issues/72)).
+
 ## 0.57.9 — 2026-10-19
 
 - **Linux: `win.onDrop` fires once, when the file is released.** It fired

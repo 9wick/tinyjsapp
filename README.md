@@ -694,7 +694,7 @@ const screens = await tiny.app.screens();
 // standard per-app directories — prefer over hardcoding ~/Library paths
 const paths = await tiny.app.paths();
 // { home, data, cache, logs, temp, downloads, desktop, documents }
-// data/cache/logs are per app id; create them on first write
+// data/cache/logs are per app id, created for you when paths() is called
 // (backend: the same — await app.paths())
 
 // launch at login (built apps on all three OSes; dev mode -> 'unsupported')

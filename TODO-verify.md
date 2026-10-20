@@ -8,6 +8,25 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `app.paths()` creates data/cache/logs; build names a busy dist/ (#71, #72, 2026-10-19)
+
+`makePathDirs` in bridge.js; the `exists('dist')` check after `rmTree('dist')`
+in cli.js's `cmdBuild`.
+
+- [x] **macOS** — fresh app id: all three dirs exist once `app.paths()`
+  resolves, and `writeFile(paths.logs + '/file.log')` succeeds. A dist/
+  file that can't be deleted (read-only subdir) stops the build with
+  "couldn't clear dist/ — dist/locked/MyApp.exe is in use", exit 1.
+  *(2026-10-19, scratch app.)*
+- [ ] **Windows paths** — same check, from `tinyjs dev` and from the
+  built exe: `%LOCALAPPDATA%\<id>\Cache` and `\Logs` both appear, and the
+  page's `tiny.app.paths()` does the same.
+- [ ] **Windows busy dist/** — with the built app running, `tinyjs build`
+  and `tinyjs publish` both print the "is in use … still running?" message
+  naming `dist/<name>.exe` (or `launcher.exe`), not `EEXIST`. Quit the app
+  and the next build succeeds.
+- [ ] **Linux paths** — `~/.cache/<id>` and `~/.local/state/<id>` appear.
+
 ## macOS — Dock reopening after hide-on-close (2026-10-16)
 
 With `setHideOnClose(true)`, the red button hid the main window, but a Dock

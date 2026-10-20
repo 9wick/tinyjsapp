@@ -445,6 +445,20 @@ async function rmTree(p) {
   } catch {}
 }
 
+// The first file found under dir (depth-first), or null if it holds none —
+// for naming what kept a directory from being removed.
+async function firstFileIn(dir) {
+  try {
+    for await (const e of await tjs.readDir(dir)) {
+      const p = dir + '/' + e.name;
+      if (!e.isDirectory) return p;
+      const f = await firstFileIn(p);
+      if (f) return f;
+    }
+  } catch {}
+  return null;
+}
+
 async function copyFile(src, dest) {
   await tjs.writeFile(dest, await tjs.readFile(src));
 }
@@ -2565,6 +2579,15 @@ async function cmdBuild() {
     }
   }
   await rmTree('dist');
+  // rmTree swallows errors, and Windows won't delete a running exe (or a
+  // file another program has open), so the app still running left dist/ in
+  // place and makeDir died with a bare "EEXIST: file already exists" (#72).
+  if (await exists('dist')) {
+    for (const f of keptDmgs) await tjs.rename('.build/' + f, 'dist/' + f).catch(() => {});
+    const stuck = await firstFileIn('dist');
+    fail(`couldn't clear dist/ — ${stuck || 'dist'} is in use.\n` +
+         `    Is ${cfg.title || cfg.name} still running? Quit it and run the build again.`);
+  }
   await tjs.makeDir('dist');
   for (const f of keptDmgs) await tjs.rename('.build/' + f, 'dist/' + f);
   // `tjs app compile` runs from the parent of the app/ dir and bundles the
