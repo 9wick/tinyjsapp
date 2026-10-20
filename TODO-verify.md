@@ -129,16 +129,86 @@ a broadcast spy) was not committed.
     500x350). The bridge now neither saves nor restores an empty content
     box; with a planted 116x0 entry: before 116x1, after the default
     400x300.
-- [ ] **Linux X11, two monitors** — probe `ok: true`; foregroundScreen via
+- [x] **Linux X11, two monitors** — probe `ok: true`; foregroundScreen via
   _NET_ACTIVE_WINDOW; uid looks like `DP-1/<mfr>/<model>`; `internal` true
-  for eDP.
-- [ ] **Linux Wayland** — `setFullscreen(true, { screen })` uses that output
+  for eDP. First run FAILED every round-trip: `getState()` read the client
+  origin (gdk_window_get_origin) while `pos`/`spos` move the mutter frame,
+  so a decorated window read 37px (the title bar) below where it was put
+  and `set(get())` marched it down — `win.open({ screen, x, y })` and
+  rememberWindows too. Pre-dates #70 (8a4e43f only fixed undecorated). Now
+  reads gdk_window_get_root_origin (frame top-left; equal to the origin
+  when undecorated). After: probe `ok: true`, `fails: []` on both screens;
+  restore twice → screen 1, local 150,120, 500x350, no drift; same with
+  `"chrome": { "frame": false }` (probe ok, restore exact).
+  foregroundScreen → screen 1 (the probe's own window was there);
+  uid `Meta-0//Meta-0` (Xwayland: no EDID, model = connector); `primary`
+  true on screen 0. *(2026-10-20, arm64 VM; rig: headless gnome-shell 46
+  with `--virtual-monitor 1920x1080 --virtual-monitor 1280x720` in its own
+  dbus-run-session, GSETTINGS_BACKEND=memory, a stub
+  `org.freedesktop.systemd1` on that bus so its Xwayland starts, app on
+  `DISPLAY=:2 GDK_BACKEND=x11`. Not run: real Xorg, a real eDP panel /
+  `internal: true`, real EDID manufacturer/model.)*
+  Re-run on the VM's real GNOME desktop with a second (Parallels) screen
+  attached, after the Windows fixes were pulled: X11 via the session's own
+  Xwayland + mutter — probe `ok: true`, `fails: []`; restore twice →
+  screen 1 (`Virtual-2//Virtual-2`), local 150,120, 500x350. *(2026-10-20.)*
+- [x] **Linux Wayland** — `setFullscreen(true, { screen })` uses that output
   (the one placement op Wayland honours); foregroundScreen is null; spos /
   pos are no-ops; rememberWindows restores size only; uid from
-  xdg_output.name on GNOME and KDE.
-- [ ] **Linux, fractional scaling** — what `scale` and `pixels` report at
+  xdg_output.name on GNOME and KDE. GNOME only: fullscreen on screen 1 →
+  `screenId: 1`; foregroundScreen null; every position op left the window
+  at 0,0 (`canPosition: false`); restore gave 500x350 at 0,0; uid
+  `Meta-0/MetaVendor/MetaVirtualMonitor` (rig) and
+  `Virtual-1/unknown/unknown` (VM desktop). `primary` is false on every
+  screen (GDK Wayland has no primary). *(2026-10-20, same rig on
+  `WAYLAND_DISPLAY`, plus the VM's real one-screen GNOME desktop. KDE not
+  run — none here.)*
+  Re-run on the real two-screen desktop (Wayland): same — fullscreen on
+  screen 1 → `screenId: 1`, foregroundScreen null, positions no-ops,
+  restore 500x350 at 0,0. *(2026-10-20.)*
+- [x] **Linux, fractional scaling** — what `scale` and `pixels` report at
   125% on GNOME and KDE (expected: an integer, rounding differs), and what
-  WebKitGTK's `devicePixelRatio` says in the same setup.
+  WebKitGTK's `devicePixelRatio` says in the same setup. GNOME 46 with
+  scale-monitor-framebuffer, 1920x1080 at 125%: Wayland client →
+  logical 1536x864, `scale: 2`, `pixels` 3072x1728 (GTK's buffer, not the
+  panel's 1920x1080), devicePixelRatio 2; X11 client (Xwayland, upscaled
+  by mutter) → 1536x864, `scale: 1`, `pixels` 1536x864, devicePixelRatio
+  1. The scale change, and the change back, each sent ONE
+  `onSystem('screens')` and ONE page `onScreensChanged` (Wayland and X11).
+  *(2026-10-20, same rig, keyfile gsettings backend in the scratchpad. KDE
+  not run.)*
+- **kitchen-sink 0.20.0 (examples `feat/screens`) on Linux** — a page
+  driver clicked the Screens card and cookie demo (scratch copy, own app
+  id). Three fixes came out of it:
+  - [x] **Linux: restored main lost the menu bar's height every launch**
+    (600 → 574 → 548). The bridge's restore setSize ran before the first
+    menu bar; apply_menus' one-time repayment aims at the tinyjs.json size
+    and its born-size guard skipped the now-resized window. A setSize before
+    the first bar now becomes the repayment target. After: 900x600 twice.
+    *(2026-10-20, X11 on the real two-screen desktop.)*
+  - [x] **bridge: a maximized window with no normal rect** (born maximized,
+    or mutter auto-maximizing a 1100x720 that doesn't fit a 768-tall
+    screen) restored on whatever screen the WM chose — zoom() only. It now
+    moves onto `stateScreen` first. Planted entry, maximized on screen 1 →
+    back maximized on screen 1. *(Linux X11, 2026-10-20.)*
+  - [x] **bridge: a move <500ms before `quit()` was never saved** (the
+    debounce timer died with the process). `app.quit()` (all quit paths:
+    page `tiny.quit()`, closing main) now flushes pending saves, ≤1s.
+    Moved to screen 1 300ms before quit → saved and restored there.
+    *(Linux X11, 2026-10-20.)*
+  - [ ] **macOS + Windows: re-check the two bridge fixes** — shared code:
+    maximize on screen 2, quit; relaunch lands maximized on screen 2 (also
+    with a window that was never un-maximized); move then `tiny.quit()`
+    within 300ms → relaunch at the new spot; a plain quit isn't slower.
+  - Everything else as expected: map click → setPosition(40, 40, { screen })
+    (X11: work-area clamped to 66,40 on the dock screen, 40,40 on the
+    other), pixel-exact 640x400 px at 32,32 px, fullscreen on the next
+    screen, matchScreen with a wrong uid → same screen, foregroundScreen
+    (X11 an id, Wayland null), cookies set/remove/get, no page errors on
+    X11 or Wayland.
+- [ ] **Linux, KDE Plasma (Wayland)** — the two boxes above on KDE: uid
+  from xdg_output.name, fullscreen-on-output, and `scale` / `pixels` /
+  devicePixelRatio at 125% (KWin may hand GTK3 a different integer).
 
 ## #78 — NVIDIA + Wayland: launcher sets `__NV_DISABLE_EXPLICIT_SYNC=1` (2026-10-19)
 

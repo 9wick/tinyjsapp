@@ -1931,7 +1931,18 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     if (saved.fullscreen) {
       const fs = matchScreenIn(list, saved.stateScreen ?? saved.screen) ?? onto;
       if (fs) h.setFullscreen(true, { screen: fs.id });
-    } else if (saved.maximized) h.zoom();
+    } else if (saved.maximized) {
+      // Maximize on the screen it was maximized on. Without this a window
+      // that never had a normal rect (born maximized, or one the WM
+      // auto-maximized because its size didn't fit) zoomed wherever the WM
+      // first put it.
+      const ms = matchScreenIn(list, saved.stateScreen ?? saved.screen);
+      if (ms && ms.id !== onto?.id) {
+        const v = ms.visible ?? ms;
+        h.setPosition(v.x - ms.x + 40, v.y - ms.y + 40, { screen: ms.id });
+      }
+      h.zoom();
+    }
   }
 
   const app = {
@@ -2722,7 +2733,18 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       register(hid, combo) { send('HKREG ' + one(hid) + '\t' + one(combo)); },
       unregister(hid) { send('HKUNREG ' + one(hid)); },
     },
-    quit() { send('QUIT'); },
+    // rememberWindows saves 500ms after the last change; a move made just
+    // before quitting would die with its timer, so save those first (≤1s)
+    quit() {
+      if (!placeTimers.size) return send('QUIT');
+      const wids = [...placeTimers.keys()];
+      for (const t of placeTimers.values()) clearTimeout(t);
+      placeTimers.clear();
+      Promise.race([
+        Promise.all(wids.map((w) => savePlacement(w).catch(() => {}))),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]).finally(() => send('QUIT'));
+    },
     // --- multi-window ---------------------------------------------------
     // Open (or focus) a secondary window — app.win.open(id, opts), as a page
     // says tiny.win.open(). (DEPRECATED (0.57.0): the app.openWindow name,

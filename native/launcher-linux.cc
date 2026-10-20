@@ -136,6 +136,7 @@ struct WinMenu {
   GtkWidget* bar = nullptr;        // GtkMenuBar, packed above the webview
   GtkAccelGroup* accel = nullptr;  // this window's accelerators
   bool room_given = false;         // page box repaid once (see apply_menus)
+  int born_w = 0, born_h = 0;      // a setSize before that: the box to repay
 };
 
 struct SecWin {
@@ -1341,6 +1342,11 @@ static void set_content_size(const std::string& winid, int w, int h) {
   GtkWindow* win = win_for(winid);
   if (!win) return;
   if (w <= 0 || h <= 0) return;   // gtk_window_resize asserts on either
+  // Before the bar's first appearance this size IS the birth size: the
+  // repayment in apply_menus must aim for it, or its born-size guard sees a
+  // resized window and skips, and the bar eats the page (rememberWindows
+  // restored main 26px shorter on every launch).
+  if (WinMenu* wm = menu_for(winid); wm && !wm->room_given) { wm->born_w = w; wm->born_h = h; }
   gtk_window_resize(win, w, h + menubar_height(winid));
 }
 
@@ -1430,9 +1436,9 @@ static void rescue_offscreen(GtkWindow* win) {
   GdkWindow* gwin = gtk_widget_get_window(GTK_WIDGET(win));
   GdkDisplay* d = gdk_display_get_default();
   if (!gwin || !d) return;   // not realized yet — the show-path runs us again
-  // same space the `pos` op moves in (gdk_window_move / gdk_window_get_origin)
+  // same space the `pos` op moves in (gdk_window_move / the frame's top-left)
   int x = 0, y = 0;
-  gdk_window_get_origin(gwin, &x, &y);
+  gdk_window_get_root_origin(gwin, &x, &y);
   int w = gdk_window_get_width(gwin), h = gdk_window_get_height(gwin);
   int n = gdk_display_get_n_monitors(d);
   for (int i = 0; i < n; i++) {
@@ -1601,8 +1607,8 @@ static void do_winop(const std::string& winid, const std::string& op) {
     int x = 0, y = 0;
     if (sscanf(op.c_str() + 4, "%d %d", &x, &y) == 2) {
       // Move in the same space getWinState reports (see win_state_json):
-      // gdk_window_move places the toplevel's origin, which is what
-      // gdk_window_get_origin reads back, so read -> move -> read is stable.
+      // gdk_window_move places the frame's top-left, which is what
+      // gdk_window_get_root_origin reads back, so read -> move -> read is stable.
       GdkWindow* gwin = gtk_widget_get_window(GTK_WIDGET(win));
       if (gwin) gdk_window_move(gwin, x, y);
       else gtk_window_move(win, x, y);   // not realized yet
@@ -1944,6 +1950,7 @@ static void apply_menus(const std::string& winid) {
     wm->room_given = true;
     int want_w = g_width, want_h = g_height;
     if (SecWin* sw = sec_for(winid)) { want_w = sw->req_w; want_h = sw->req_h; }
+    if (wm->born_w > 0) { want_w = wm->born_w; want_h = wm->born_h; }
     repay_page_box(winid, want_w, want_h, true);
   }
 }
@@ -2532,11 +2539,15 @@ static std::string win_state_json(const std::string& winid) {
   // one frame-height above the value a move had just consumed, so an app that
   // read its own position and moved by a delta — which is what dragging is —
   // marched its window up the screen, 37px per grab under mutter. Ask GDK for
-  // the toplevel's real root-space origin instead; it pairs exactly with the
-  // gdk_window_move() the pos op uses.
+  // the WM frame's root-space top-left instead; it pairs exactly with the
+  // gdk_window_move() the pos op uses. Not gdk_window_get_origin: with a
+  // server-side frame that is the client area, 37px below where the move put
+  // the frame, and set(get()) marched a DECORATED window down instead (#70
+  // probe; rememberWindows moved it a title bar per launch). Undecorated, the
+  // two agree.
   {
     GdkWindow* gwin = gtk_widget_get_window(GTK_WIDGET(win));
-    if (gwin) gdk_window_get_origin(gwin, &x, &y);
+    if (gwin) gdk_window_get_root_origin(gwin, &x, &y);
   }
   // width/height are the CONTENT box — the webview, menu bar excluded — which
   // is what win.open's `size` and win.setSize mean, so set -> get round-trips.

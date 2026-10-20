@@ -46,6 +46,17 @@ https://tinyjs.app/changelog.
   to its windows as it quit could make the launcher crash during teardown
   (amp did on every quit). Since 0.58.1 that showed up as
   `webview launcher exited with status -1073741819` and a non-zero exit code.
+- **Linux X11: `getState()` x/y is the frame's top-left, as documented.**
+  For a window with a title bar it reported the top-left of the page area
+  instead, one title bar lower than the spot `setPosition` moves the frame
+  to, so `setPosition(getState().x, getState().y)` moved the window down by
+  one title bar each time. Frameless windows and Wayland are unaffected.
+- **`rememberWindows` fixes.** On Linux, a main window with a menu bar
+  came back one menu bar shorter on every launch. A window that was
+  maximized the whole time (including one the window manager maximized
+  because it didn't fit) now comes back maximized on the screen it was on,
+  not wherever the window manager first put it. A move or resize made
+  just before `quit()` is saved instead of lost.
 
 ## 0.58.1 — 2026-10-19
 
