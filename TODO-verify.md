@@ -16,11 +16,12 @@ ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
 
 - [x] **macOS** — every row of the probe table as expected; server.py saw
   `injected=v1; sess=a b=c; sid=s3cret`. *(2026-10-19, macOS 27.)*
-- [ ] **Windows** — same probe. Compiled only (the cookie block, against
-  the WebView2 1.0.2903.40 header). Watch for: whether `domain` on a
-  url-only set comes back host-only (`127.0.0.1`, no dot), what
-  `sameSite` an unset cookie reports (`none` expected), and that
-  `removeExact` finds the cookie by its exact domain string.
+- [x] **Windows** — same probe; every row as expected, server.py saw
+  `sid=s3cret; injected=v1; sess=a b=c`. A url-only set comes back
+  host-only (`127.0.0.1`, no dot) and `removeExact` found it. Unset
+  SameSite reads `lax` here (Chromium's default; Linux `none`, macOS
+  `null`) — `vis` in `fromPage`. *(2026-10-19, Windows 11 arm64, launcher
+  rebuilt from the branch by `tinyjs dev`.)*
 - [x] **Linux** — same probe; every row as expected, server.py saw
   `sid=s3cret; injected=v1; sess=a b=c`. Unset SameSite reads `none`
   here (macOS: `null`). *(2026-10-19, ubuntu:22.04 container on arm64,

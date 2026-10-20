@@ -673,7 +673,8 @@ declare interface TinyCookie {
   expires: number | null;
   secure: boolean;
   httpOnly: boolean;
-  /** WebKit (macOS) reports SameSite=None as null */
+  /** a cookie set without SameSite reads null on macOS, 'none' on Linux,
+   *  'lax' on Windows (Chromium's default) */
   sameSite: 'lax' | 'strict' | 'none' | null;
 }
 
