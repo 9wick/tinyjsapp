@@ -4,8 +4,23 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.60.0 — 2026-10-20
 
+- **`extras/`: a README or licence beside the app in the download.** Files
+  in a project's `extras/` folder ship next to the app, never inside it: at
+  the root of the macOS dmg beside the .app and the Applications shortcut,
+  and in the Windows/Linux app folder beside the executable (`dist/` and
+  the publish archive). `extras/macos/`, `extras/windows/` and
+  `extras/linux/` replace a file of the same name for that OS, and
+  `"extras": [...]` in tinyjs.json picks paths instead. Folders ship whole
+  and exec bits are kept, so an `install.sh` in a Linux tarball runs. A
+  name the build already uses there (`launcher.exe`, the .app,
+  `Applications`, …) fails the build. On macOS only the dmg carries them
+  (`build --dmg`, or `notarize --dmg`, which re-reads the folder); the
+  update zip doesn't. A Linux update replaces the extras with the new
+  version's; a Windows update overwrites them by name, so one you drop or
+  rename stays behind. A README or licence put in `assets/` gets a note
+  pointing at `extras/`.
 - **`onScreensChanged` / `onSystem('screens')` no longer miss a real
   change.** Since 0.59.0 a screen being plugged in, unplugged or rescaled
   went unreported if the app called `screens()`, `screenAt()`,

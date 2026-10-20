@@ -1688,7 +1688,8 @@ may be quarantined, which blocks it in dev (the build's copy is clean):
 
 `assets/` holds the files the OS and the build read, each by its name. None
 of them ship as data, and the build notes anything else it finds there,
-since that's usually a page or data file in the wrong folder.
+since that's usually a page or data file in the wrong folder (or a README
+meant for [`extras/`](#download-extras-readme-licence)).
 
 | File | Used for |
 |---|---|

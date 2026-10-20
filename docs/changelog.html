@@ -175,6 +175,14 @@
   <section>
 
     <div class="rel">
+      <h2>0.60.0 <span class="date">2026-10-20</span></h2>
+      <ul>
+        <li><b><code>extras/</code>: a README or licence beside the app in the download.</b> Files in a project&rsquo;s <code>extras/</code> folder ship next to the app, never inside it: at the root of the macOS dmg beside the .app and the Applications shortcut, and in the Windows/Linux app folder beside the executable (<code>dist/</code> and the publish archive). <code>extras/macos/</code>, <code>extras/windows/</code> and <code>extras/linux/</code> replace a file of the same name for that OS, and <code>"extras": [...]</code> in tinyjs.json picks paths instead. Folders ship whole and exec bits are kept, so an <code>install.sh</code> in a Linux tarball runs. A name the build already uses there (<code>launcher.exe</code>, the .app, <code>Applications</code>, &hellip;) fails the build. On macOS only the dmg carries them (<code>build --dmg</code>, or <code>notarize --dmg</code>, which re-reads the folder); the update zip doesn&rsquo;t. A Linux update replaces the extras with the new version&rsquo;s; a Windows update overwrites them by name, so one you drop or rename stays behind. A README or licence put in <code>assets/</code> gets a note pointing at <code>extras/</code>.</li>
+        <li><b><code>onScreensChanged</code> / <code>onSystem('screens')</code> no longer miss a real change.</b> Since 0.59.0 a screen being plugged in, unplugged or rescaled went unreported if the app called <code>screens()</code>, <code>screenAt()</code>, <code>screenFor()</code>, <code>foregroundScreen()</code> or <code>matchScreen()</code> around the same moment. Polling <code>screens()</code>, as a screen map does, could swallow every change. Reports where nothing changed, such as macOS&rsquo;s around fullscreen, are still dropped.</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.59.2 <span class="date">2026-10-20</span></h2>
       <ul>
         <li><b>Windows: <code>tiny.dialog</code> button labels.</b> <code>alert</code>, <code>confirm</code> and <code>prompt</code> now show the <code>ok</code> and <code>cancel</code> labels you pass, as macOS and Linux already did; before, Windows always showed OK/Cancel. Buttons grow to fit a long label, and the box widens if they need the room. A <code>&amp;</code> in a label shows as a <code>&amp;</code> rather than underlining the next letter. The page&rsquo;s own <code>prompt()</code> keeps OK/Cancel. (<a href="https://github.com/tarwin/tinyjsapp/issues/81">#81</a>)</li>

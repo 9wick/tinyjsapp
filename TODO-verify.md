@@ -11,8 +11,8 @@ like one that was never implemented.
 ## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
 
 `test/extras/check.py` (README there) — builds and publishes only, no window
-needed. The Windows and Linux code paths (copy into `dist/`, the publish
-staging, the Linux exec-bit re-copy, the taken-name list) have never run.
+needed. Done on all three OSes, including a real auto-update on Windows and
+Linux; nothing owed.
 
 - [x] **macOS** — `check.py` PASS: dmg root, not in the .app / update zip,
   no-`--dmg` note, lists, errors; the .app in the dmg verifies ad-hoc and
