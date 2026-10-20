@@ -200,6 +200,18 @@ a broadcast spy) was not committed.
     maximize on screen 2, quit; relaunch lands maximized on screen 2 (also
     with a window that was never un-maximized); move then `tiny.quit()`
     within 300ms → relaunch at the new spot; a plain quit isn't slower.
+    - [x] Windows (2026-10-20, 200% + 200%): moved to screen 1 (300,200)
+      450x320 and `app.quit()` 250ms later → saved and relaunched there
+      (×2); quit → exit 68/101ms vs 65/91ms with nothing pending.
+      Maximized on screen 1 → relaunch maximized on screen 1, un-maximize
+      back to its normal rect there. Planted never-un-maximized entry (no
+      rect, stateScreen screen 1) → maximized on screen 1. Planted with
+      the normal rect on screen 0 and stateScreen screen 1 → maximized on
+      screen 1, but un-maximizing then lands at 40,40 on screen 1, not the
+      saved rect on screen 0: the pre-zoom setPosition replaces the normal
+      rect. Probably fine (it's where the user last saw it). Note too that
+      a save after un-maximizing drops `stateScreen` (entry rebuilt without
+      it) — harmless, since it's only read when `maximized` is set.
   - Everything else as expected: map click → setPosition(40, 40, { screen })
     (X11: work-area clamped to 66,40 on the dock screen, 40,40 on the
     other), pixel-exact 640x400 px at 32,32 px, fullscreen on the next
