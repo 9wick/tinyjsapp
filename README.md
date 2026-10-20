@@ -1778,9 +1778,15 @@ Some things to know:
   without it notes that the extras went nowhere. The .app and the
   `tinyjs publish` zip (the update payload) never carry them, since nobody
   looks inside a bundle once it's in /Applications.
-- **Windows and Linux: updates replace them.** An update swaps the whole app
-  folder, so each version's extras replace the last one's (and anything a
-  user saved in that folder goes too).
+- **Linux: updates replace them.** An update swaps the whole app folder, so
+  each version's extras replace the last one's (and anything a user saved
+  in that folder goes too).
+- **Windows: updates overwrite them by name.** A running app's folder can't
+  be swapped, so an update copies the new version's files over the old
+  ones. An extra with the same name is replaced; one you drop or rename
+  stays in the folder, so renaming `README.txt` to `README.md` leaves both.
+  Files a user saved there stay too. To retire an extra, ship a file of
+  the same name that says so rather than deleting it.
 - **Needed after install?** Once the dmg is ejected, a Mac user no longer
   has its README. For help people will need later, use something in the
   app: Credits or a help book (see [App assets](#app-assets)), or a file in

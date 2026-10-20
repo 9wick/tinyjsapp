@@ -36,7 +36,11 @@ staging, the Linux exec-bit re-copy, the taken-name list) have never run.
   `upapp/README.txt` beside `upapp/upapp.exe`, `docs/` whole. Real update
   0.1.0 → 0.2.0 from a localhost manifest: check → install → relaunch
   reported 0.2.0, and `README.txt` read the v0.2.0 text.)*
-- [ ] **Windows: README's "updates replace them" is not what happens.**
+- [x] **Windows: README's "updates replace them" is not what happens.**
+  Resolved as docs (2026-10-20): README and skill/references/release.md now
+  describe Windows separately (overwrite by name; dropped or renamed extras
+  and user files stay). Pruning the previous version's extras stays an
+  option if renaming extras between versions turns out to matter.
   The same update left `OLD-ONLY-IN-V1.txt` (dropped from v0.2.0's
   extras), `docs/a.txt` (v0.2.0 ships `docs/b.txt`, so `docs/` now holds
   both) and a user's `USER-SAVED.txt`. `winSwapDir` overlays file by file

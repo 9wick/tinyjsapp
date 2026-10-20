@@ -63,8 +63,10 @@ const p = tjs.spawn([exe, '--version'], { stdout: 'pipe' });
 `extras/` holds files for the person downloading: a README, a licence,
 install notes. They ship BESIDE the app, never inside it: at the root of the
 macOS dmg (so only with `--dmg`, or from `notarize --dmg`), and in the
-Windows/Linux app folder beside the exe (`dist/` and the publish archive;
-updates replace them). The .app and the macOS update zip never carry them.
+Windows/Linux app folder beside the exe (`dist/` and the publish archive).
+A Linux update replaces the folder; a Windows update overwrites by name, so
+an extra you drop or rename stays behind there. The .app and the macOS
+update zip never carry them.
 No list: the top level plus `extras/<os>/`, which replaces a file by name;
 folders ship whole, exec bits are kept. `"extras": [...]` lists paths inside
 it, each landing by its own name; per-OS blocks replace the list. A name the
