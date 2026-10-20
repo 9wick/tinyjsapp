@@ -688,9 +688,33 @@ await tiny.app.shell.trash('/path/to/file');       // recoverable (prefer over
 
 // every display, same top-left coords as win.setPosition
 const screens = await tiny.app.screens();
-// [{ id, name, x, y, width, height, visible: { x, y, width, height },
-//    scale, primary }] — visible excludes the menu bar and Dock; primary
-// is the menu-bar screen (the coordinate origin)
+// [{ id, uid, name, x, y, width, height, visible: { x, y, width, height },
+//    scale, primary, internal, pixels: { width, height, visible } }]
+// visible excludes the menu bar / Dock / taskbar; primary is the coordinate
+// origin. Global x/y are logical points on every OS (one consistent space
+// on mixed-DPI Windows too). `id` is a session handle (what captureScreen
+// takes); persist `uid`, which survives reboots and replugs where the OS
+// allows. Linux/GTK3 `scale` is an integer — fractional setups round.
+
+// place relative to ONE screen instead of the global space
+tiny.win.setPosition(40, 40, { screen: screens[1] });           // its points
+tiny.win.setPosition(81, 81, { screen: screens[1], units: 'px' }); // its pixels
+tiny.win.setSize(1280, 720, { units: 'px' });   // pixels of the window's screen
+tiny.win.setFullscreen(true, { screen: screens[1] }); // also works on Wayland
+tiny.win.open('tools', { page: 'tools.html', screen: screens[1], x: 20, y: 20 });
+// (macOS snaps frames to whole points, so on a 2x screen px land on even px)
+
+await tiny.app.screenAt(x, y);       // screen holding a global point, or null
+await tiny.app.screenFor(rect);      // screen holding most of a rect, or null
+await tiny.app.foregroundScreen();   // screen of the focused window of ANY app
+                                     // (no permission needed); null on Wayland
+await tiny.app.matchScreen(saved);   // a saved screen -> the connected screen
+                                     // it most likely is now (ids lie; this
+                                     // scores uid, name, size, scale, layout)
+tiny.app.onScreensChanged((screens) => …);   // plug/unplug/rearrange/rescale
+// getState() adds screenId, local: { x, y } and pixels: { x, y, width,
+// height }; onState events carry screenId and fire when a window changes
+// screen.
 
 // standard per-app directories — prefer over hardcoding ~/Library paths
 const paths = await tiny.app.paths();
@@ -1259,6 +1283,30 @@ server or SSH mode. Closing a window may not free all of WebKit's memory,
 because WebKit can keep its worker processes cached. If the editor must
 release everything when it closes, ship it as a separate app that the agent
 launches.
+
+### Remembering where windows were
+
+```json
+{ "rememberWindows": true }
+```
+
+Every window goes back where the user left it: position, size, the screen it
+was on, and maximized/fullscreen. Placements are kept per **screen layout**
+(the set of plugged-in screens), the way the OS keeps its own windows', so
+docked and laptop-only each get their own arrangement back. A screen is
+recognised by more than its id — uid, name, resolution, scale, built-in-ness
+and its place in the layout all count — so a replugged monitor (new id, same
+panel) still matches. If the window's screen is gone, it lands on the screen
+under the cursor at the same relative spot, clamped to fit.
+
+The main window is built hidden and shown once it's been placed, so it never
+flashes at the default position (it shows anyway after 3s if something goes
+wrong). A `win.open()` without `x`/`y`/`screen` reopens where that window id
+last was; an explicit position always wins. The state lives in
+`window-state.json` next to `store.json`. Off by default. Apps with their own
+policy can build it from `getState()` (`screenId`, `local`, `pixels`),
+`matchScreen()` and `setPosition(x, y, { screen })` instead. On Wayland only
+size and fullscreen come back — the compositor owns position.
 
 ### Apps that place their own windows
 

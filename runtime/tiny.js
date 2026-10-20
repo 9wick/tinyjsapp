@@ -3,6 +3,8 @@
 // window.__emit is how the backend pushes events into the page.
 (() => {
   const call = (method, params) => window.__invoke(JSON.stringify({ method, params }));
+  // a screen option can be an id or a screens() entry; the wire wants the id
+  const scrId = (s) => (s && typeof s === 'object' ? s.id : s);
   // tiny.clipboard.onChange starts a watch only if this page hasn't one.
   let clipWatching = false;
   const handlers = {};
@@ -282,7 +284,8 @@
       // The PAGE's box, decorations excluded — the same units win.open's
       // `size`, setMinSize and getState().width/height speak, so reading the
       // size and handing it straight back is a no-op. Top-left stays put.
-      setSize: (width, height) => call('win.setSize', { width, height }),
+      // { units: 'px' }: the pixels of the screen the window is on.
+      setSize: (width, height, opts) => call('win.setSize', { width, height, units: opts?.units }),
       // hide(): hides the APP — focus returns to the previous app (palettes
       // can hide-then-paste with no frontmost tracking). hide({ app: false }):
       // put away just this window, the app stays put. show({ activate:
@@ -310,7 +313,9 @@
       // Top-left origin. Wayland forbids a client from placing its own
       // toplevels, so this (and center()) do nothing there — check
       // getState().canPosition and fall back to startDrag() for dragging.
-      setPosition: (x, y) => call('win.setPosition', { x, y }),
+      // { screen } (an id or a screens() entry): x/y relative to that
+      // screen's top-left, in its points — or its pixels with units: 'px'.
+      setPosition: (x, y, opts) => call('win.setPosition', { x, y, screen: scrId(opts?.screen), units: opts?.units }),
       // Clamp this window onto the nearest screen if nobody could see or
       // grab it (less than a sliver visible on any display). One-shot manual
       // form of the automatic stale-position rescue — mainly for apps that
@@ -318,7 +323,8 @@
       // at the one moment they DO want a window back (e.g. after a restore).
       ensureOnScreen: () => call('win.ensureOnScreen'),
       restore: () => call('win.restore'),
-      setFullscreen: (enabled) => call('win.setFullscreen', { enabled }),
+      // { screen }: fullscreen on that screen (works on Wayland too).
+      setFullscreen: (enabled, opts) => call('win.setFullscreen', { enabled, screen: scrId(opts?.screen) }),
       // { x, y, width, height, outer: { width, height }, fullscreen,
       //   minimized, visible, focused, alwaysOnTop, resizable,
       //   screen: { width, height, scale } }
@@ -824,7 +830,19 @@
       // Every display (same top-left coords as win.setPosition): [{ id,
       // name, x, y, width, height, visible: {x,y,width,height}, scale,
       // primary }] — visible excludes the menu bar and Dock.
+      // Also: uid (stable across reboots where the OS allows), internal
+      // (built-in panel), pixels: { width, height, visible } (screen-local).
       screens: () => call('app.screens'),
+      // Screen containing a global point / holding most of a global rect.
+      screenAt: (x, y) => call('app.screenAt', { x, y }),
+      screenFor: (rect) => call('app.screenFor', { rect }),
+      // Screen of the focused window of ANY app (cursor's screen when it
+      // shows none); null where the OS won't say (Wayland).
+      foregroundScreen: () => call('app.foregroundScreen'),
+      // A saved screen snapshot -> the connected screen it most likely is.
+      matchScreen: (saved) => call('app.matchScreen', { saved }),
+      // Screens plugged/unplugged/rearranged/rescaled: fn(screens).
+      onScreensChanged: (fn) => window.tiny.api.on('screens-changed', fn),
       // Standard per-app directories: { home, data, cache, logs, temp,
       // downloads, desktop, documents } (data/cache/logs are per app id).
       paths: () => call('app.paths'),

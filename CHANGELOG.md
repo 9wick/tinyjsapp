@@ -4,6 +4,60 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Windows: one coordinate space across monitors with different
+  scaling.** `screens()`, `setPosition`, `getState()` and `mousePosition()`
+  each divided by a different monitor's scale, so on a mixed-DPI setup they
+  disagreed. A 125% laptop to the right of a 100% 1920-wide monitor reported
+  `x: 1536`, a point inside the left monitor. They now share one layout,
+  built the way Chromium builds its own: the laptop sits at `x: 1920`, and
+  `setPosition(getState().x, getState().y)` stays put on every monitor.
+  **If you worked around this** by multiplying by `scale` before
+  `setPosition` (the workaround in #70), remove it. Single-monitor and
+  same-scale setups are unaffected.
+- **Place windows relative to one screen.** `setPosition(x, y, { screen })`
+  takes coordinates relative to that screen's top-left, in its points, or in
+  its pixels with `units: 'px'`. `setSize(w, h, { units: 'px' })`,
+  `setFullscreen(true, { screen })` (which also works on Wayland) and
+  `win.open(id, { screen, x, y })` work the same way. There is no global
+  pixel space, because macOS doesn't have one, so `px` needs a `screen`.
+- **More about each screen.** `screens()` entries gain `uid` (the stable
+  identity to persist: display UUID on macOS, monitor device path on
+  Windows, connector + model on Linux), `internal` (the built-in panel) and
+  `pixels`. `getState()` gains `screenId`, `local` and `pixels`; `onState`
+  events carry `screenId` and fire when a window moves to another screen;
+  `mousePosition().screen` gains `id`. New: `screenAt(x, y)`,
+  `screenFor(rect)`, `foregroundScreen()` (the screen of the focused window
+  of any app, no permission needed; `null` on Wayland), `matchScreen(saved)`
+  and `onScreensChanged(fn)` (backend: `onSystem('screens')`).
+- **`"rememberWindows": true`** in tinyjs.json puts every window back where
+  the user left it: position, size, screen and maximized/fullscreen, kept
+  per set of plugged-in screens and matched across replugs. The main window
+  is shown once it has been placed. Off by default.
+  ([#70](https://github.com/tarwin/tinyjsapp/issues/70), thanks to
+  [@lionel-rowe](https://github.com/lionel-rowe) for the report.)
+- **Windows: windows keep their size when moved to a screen with a different
+  scale.** A secondary window kept its pixel size, so a 600×400 window
+  dragged from a 100% screen to a 150% one came out 400×267, and one opened
+  on a scaled screen started a few points short. A main window with a menu
+  bar lost the bar's height on every crossing (720 → 700 → 680).
+- **Windows: no more crash on quit.** An app that was still sending updates
+  to its windows as it quit could make the launcher crash during teardown
+  (amp did on every quit). Since 0.58.1 that showed up as
+  `webview launcher exited with status -1073741819` and a non-zero exit code.
+- **Linux X11: `getState()` x/y is the frame's top-left, as documented.**
+  For a window with a title bar it reported the top-left of the page area
+  instead, one title bar lower than the spot `setPosition` moves the frame
+  to, so `setPosition(getState().x, getState().y)` moved the window down by
+  one title bar each time. Frameless windows and Wayland are unaffected.
+- **`rememberWindows` fixes.** On Linux, a main window with a menu bar
+  came back one menu bar shorter on every launch. A window that was
+  maximized the whole time (including one the window manager maximized
+  because it didn't fit) now comes back maximized on the screen it was on,
+  not wherever the window manager first put it. A move or resize made
+  just before `quit()` is saved instead of lost.
+
 ## 0.58.1 — 2026-10-19
 
 - **Linux: apps start on NVIDIA + Wayland.** With NVIDIA's proprietary

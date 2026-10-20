@@ -8,6 +8,238 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #70 — multi-screen: one Windows DIP space, screen-relative placement, `rememberWindows` (`feat/screens-70`, 2026-10-20)
+
+Plan and research: TODO-screens.md. Probe: `test/screens/` (README there) —
+`SCREENS_OUT=… tinyjs dev` runs every screen through the three coordinate
+spaces and the helpers; `SCREENS_PHASE=restore` checks rememberWindows after
+a restart; `SCREENS_PHASE=watch` records `screens-changed` while you plug and
+unplug. Linux launcher compiles (Ubuntu 22.04 container) but has never run.
+
+- [x] **macOS, 2x built-in + 1x virtual display** (CGVirtualDisplay helper,
+  1920x1080 at 1x, right of the panel). Probe `ok: true` on both screens:
+  global/local-pt/local-px round-trip and set(get()) per screen, screenAt /
+  screenFor, foregroundScreen, matchScreen (exact, replug, stranger),
+  `win.open({ screen })`, `setFullscreen(true, { screen })` on the 1x
+  screen, `setSize({ units: 'px' })` exact (601x401) on 1x and snapped to
+  whole points (602x402) on 2x. rememberWindows: restored to the virtual
+  screen; after unplugging, the laptop-only layout's own placement; with
+  that layout deleted, the cursor's screen at the same local spot; replugged
+  as a NEW id (6 → 9) with the same uid → back on it. `screens-changed`
+  reached backend (`onSystem('screens')`) and page (`[1, 8]` then `[1]`).
+  *(2026-10-20, macOS 27.0.1, M-series.)*
+- [x] **macOS, deferred show** — with rememberWindows the main window never
+  appears at the default spot before jumping (watch it, or screen-record a
+  launch). *(2026-10-20: CGWindowList polled every 5ms through a restore
+  launch — the first on-screen frame is already at the restored spot,
+  growing 492x376 → 500x382 over ~0.1s, which is AppKit's open animation;
+  nothing at the default centred position.)*
+- [x] **macOS re-check after the Windows/Linux fixes (`aceea9e`)** — probe
+  `ok: true` and restore exact on THREE screens: 2x built-in, a real 2x
+  external (YOGA Pad Pro, 1080x675) and the 1x virtual display. Kitchen
+  sink `feat/screens` (examples repo) driven by an injected script through
+  the Screens card: send-to-screen on all three, pixel-exact 640x400 px at
+  (32, 32) px on 1x, matchScreen with a wrong uid, fullscreen on the next
+  screen and back, foregroundScreen — no page errors. On the 1080x675
+  external a 1100x720 window is shrunk and nudged up by AppKit to fit
+  (local y 31, not 40): OS behaviour, not ours. Found + fixed: macOS posts
+  its screen-parameters notification on fullscreen enter/exit, so
+  `screens-changed` fired twice with an unchanged list; the bridge now only
+  emits when screens() actually changed (unplug/replug still gives exactly
+  2 events). That dedupe is bridge-side, so it applies on every OS —
+  worth one plug/unplug re-check on Windows and Linux.
+  *(2026-10-20, macOS 27.0.1.)*
+
+Windows runs: Windows 11 arm64 in Parallels, launcher rebuilt from the branch
+by `tinyjs dev`. Second screen = an external on the Mac passed through as a
+second "Parallels Vu" (both 2x native); scales set per monitor and monitors
+moved with DisplayConfigSetDeviceInfo / SetDisplayConfig (what Settings
+does), so every layout below is a real Windows one. A cable pull does NOT
+reach the guest (Parallels keeps the display) — "unplug" here is Win+P
+"PC screen only" → "Extend" (SetDisplayConfig TOPOLOGY_INTERNAL/EXTEND),
+which removes and re-adds the monitor with the same broadcasts.
+*(2026-10-20.)* Scratch harness (dpi.ps1, topo.ps1, a 2ms window poller,
+a broadcast spy) was not committed.
+
+- [x] **Windows, mixed DPI (100% + 125%), laptop RIGHT of the external** —
+  Lionel's setup. `screens()` reports the laptop at `x` = the external's
+  width (not width/1.25). Probe `ok: true`. Then with the 125% screen LEFT
+  of and ABOVE the primary, and with 150%.
+  - Primary 3456x2168 at 100%, second 2160x1350 px: 125% right → `x: 3456`
+    (not 2765), 1728x1080; left → `x: -1728`; above → `y: -1080`; 150%
+    right → `x: 3456`, 1440x900. Probe `ok: true` in all four, every case
+    round-trips on both screens (local px within the ±1 a fractional scale
+    allows). Also both at 2x, right and left: `ok: true`.
+- [x] **Windows, a window straddling two monitors** — `setPosition(get())`
+  does not move it (both directions pick the monitor holding most of it);
+  dragging it across emits one onState with the new `screenId`.
+  - FIXED on the way: a window coming FROM the 150% screen to a spot mostly
+    on the 100% one landed 100 DIPs off on the wrong screen
+    (`setPosition(3156, 542)` → `3256, 509`, screen 1). It kept its 1.5x
+    physical size, sat 50/50 physically, so Windows never rescaled it and
+    getState read it through the 150% monitor. `match_monitor_dpi` now hops
+    it inside the target first (WM_DPICHANGED fires synchronously; the
+    webview's handler resizes), for `pos` and `spos`. After: all four
+    from×to combinations land exactly, size stays 400x300 DIP.
+  - set(get()) ×3 stable mostly-on-0 and mostly-on-1 (100% + 150%).
+  - Slide across (40 SetWindowPos steps from another process — the same
+    WM_MOVE path a drag takes, but not a mouse drag): one onState 0 → 1;
+    the other way one 1 → 0.
+  - Sizes across 100% ↔ 150% (fixed after the first pass): secondaries
+    opened or moved either way read exactly 600x400; Tiny Deck (has a menu
+    bar) hopped 4× at 1100x720, 800x500, 640x400, 500x320, exact every
+    time. Kitchen-sink's Screens card driven over CDP: place per screen,
+    px placement 640x400 px at (32,32) px, matchScreen with a wrong uid,
+    foregroundScreen, fullscreen on the other screen, rememberWindows
+    reopening on screen 1.
+  - amp at 100/150: docked group moves in lockstep across and back (CDP
+    drag), renders right on 150%, quits with exit 0 (crashed before; see
+    TODO-screens.md). Real-mouse drag across mixed DPI NOT done — see the
+    WebView2 screenX note there.
+- [ ] **Windows, uid** — stable across a reboot; two identical monitors get
+  different uids; note what happens when one moves to another port.
+  - Two identical panels (both "Parallels Vu"): different uids,
+    `\?\DISPLAY#PRL5000#3&21de92e8&0&UID0#{e6f0…}` vs `…&UID1#{…}` —
+    the PnP instance part tells them apart. Survived scale changes, moves
+    and a topology off/on (rememberWindows matched it back). Reboot and
+    port move not done (a VM has no ports; a reboot ends the session).
+- [x] **Windows, `screens-changed`** — plug/unplug, change a monitor's
+  scale, move the taskbar (SPI_SETWORKAREA). Does a scale change alone send
+  WM_DISPLAYCHANGE? If not, it needs WM_DPICHANGED/WM_SETTINGCHANGE wiring.
+  - **Scale: yes, it does** — 200% → 225% → 200% sent WM_SETTINGCHANGE
+    0x9F, WM_DISPLAYCHANGE, WM_SETTINGCHANGE 0x2F each way; one
+    `onSystem('screens')` + one page event per change, the list carrying
+    2.25 / 1536x964 then 2 / 1728x1084. No extra wiring needed.
+  - **Work area:** taskbar auto-hide on/off → one event each (visible
+    height 1084 / 1036). A bare SPI_SETWORKAREA is reverted by Explorer
+    within 300ms, so set+revert reads as ONE settled event.
+  - **Unplug/replug** (Win+P, see above): remove → one event, `[0]`;
+    re-add → TWO events 650ms apart, both `[0, 1]` — Windows sends two
+    WM_DISPLAYCHANGE ~930ms apart on re-add, past the 500ms debounce.
+    Harmless (same list twice); a bridge-side "same list as last time"
+    skip would make it one.
+- [x] **Windows, `setFullscreen(true, { screen })`** — main lands on the
+  chosen monitor; a secondary maximizes there.
+  - Main: probe's fullscreenOn → screen 1 in every layout above. A
+    secondary opened on screen 0 maximized on screen 1 (1440 wide, its work
+    area) and one opened on 1 maximized on 0; onState maximized
+    false → true.
+- [x] **Windows, rememberWindows** — restore phase, incl. a maximized window
+  (normal rect kept), and no flash before the deferred show.
+  - One screen: back at local 150,120, 500x350. Maximized: saved
+    `maximized: true` with the normal rect 200,150 520x360; restored
+    maximized, un-maximizing landed on 200,150 520x360. (`getState()` has
+    no `maximized`; only onState does.)
+  - Two screens: back on screen 1 (150% too). Win+P single → that layout's
+    own placement; with it deleted → the cursor's screen, same local spot
+    (150,120, 500x350); extend again → back on screen 1 by uid.
+  - FIXED: **flash.** `webview_set_size`'s first call SHOWS main, and the
+    defer hide came after navigate, so main sat visible at the default spot
+    for ~20ms — a 2ms poll caught it in 2 of 5 restores (vis=1 at
+    442,442, hidden, then shown placed). Main now starts DWM-cloaked when
+    it will start hidden (deferred show or accessory) and is uncloaked
+    after the hide. After: 0 of 5 visible before the placed frame; a plain
+    app (no rememberWindows) shows exactly as before.
+  - FIXED (guard): once, after a Win+P detach with main on the vanishing
+    150% screen, the single-screen layout saved main as `116x0` at 0,0 and
+    restored it as a 116x1 window. Not reproduced in four more detaches
+    (equal and mixed DPI, main on the vanishing screen — all saved
+    500x350). The bridge now neither saves nor restores an empty content
+    box; with a planted 116x0 entry: before 116x1, after the default
+    400x300.
+- [x] **Linux X11, two monitors** — probe `ok: true`; foregroundScreen via
+  _NET_ACTIVE_WINDOW; uid looks like `DP-1/<mfr>/<model>`; `internal` true
+  for eDP. First run FAILED every round-trip: `getState()` read the client
+  origin (gdk_window_get_origin) while `pos`/`spos` move the mutter frame,
+  so a decorated window read 37px (the title bar) below where it was put
+  and `set(get())` marched it down — `win.open({ screen, x, y })` and
+  rememberWindows too. Pre-dates #70 (8a4e43f only fixed undecorated). Now
+  reads gdk_window_get_root_origin (frame top-left; equal to the origin
+  when undecorated). After: probe `ok: true`, `fails: []` on both screens;
+  restore twice → screen 1, local 150,120, 500x350, no drift; same with
+  `"chrome": { "frame": false }` (probe ok, restore exact).
+  foregroundScreen → screen 1 (the probe's own window was there);
+  uid `Meta-0//Meta-0` (Xwayland: no EDID, model = connector); `primary`
+  true on screen 0. *(2026-10-20, arm64 VM; rig: headless gnome-shell 46
+  with `--virtual-monitor 1920x1080 --virtual-monitor 1280x720` in its own
+  dbus-run-session, GSETTINGS_BACKEND=memory, a stub
+  `org.freedesktop.systemd1` on that bus so its Xwayland starts, app on
+  `DISPLAY=:2 GDK_BACKEND=x11`. Not run: real Xorg, a real eDP panel /
+  `internal: true`, real EDID manufacturer/model.)*
+  Re-run on the VM's real GNOME desktop with a second (Parallels) screen
+  attached, after the Windows fixes were pulled: X11 via the session's own
+  Xwayland + mutter — probe `ok: true`, `fails: []`; restore twice →
+  screen 1 (`Virtual-2//Virtual-2`), local 150,120, 500x350. *(2026-10-20.)*
+- [x] **Linux Wayland** — `setFullscreen(true, { screen })` uses that output
+  (the one placement op Wayland honours); foregroundScreen is null; spos /
+  pos are no-ops; rememberWindows restores size only; uid from
+  xdg_output.name on GNOME and KDE. GNOME only: fullscreen on screen 1 →
+  `screenId: 1`; foregroundScreen null; every position op left the window
+  at 0,0 (`canPosition: false`); restore gave 500x350 at 0,0; uid
+  `Meta-0/MetaVendor/MetaVirtualMonitor` (rig) and
+  `Virtual-1/unknown/unknown` (VM desktop). `primary` is false on every
+  screen (GDK Wayland has no primary). *(2026-10-20, same rig on
+  `WAYLAND_DISPLAY`, plus the VM's real one-screen GNOME desktop. KDE not
+  run — none here.)*
+  Re-run on the real two-screen desktop (Wayland): same — fullscreen on
+  screen 1 → `screenId: 1`, foregroundScreen null, positions no-ops,
+  restore 500x350 at 0,0. *(2026-10-20.)*
+- [x] **Linux, fractional scaling** — what `scale` and `pixels` report at
+  125% on GNOME and KDE (expected: an integer, rounding differs), and what
+  WebKitGTK's `devicePixelRatio` says in the same setup. GNOME 46 with
+  scale-monitor-framebuffer, 1920x1080 at 125%: Wayland client →
+  logical 1536x864, `scale: 2`, `pixels` 3072x1728 (GTK's buffer, not the
+  panel's 1920x1080), devicePixelRatio 2; X11 client (Xwayland, upscaled
+  by mutter) → 1536x864, `scale: 1`, `pixels` 1536x864, devicePixelRatio
+  1. The scale change, and the change back, each sent ONE
+  `onSystem('screens')` and ONE page `onScreensChanged` (Wayland and X11).
+  *(2026-10-20, same rig, keyfile gsettings backend in the scratchpad. KDE
+  not run.)*
+- **kitchen-sink 0.20.0 (examples `feat/screens`) on Linux** — a page
+  driver clicked the Screens card and cookie demo (scratch copy, own app
+  id). Three fixes came out of it:
+  - [x] **Linux: restored main lost the menu bar's height every launch**
+    (600 → 574 → 548). The bridge's restore setSize ran before the first
+    menu bar; apply_menus' one-time repayment aims at the tinyjs.json size
+    and its born-size guard skipped the now-resized window. A setSize before
+    the first bar now becomes the repayment target. After: 900x600 twice.
+    *(2026-10-20, X11 on the real two-screen desktop.)*
+  - [x] **bridge: a maximized window with no normal rect** (born maximized,
+    or mutter auto-maximizing a 1100x720 that doesn't fit a 768-tall
+    screen) restored on whatever screen the WM chose — zoom() only. It now
+    moves onto `stateScreen` first. Planted entry, maximized on screen 1 →
+    back maximized on screen 1. *(Linux X11, 2026-10-20.)*
+  - [x] **bridge: a move <500ms before `quit()` was never saved** (the
+    debounce timer died with the process). `app.quit()` (all quit paths:
+    page `tiny.quit()`, closing main) now flushes pending saves, ≤1s.
+    Moved to screen 1 300ms before quit → saved and restored there.
+    *(Linux X11, 2026-10-20.)*
+  - [ ] **macOS + Windows: re-check the two bridge fixes** — shared code:
+    maximize on screen 2, quit; relaunch lands maximized on screen 2 (also
+    with a window that was never un-maximized); move then `tiny.quit()`
+    within 300ms → relaunch at the new spot; a plain quit isn't slower.
+    - [x] Windows (2026-10-20, 200% + 200%): moved to screen 1 (300,200)
+      450x320 and `app.quit()` 250ms later → saved and relaunched there
+      (×2); quit → exit 68/101ms vs 65/91ms with nothing pending.
+      Maximized on screen 1 → relaunch maximized on screen 1, un-maximize
+      back to its normal rect there. Planted never-un-maximized entry (no
+      rect, stateScreen screen 1) → maximized on screen 1. Planted with
+      the normal rect on screen 0 and stateScreen screen 1 → maximized on
+      screen 1, but un-maximizing then lands at 40,40 on screen 1, not the
+      saved rect on screen 0: the pre-zoom setPosition replaces the normal
+      rect. Probably fine (it's where the user last saw it). Note too that
+      a save after un-maximizing drops `stateScreen` (entry rebuilt without
+      it) — harmless, since it's only read when `maximized` is set.
+  - Everything else as expected: map click → setPosition(40, 40, { screen })
+    (X11: work-area clamped to 66,40 on the dock screen, 40,40 on the
+    other), pixel-exact 640x400 px at 32,32 px, fullscreen on the next
+    screen, matchScreen with a wrong uid → same screen, foregroundScreen
+    (X11 an id, Wayland null), cookies set/remove/get, no page errors on
+    X11 or Wayland.
+- [ ] **Linux, KDE Plasma (Wayland)** — the two boxes above on KDE: uid
+  from xdg_output.name, fullscreen-on-output, and `scale` / `pixels` /
+  devicePixelRatio at 125% (KWin may hand GTK3 a different integer).
+
 ## #78 — NVIDIA + Wayland: launcher sets `__NV_DISABLE_EXPLICIT_SYNC=1` (2026-10-19)
 
 The proprietary NVIDIA driver's explicit-sync path got the launcher's

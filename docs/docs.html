@@ -646,6 +646,9 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
   <i>// live screen; false if your app parks windows off-screen on purpose —</i>
   <i>// win.ensureOnScreen() stays available either way (default: true)</i>
   "offscreenRescue": false,
+  <i>// put every window back where the user left it — per set of plugged-in</i>
+  <i>// screens, matched even after replugs; main is shown once restored</i>
+  "rememberWindows": true,
   <i>// the app places its own windows: on Linux this runs it under X11</i>
   <i>// (XWayland), since Wayland ignores setPosition/center. No-op elsewhere</i>
   "windowPlacement": true,
@@ -721,6 +724,7 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
   "about": "menu",
   "attribution": "© 2026 You — made with tinyjs",
   "offscreenRescue": false,
+  "rememberWindows": true,
   "windowPlacement": true,
   "userAgent": "Mozilla/5.0 …",
   "url": "https://app.example.com",
@@ -996,9 +1000,18 @@ await <b>tiny.app.mouseTracking.start</b>();  <b>tiny.app.mouseTracking.stop</b>
 
 <i>// every display, same coords — position windows on any monitor</i>
 const screens = await <b>tiny.app.screens</b>();
-<i>// [{ id, name, x, y, width, height, visible: { x, y, width, height },</i>
-<i>//    scale, primary }] — visible excludes the menu bar and Dock; primary</i>
-<i>//    is the menu-bar screen (the coordinate origin)</i>
+<i>// [{ id, uid, name, x, y, width, height, visible: { x, y, width, height },</i>
+<i>//    scale, primary, internal, pixels: { width, height, visible } }]</i>
+<i>// visible excludes the menu bar / Dock / taskbar. Global x/y are logical</i>
+<i>// points everywhere, one consistent space on mixed-DPI Windows too. Persist</i>
+<i>// uid (survives reboots/replugs), not id (a session handle).</i>
+<b>tiny.win.setPosition</b>(40, 40, { screen: screens[1] });            <i>// its points</i>
+<b>tiny.win.setPosition</b>(81, 81, { screen: screens[1], units: 'px' }); <i>// its pixels</i>
+<b>tiny.win.setFullscreen</b>(true, { screen: screens[1] });  <i>// works on Wayland too</i>
+await <b>tiny.app.screenAt</b>(x, y);  await <b>tiny.app.screenFor</b>(rect);
+await <b>tiny.app.foregroundScreen</b>();  <i>// focused window of ANY app; null on Wayland</i>
+await <b>tiny.app.matchScreen</b>(saved);  <i>// saved screen -> connected one, or null</i>
+<b>tiny.app.onScreensChanged</b>((screens) =&gt; …);
 <b>tiny.win.print</b>();                <i>// native print panel</i>
 
 <i>// files dragged onto the window — real filesystem paths</i>
