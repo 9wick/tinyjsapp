@@ -43,8 +43,13 @@ ICoreWebView2CookieManager. Probe + expected values: `test/cookies/README.md`.
     *(2026-10-19, Windows 11 arm64, clean jar: `session`
     `[["a b=c", null, "lax"]]`, `vis` `lax`, every other row unchanged;
     server.py saw `sid=s3cret; injected=v1; sess=a b=c`.)*
-  - [ ] **Linux** — `session` `lax` on WebKitGTK 2.50 AND 2.52 (`vis`
-    still varies by version; that's documented, not a bug).
+  - [x] **Linux** — `session` `lax` on WebKitGTK 2.50 AND 2.52 (`vis`
+    still varies by version; that's documented, not a bug). *(2026-10-19,
+    arm64: 2.52.6 on the VM's Wayland desktop — `vis` `lax`; 2.50.4 in an
+    ubuntu:22.04 container, Xvfb + dbus-run-session, `setup.sh` from a copy
+    of the branch — `vis` `none`. Both: `session` `["a b=c", null,
+    "lax"]`, every other row unchanged, server.py saw `sid=s3cret;
+    injected=v1; sess=a b=c`.)*
 
 ## `app.paths()` creates data/cache/logs; build names a busy dist/ (#71, #72, 2026-10-19)
 
