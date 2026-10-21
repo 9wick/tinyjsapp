@@ -175,6 +175,13 @@
   <section>
 
     <div class="rel">
+      <h2>0.62.1 <span class="date">2026-10-21</span></h2>
+      <ul>
+        <li><b>macOS: <code>contextMenu: false</code> also covers dialogs.</b> The title and message of an alert, confirm or prompt (<code>tiny.dialog.*</code> and the page&rsquo;s own <code>alert()</code>/<code>confirm()</code>/<code>prompt()</code>) could be selected, and right-clicking them opened the system text menu (Look Up, Translate, Services&hellip;). With <code>contextMenu: false</code> that text is now plain and shows no menu; a prompt&rsquo;s input keeps its menu. Apps without the setting keep the standard macOS behaviour. (<a href="https://github.com/tarwin/tinyjsapp/issues/83">#83</a>, thanks to <a href="https://github.com/Blatman">@Blatman</a> for the report.)</li>
+      </ul>
+    </div>
+
+    <div class="rel">
       <h2>0.62.0 <span class="date">2026-10-21</span></h2>
       <ul>
         <li><b>Windows on ARM: native arm64 builds.</b> Releases now include <code>tinyjs-windows-arm64.zip</code>, and the Windows installer picks it on an ARM64 machine; before, Windows on ARM ran the x64 build under emulation. txiki.js publishes no Windows ARM64 runtime, so release CI builds <code>tjs.exe</code> from source the way txiki builds its x64 one, and compiles the launcher with llvm-mingw. WebAssembly&rsquo;s WASI calls needed two patches to txiki&rsquo;s WebAssembly engine (WAMR) on Windows ARM64, in <code>native/patches/</code>: its upstream ARM64 call routine, and a fix to the argument layout it uses there; txiki&rsquo;s own WebAssembly tests run against every build. Apps build for the CPU of the tinyjs that builds them, so an arm64 tinyjs makes arm64 apps. <code>tinyjs publish</code> names that zip <code>&lt;name&gt;-&lt;ver&gt;-win-arm64.zip</code>. Publishing the same project with an x64 and an arm64 tinyjs merges both into the manifest&rsquo;s <code>"win"</code> block; the x64 build also stays in <code>win.url</code>, where existing installs look. An x64 app on an ARM64 machine updates to the arm64 build when there is one, and an arm64 app never falls back to an x64 build. In a source checkout, <code>setup.ps1</code> fetches the arm64 <code>tjs.exe</code> from the latest release and compiles with llvm-mingw when it finds it. (<a href="https://github.com/tarwin/tinyjsapp/issues/82">#82</a>, thanks to <a href="https://github.com/zhuyuanmin">@zhuyuanmin</a> for the request.)</li>
