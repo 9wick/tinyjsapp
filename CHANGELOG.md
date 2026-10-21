@@ -11,7 +11,11 @@ https://tinyjs.app/changelog.
   ARM64 machine; before, Windows on ARM ran the x64 build under emulation.
   txiki.js publishes no Windows ARM64 runtime, so release CI builds
   `tjs.exe` from source the way txiki builds its x64 one, and compiles the
-  launcher with llvm-mingw. Apps build for the CPU of the tinyjs that
+  launcher with llvm-mingw. WebAssembly's WASI calls needed two patches to
+  txiki's WebAssembly engine (WAMR) on Windows ARM64, in
+  `native/patches/`: its upstream ARM64 call routine, and a fix to the
+  argument layout it uses there; txiki's own WebAssembly tests run
+  against every build. Apps build for the CPU of the tinyjs that
   builds them, so an arm64 tinyjs makes arm64 apps. `tinyjs publish` names
   that zip `<name>-<ver>-win-arm64.zip`. Publishing the same project with
   an x64 and an arm64 tinyjs merges both into the manifest's `"win"` block;

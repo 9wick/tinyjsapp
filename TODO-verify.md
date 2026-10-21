@@ -18,8 +18,15 @@ publishing. `python3 test/update-win-arch/check.py` (macOS/Linux) covers
 which download an app picks; the env-var ARM detection below is the part
 nothing has seen on a real machine.
 
-- [ ] **CI** — a `release-test/**` dry run: arm64 leg green, verify step
+- [x] **CI** — a `release-test/**` dry run: arm64 leg green, verify step
   prints `machine 0xAA64` for both binaries, GUI smoke passes.
+  *(2026-10-21, run 39558361061 on windows-11-arm (Cobalt 100): all 31 of
+  txiki's test-wasm*.js pass against the arm64 tjs.exe; tjs.exe and
+  launcher-win.exe both 0xAA64; tjs.exe imports only system DLLs (no
+  VCRUNTIME/MSVCP); GUI smoke page passed in a real window; both zips in
+  checksums.txt; "Create GitHub release" skipped. It took two WAMR patches
+  (native/patches/): without them every WASI call crashed with 0xC0000005,
+  which txiki's own x64 build, emulated on the same runner, did not.)*
 - [ ] **Windows on ARM, install** — `irm …/install.ps1 | iex` (or
   `TINYJS_INSTALL_ZIP` with the CI zip) installs arm64: Task Manager's
   Details tab shows `tjs.exe` as ARM64, not x64. From the usual (ARM64)
