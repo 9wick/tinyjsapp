@@ -23,7 +23,7 @@ need a real update watched by hand (localhost manifest, as for `extras/`).
   rejection leave the bundle untouched; a keyless app updates from the
   same signed manifest and sees nothing in a `--signed-only` one.
   *(2026-10-20, macOS 27.0 arm64.)*
-- [ ] **Windows** — `check.py` PASS (txiki has Ed25519 there), then by
+- [x] **Windows** — `check.py` PASS (txiki has Ed25519 there), then by
   hand: an app with two keys in `publicKey`, `publish` with the second
   key's private file, real update 0.1.0 → 0.2.0 from a localhost manifest
   (check → install → relaunch shows 0.2.0). Edit the `win` url inside
@@ -31,6 +31,16 @@ need a real update watched by hand (localhost manifest, as for `extras/`).
   edit the plain `win` url instead → still installs the signed one.
   `--expires` in the past (hand-signed) → "expired". Same manifest, app
   without a key → updates; `--signed-only` → no update.
+  *(2026-10-20, Windows 11 26200 arm64: `check.py` PASS (txiki 26.6.0),
+  packaged run SKIPped as designed. By hand, scripted: `publicKey` =
+  [A, B], published with B's private file; installed 0.1.0 copy outside
+  `dist/`. Payload's `win.url` edited → "update manifest signature
+  verification failed", exe untouched. Payload re-signed with B and
+  `expires` 2026-01-01 → "update manifest expired … needs to re-sign it",
+  exe untouched. Plain `win` url → `127.0.0.1:1` + zeroed sha256 → installed
+  anyway; relaunched exe in the same folder reported 0.2.0. Keyless 0.1.0
+  build: `{signed}` only → no update; the full signed manifest → updated
+  and relaunched as 0.2.0.)*
 - [ ] **Linux** — the same, with the per-arch `linux` block.
 
 ## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
