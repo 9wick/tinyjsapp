@@ -35,6 +35,9 @@ jobs:
             arch: arm64
             machine: 'AA64'   # PE IMAGE_FILE_MACHINE_ARM64
     runs-on: ${{ matrix.runner }}
+    # Builds only; the release job alone needs contents: write.
+    permissions:
+      contents: read
     env:
       ZIP: tinyjs-windows-${{ matrix.arch }}.zip
     steps:
@@ -68,7 +71,9 @@ jobs:
 
       - name: Set up vcpkg (arm64 tjs build)
         if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
-        uses: lukka/run-vcpkg@v11
+        # Pinned by commit: the only third-party action here, in a workflow
+        # that publishes releases (v11.6).
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
         with:
           # txiki's own pin (its release.yml at TJS_VERSION).
           vcpkgGitCommitId: '66c0373dc7fca549e5803087b9487edfe3aca0a1'
