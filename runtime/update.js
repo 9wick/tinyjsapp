@@ -44,6 +44,31 @@ function macArch() {
     .then((r) => (r.ok && r.out.trim() === '1' ? 'arm64' : 'x86_64'), () => 'x86_64'));
 }
 
+// Windows: this build's CPU from its own exe's PE header, and whether the
+// machine is ARM64 — so an x64 build emulated there updates to the native
+// arm64 build when the manifest has one (the twin of the Rosetta move
+// above). No spawn: a GUI-subsystem app shelling out flashes a console. An
+// emulated x64 process sees PROCESSOR_ARCHITECTURE=AMD64; the machine shows
+// through PROCESSOR_ARCHITEW6432 / PROCESSOR_IDENTIFIER. Missing both just
+// leaves an x64 build on x64 updates.
+let winArchP = null;
+function winArch() {
+  return (winArchP ??= (async () => {
+    let own = /arm64/i.test(tjs.env.PROCESSOR_ARCHITECTURE ?? '') ? 'arm64' : 'x86_64';
+    try {
+      const fh = await tjs.open(tjs.exePath, 'r');
+      const b = new Uint8Array(4096);
+      try { await fh.read(b, 0); } finally { await fh.close(); }
+      const pe = (b[0x3c] | (b[0x3d] << 8) | (b[0x3e] << 16) | (b[0x3f] << 24)) >>> 0;
+      const m = pe + 6 <= b.length ? b[pe + 4] | (b[pe + 5] << 8) : 0;
+      if (m === 0xaa64) own = 'arm64'; else if (m === 0x8664) own = 'x86_64';
+    } catch {}
+    const armMachine = own === 'arm64' || /arm64/i.test(tjs.env.PROCESSOR_ARCHITEW6432 ?? '')
+      || /^arm/i.test(tjs.env.PROCESSOR_IDENTIFIER ?? '');
+    return { own, machine: armMachine ? 'arm64' : 'x86_64' };
+  })());
+}
+
 function assertSafeUrl(u, what) {
   const s = String(u ?? '');
   if (/^https:\/\//i.test(s)) return;
@@ -167,12 +192,21 @@ export async function checkForUpdate({ url, version, publicKey }) {
   // the Windows zip. On Windows, overlay it — its own version wins when the
   // two platforms ship different builds — and if a release has no Windows
   // build, report "no update" rather than ever pulling a mac zip.
+  // Per-arch Windows builds: "win": { "arm64": { url, sha256 }, "x86_64": … },
+  // with the x86_64 one also in win.url/sha256 for apps that predate the
+  // split (all x64). An arm64 build takes win.arm64 or nothing — never the
+  // x64 build, which would quietly move it onto emulation.
   if (IS_WIN) {
-    if (manifest?.win?.url && manifest.win.sha256) {
-      manifest.url = manifest.win.url;
-      manifest.sha256 = manifest.win.sha256;
-      if (manifest.win.version) latest = manifest.win.version;
-      if (manifest.win.notes) manifest.notes = manifest.win.notes;
+    const w = manifest?.win;
+    const ok = (e) => (e?.url && e.sha256 ? e : null);
+    const { own, machine } = await winArch();
+    const entry = (machine === 'arm64' ? ok(w?.arm64) : null)
+      ?? (own === 'x86_64' ? ok(w?.x86_64) ?? ok(w) : null);
+    if (entry) {
+      manifest.url = entry.url;
+      manifest.sha256 = entry.sha256;
+      if (entry.version ?? w.version) latest = entry.version ?? w.version;
+      if (entry.notes ?? w.notes) manifest.notes = entry.notes ?? w.notes;
     } else {
       return { available: false, current: version, latest,
                notes: manifest?.notes ?? null, manifest };

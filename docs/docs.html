@@ -350,7 +350,7 @@
         <code><b>irm</b> https://tinyjs.app/install.ps1 | <b>iex</b></code>
         <button onclick="copyCmd(this)">copy</button>
       </div>
-      <div class="platform">windows 10/11 · prebuilt, no compiler needed · just the
+      <div class="platform">windows 10/11 · x86_64 + arm64 · prebuilt, no compiler needed · just the
       WebView2 runtime (preinstalled on win 11) · adds tinyjs to your PATH (open a
       new terminal) · MIT</div>
     </div>
@@ -1811,7 +1811,11 @@ await <b>app.cookies.remove</b>({ url: 'https://app.example.com' });   <i>// -&g
     builds (<code>publish --arch</code>) share one manifest; each Mac fetches
     its own, and an Intel build running under Rosetta moves to the arm64 one.
     Installs from before per-arch manifests read only the top-level url, which
-    the arm64 build fills — so always publish the arm64 build too.</p>
+    the arm64 build fills — so always publish the arm64 build too. On
+    Windows the build matches the tinyjs running <code>publish</code>: run it
+    with an x64 and an arm64 tinyjs on the same project and both land in one
+    <code>"win"</code> block, the x64 one also in <code>win.url</code> for
+    older installs, and an x64 app on an ARM64 machine moves to arm64.</p>
     <pre>const { available, latest, notes } = await <b>tiny.api.call</b>('update.check');
 if (available) await <b>tiny.api.call</b>('update.install');
 

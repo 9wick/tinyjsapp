@@ -86,7 +86,9 @@ if [ "$OS" = "Linux" ]; then
         | xargs -r sed -i 's/^[[:space:]]*#pragma[[:space:]]\{1,\}\(end\)\{0,1\}region.*$//'
       GEN="Unix Makefiles"; command -v ninja >/dev/null && GEN=Ninja
       cmake -S "$TMPD/txiki-src" -B "$TMPD/txiki-src/build" -DCMAKE_BUILD_TYPE=Release -G "$GEN"
-      cmake --build "$TMPD/txiki-src/build" --target tjs -j"$(nproc)"
+      # tjs-cli is the executable (OUTPUT_NAME tjs); the "tjs" target is
+      # only the core library.
+      cmake --build "$TMPD/txiki-src/build" --target tjs-cli -j"$(nproc)"
       cp "$TMPD/txiki-src/build/tjs" bin/tjs
     fi
     chmod +x bin/tjs

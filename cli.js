@@ -192,9 +192,23 @@ const EXEC_KIND = IS_WIN ? 'Windows (PE: .exe/.dll)' : IS_LINUX ? 'Linux (ELF or
 const EXEC_OS_DIR = /^(macos|windows|linux)(-(arm64|x86_64))?$/;
 const JUNK_FILES = ['.DS_Store', 'Thumbs.db', 'desktop.ini'];
 let hostArchP = null;
+// On Windows the app is built from this very tjs.exe, so its CPU is the
+// build's: read the PE header rather than the environment (an x64 tjs.exe
+// emulated on ARM64 is building an x64 app).
 const hostArch = () => (hostArchP ??= IS_WIN
-  ? Promise.resolve(/arm64/i.test(tjs.env.PROCESSOR_ARCHITECTURE ?? '') ? 'arm64' : 'x86_64')
+  ? peArch(tjs.exePath).catch(() => null)
+      .then((a) => a ?? (/arm64/i.test(tjs.env.PROCESSOR_ARCHITECTURE ?? '') ? 'arm64' : 'x86_64'))
   : capture(['uname', '-m']).then((m) => ({ aarch64: 'arm64', arm64: 'arm64' })[m.trim()] ?? 'x86_64'));
+
+// A Windows PE file's CPU, from the machine field of its COFF header.
+async function peArch(path) {
+  const fh = await tjs.open(path, 'r');
+  const b = new Uint8Array(4096);
+  try { await fh.read(b, 0); } finally { await fh.close(); }
+  const pe = (b[0x3c] | (b[0x3d] << 8) | (b[0x3e] << 16) | (b[0x3f] << 24)) >>> 0;
+  const m = pe + 6 <= b.length ? b[pe + 4] | (b[pe + 5] << 8) : 0;
+  return m === 0xaa64 ? 'arm64' : m === 0x8664 ? 'x86_64' : null;
+}
 
 function isNativeBinary(b) {
   const u32 = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
@@ -3173,7 +3187,8 @@ async function cmdBuild() {
 //   --universal          (or TINYJS_UNIVERSAL=1) — one app with both slices,
 //                        lipo'd together (lipo needs the Command Line Tools).
 // The bare dist/<name> binary stays host-only (a local convenience, not the
-// thing that ships). macOS only: Windows is x86_64 and Linux is per-arch.
+// thing that ships). macOS only: Windows and Linux build for the CPU of the
+// tinyjs running them (an x64 tinyjs on Windows on ARM builds x64 apps).
 const MAC_ARCHS = ['arm64', 'x86_64'];
 const MAC_LABEL = { arm64: 'Apple Silicon', x86_64: 'Intel' };
 const MAC_TARGET = (() => {
@@ -3483,16 +3498,19 @@ async function cmdPublish() {
   const PUB = 'dist/publish';
   // Per-arch macOS publishes accumulate: `publish --arch arm64` then
   // `publish --arch x86_64` leaves both zips and ONE manifest carrying both.
+  // Windows likewise: an x64 and an arm64 tinyjs publishing the same project
+  // (one machine can run both — x64 is emulated on ARM64) share a manifest.
   // The build wipes dist/, so park the previous output outside it meanwhile
   // (a stash left by a failed build is picked up the same way).
   const KEEP = '.publish-prev';
-  if (MAC_SUFFIX && (await exists(PUB))) {
+  const ACCUMULATE = !!MAC_SUFFIX || IS_WIN;
+  if (ACCUMULATE && (await exists(PUB))) {
     await rmTree(KEEP);
     await tjs.rename(PUB, KEEP);
   }
   await cmdBuild();
   let prev = null;
-  if (MAC_SUFFIX && (await exists(KEEP))) {
+  if (ACCUMULATE && (await exists(KEEP))) {
     try {
       prev = JSON.parse(dec.decode(await tjs.readFile(KEEP + '/manifest.json')));
       // Signed: merge only the verified payload. Unsigned: drop a signed
@@ -3510,8 +3528,10 @@ async function cmdPublish() {
   // manifest carries them in "win" / "linux" blocks alongside the macOS
   // url/sha256, so one manifest serves every OS.
   const linuxArch = IS_LINUX ? (/aarch64|arm64/i.test(globalThis.navigator?.platform ?? '') ? 'arm64' : 'x86_64') : '';
+  // Windows builds are this tjs.exe's CPU; x86_64 keeps the original name.
+  const winArch = IS_WIN ? await hostArch() : null;
   const zipName = cfg.name + '-' + version +
-    (IS_WIN ? '-win.zip' : IS_LINUX ? '-linux-' + linuxArch + '.tar.gz' : MAC_SUFFIX + '.zip');
+    (IS_WIN ? (winArch === 'arm64' ? '-win-arm64.zip' : '-win.zip') : IS_LINUX ? '-linux-' + linuxArch + '.tar.gz' : MAC_SUFFIX + '.zip');
   if (!prev) await rmTree(PUB);
   console.log('==> packing ' + zipName);
   if (IS_LINUX) {
@@ -3551,7 +3571,12 @@ async function cmdPublish() {
   const base = cfg.update?.url ? cfg.update.url.replace(/\/[^/]*$/, '') : null;
   const zipUrl = (base ?? 'https://YOUR-HOST/updates') + '/' + zipName;
   const manifest = IS_WIN
-    ? { version, win: { url: zipUrl, sha256: sha } }
+    // Per-arch Windows builds go in the "win" block keyed by arch. Its own
+    // url/sha256 is what apps from before arm64 builds read, and every one
+    // of those is x64 — so the x86_64 build fills it.
+    ? { ...prev, version,
+        win: { ...prev?.win, [winArch]: { url: zipUrl, sha256: sha },
+               ...(winArch === 'x86_64' ? { url: zipUrl, sha256: sha } : {}) } }
     : IS_LINUX
     ? { version, linux: { [linuxArch]: { url: zipUrl, sha256: sha } } }
     : MAC_SUFFIX
@@ -3578,12 +3603,17 @@ async function cmdPublish() {
   await tjs.writeFile(PUB + '/manifest.json', enc.encode(JSON.stringify(output, null, 2) + '\n'));
 
   console.log('==> dist/publish/ ready:');
-  for (const z of Object.values(manifest.mac ?? {}).map((m) => m.url.replace(/.*\//, '')).filter((z) => z !== zipName))
-    console.log('    ' + z + '   (kept from the earlier --arch publish)');
+  const kept = [...Object.values(manifest.mac ?? {}), manifest.win?.arm64, manifest.win?.x86_64];
+  for (const z of kept.filter(Boolean).map((m) => m.url.replace(/.*\//, '')).filter((z) => z !== zipName))
+    console.log('    ' + z + '   (kept from an earlier publish of this version)');
   console.log('    ' + zipName);
   if (MAC_SUFFIX && !manifest.mac.arm64) {
     console.log('note: no arm64 build in this manifest yet — apps built before per-arch');
     console.log('      manifests only read the top-level url; publish --arch arm64 too.');
+  }
+  if (IS_WIN && !manifest.win.x86_64) {
+    console.log('note: no x86_64 build in this manifest yet — x64 apps (every app from');
+    console.log('      before arm64 builds) see no update; publish with an x64 tinyjs too.');
   }
   console.log('    manifest.json (version ' + version + ', url ' + zipUrl + ')');
   if (!base) {

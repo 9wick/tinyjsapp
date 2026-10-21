@@ -8,6 +8,102 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #82 — Windows on ARM: native arm64 builds (`feat/82-windows-arm64`, 2026-10-20)
+
+Release CI builds `tjs.exe` from source on `windows-11-arm` (MSVC + vcpkg,
+as txiki's own x64 release) and the launcher with llvm-mingw; its verify
+step asserts both are ARM64 (PE machine 0xAA64) and its smoke tests run
+them natively. A `release-test/**` branch runs the whole release without
+publishing. `python3 test/update-win-arch/check.py` (macOS/Linux) covers
+which download an app picks; the env-var ARM detection below is the part
+nothing has seen on a real machine.
+
+- [x] **CI** — a `release-test/**` dry run: arm64 leg green, verify step
+  prints `machine 0xAA64` for both binaries, GUI smoke passes.
+  *(2026-10-21, run 39558361061 on windows-11-arm (Cobalt 100): all 31 of
+  txiki's test-wasm*.js pass against the arm64 tjs.exe; tjs.exe and
+  launcher-win.exe both 0xAA64; tjs.exe imports only system DLLs (no
+  VCRUNTIME/MSVCP); GUI smoke page passed in a real window; both zips in
+  checksums.txt; "Create GitHub release" skipped. It took two WAMR patches
+  (native/patches/): without them every WASI call crashed with 0xC0000005,
+  which txiki's own x64 build, emulated on the same runner, did not.)*
+- [x] **Windows on ARM, install** — `irm …/install.ps1 | iex` (or
+  `TINYJS_INSTALL_ZIP` with the CI zip) installs arm64: Task Manager's
+  Details tab shows `tjs.exe` as ARM64, not x64. From the usual (ARM64)
+  PowerShell, and from an x64 shell too if one is to hand: the installer
+  reads the machine's arch from the registry so that one should pick arm64
+  as well.
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, run 39558361061's
+  zips. `docs/install.ps1` with `TINYJS_INSTALL_ZIP` + a scratch
+  `TINYJS_HOME`: installed, `tinyjs version` ran; `bin\tjs.exe` and
+  `native\launcher-win.exe` PE 0xAA64, and a running `tjs.exe` reports
+  process machine 0xAA64 (GetProcessInformation(ProcessMachineTypeInfo),
+  what Task Manager's Architecture column reads). The local-zip path skips
+  arch selection, so its three lines were run on their own: ARM64 PS 5.1,
+  x86 PS 5.1 (SysWOW64) and an x64 pwsh 7.4.6 (emulated) all pick
+  `tinyjs-windows-arm64.zip`. Inbox Windows has no x64 PowerShell, only
+  x86, so pwsh came from the portable zip. Under x64 emulation
+  `PROCESSOR_ARCHITEW6432` is UNSET (it is set only for x86): the registry
+  read is what catches it there.)*
+- [x] **Windows on ARM, app** — `tinyjs new` + `build` + run: the app's
+  exe and launcher.exe show as ARM64; `tiny.system.architecture()` says
+  arm64; window, tray, dialogs, audio as usual (`test/appsurface.html`).
+  *(2026-10-21: built exe + launcher.exe PE 0xAA64 and running as 0xAA64.
+  **`architecture()` and `info().arch` said `x86_64`: FIXED.** bridge.js
+  read `navigator.platform`, which is "Win32" on every Windows CPU, and fell
+  back to x86_64; it now reads the env vars the way `doctor` does. After the
+  fix the arm64 build says arm64, and so does an x64 build of the same app
+  (PE 0x8664, emulated), since `tiny.system` describes the machine. A
+  self-driving probe page in a built app: tray icon up (`position()` a real
+  32x48 rect) and removed, Web Audio `running` with the clock advancing
+  0.64 s in 0.6 s, `dialog.alert` shown and answered (harness gotcha: MB_OK's
+  lone button has id IDCANCEL, so WM_COMMAND IDOK does nothing; send 2),
+  quit cleanly. appsurface's decorations (badge/progress/flash) weren't
+  watched; nothing in this branch touches them.)*
+- [x] **Windows on ARM, publish + update** — publish 0.2.0 with the arm64
+  tinyjs then the x64 one in the same project: one manifest, `win.arm64`,
+  `win.x86_64`, and `win.url` = the x64 zip. Then from a localhost
+  manifest: an arm64 0.1.0 updates to the arm64 0.2.0; an **x64** 0.1.0
+  updates to the **arm64** 0.2.0 (this is the PROCESSOR_IDENTIFIER /
+  PROCESSOR_ARCHITEW6432 detection — log both from the x64 app if it
+  doesn't); an arm64 app against an x64-only manifest sees no update.
+  *(2026-10-21: arm64 publish, then x64 publish ("kept from an earlier
+  publish of this version"): one manifest with `win.arm64` →
+  `-win-arm64.zip`, `win.x86_64` and `win.url` → `-win.zip`. Each case ran
+  a fresh copy of the 0.1.0 dist against a localhost manifest, with the
+  server log as the record of which zip was fetched. arm64 → GET
+  `-win-arm64.zip`, relaunched (`--tinyjs-relaunched`) as 0.2.0, 0xAA64.
+  **x64 → GET `-win-arm64.zip`**, relaunched as 0.2.0 with the exe and
+  launcher now 0xAA64. The x64 app saw PA=AMD64, `PROCESSOR_ARCHITEW6432`
+  unset, PI="ARMv8 (64-bit) Family 8 …", so the `PROCESSOR_IDENTIFIER`
+  test is the one doing the work. arm64 vs a manifest with `win.arm64`
+  removed → `available: false`, only the manifest fetched.)*
+- [x] **Windows on ARM, source checkout** — `setup.ps1` downloads
+  `tjs-windows-arm64.zip` and, with llvm-mingw installed, builds an ARM64
+  launcher; without it, prints the emulated-launcher note.
+  *(2026-10-21, two fresh clones, `-SkipPath`. (1) As is, no llvm-mingw:
+  the latest release (v0.61.0) has no arm64 tjs → "using the x64 one" note,
+  txiki x64 download, the llvm-mingw note, WinLibs g++ → tjs.exe and
+  launcher both 0x8664. (2) No release carries `tjs-windows-arm64.zip`
+  until this ships, so the download URL was pointed at localhost serving
+  run 39558361061's zip (the only edit), with CI's pinned llvm-mingw
+  20260922 (sha256 checked) on PATH, not CXX: tjs.exe byte-identical to
+  CI's, launcher built by `aarch64-w64-mingw32-clang++`, both 0xAA64, and
+  `tinyjs dev` from that checkout ran the probe app natively. Not seen:
+  the real github.com download (first release), and the winget
+  package-folder search branch.)*
+- [x] **Windows x64** — nothing regressed: `publish` still names the zip
+  `-win.zip` and fills `win.url` plus `win.x86_64`; an existing x64 app
+  updates from it.
+  *(2026-10-21, x64 tinyjs emulated on the ARM box, not x64 hardware.
+  The publish above: `-win.zip`, `win.url` + `win.x86_64`. A 0.1.0 built
+  with the **released v0.61.0** x64 tinyjs (which predates the split and
+  reads `win.url`) against the merged manifest → GET `-win.zip`, relaunched
+  as 0.2.0, still 0x8664. An x64 0.1.0 from this branch vs an x64-only
+  manifest → `-win.zip`, 0.2.0. Real x64 hardware never sees the ARM env
+  values, so it takes the plain x86_64 path: the same path, minus the
+  emulation.)*
+
 ## PR #63 — signed update manifests (`feat/signed-updates`, 2026-10-20)
 
 `update.publicKey` (one key or a list) + `tinyjs publish` signing from

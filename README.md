@@ -65,14 +65,18 @@ irm https://tinyjs.app/install.ps1 | iex
 ```
 
 Installs prebuilt binaries to `%LOCALAPPDATA%\tinyjs` (override with
-`TINYJS_HOME`; pin with `TINYJS_VERSION`) and adds it to your user PATH —
+`TINYJS_HOME`; pin with `TINYJS_VERSION`), x86_64 or native arm64 to match
+the machine (Windows on ARM gets the x86_64 build, which runs emulated, from
+releases before 0.62.0), and adds it to your user PATH —
 open a new terminal afterwards. Needs only the WebView2 runtime
 (preinstalled on Windows 11). `tinyjs update` runs the installer's bundled copy.
 (Requires a release that ships Windows assets — the first one after Windows
 support merged; the installer says so plainly against older releases.)
 
 To develop tinyjs itself from source (needs MinGW-w64:
-`winget install BrechtSanders.WinLibs.POSIX.UCRT`):
+`winget install BrechtSanders.WinLibs.POSIX.UCRT`; on Windows on ARM,
+`winget install MartinStorsjo.LLVM-MinGW.UCRT` for a native launcher —
+setup.ps1 fetches an arm64 `tjs.exe` from the latest release):
 
 ```powershell
 git clone https://github.com/tarwin/tinyjsapp; cd tinyjsapp
@@ -1866,7 +1870,13 @@ Silicon and Intel builds? Run `tinyjs publish --arch arm64` then
 `tinyjs publish --arch x86_64`: the second run keeps the first's zip and
 merges both into one manifest (a `"mac": { "arm64": …, "x86_64": … }` block,
 with the arm64 build also in the top-level `url` for apps that predate the
-block). Each installed app downloads the build for its own Mac. In the app:
+block). Each installed app downloads the build for its own Mac. Windows
+works the same way without a flag: an app's build matches the tinyjs that
+made it, so publish once with the x64 tinyjs and once with the arm64 one
+(both can live on one Windows on ARM machine; x64 runs emulated) from the
+same project. The manifest gets a `"win": { "x86_64": …, "arm64": … }`
+block, with the x64 build also in `win.url` for apps that predate it; an
+x64 app on an ARM64 machine moves to the arm64 build. In the app:
 
 ```js
 const { available, latest, notes } = await tiny.app.update.check();
