@@ -67,7 +67,7 @@ jobs:
         with:
           path: bin/tjs.exe
           # Bump the suffix on any toolchain change (see the Linux cache note).
-          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v1
+          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v2
 
       - name: Set up vcpkg (arm64 tjs build)
         if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
@@ -86,12 +86,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'clone failed' }
           & "$env:VCPKG_ROOT\vcpkg.exe" install libffi:arm64-windows-static
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
-          cmake -S $src -B "$src\build" -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-windows-static
+          # WAMR (txiki's WebAssembly engine) picks its CPU by matching
+          # CMAKE_SYSTEM_PROCESSOR case-sensitively against "arm64|aarch64";
+          # Windows reports "ARM64", so it fell to X86_64 and fed an x64 MASM
+          # file to the build. Name the target, and use WAMR's C invokeNative:
+          # its AArch64 one is GNU assembler syntax, which MSVC can't build.
+          cmake -S $src -B "$src\build" -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-windows-static -DWAMR_BUILD_TARGET=AARCH64 -DWAMR_BUILD_INVOKE_NATIVE_GENERAL=1
           if ($LASTEXITCODE -ne 0) { throw 'configure failed' }
           cmake --build "$src\build" --config Release --target tjs
           if ($LASTEXITCODE -ne 0) { throw 'build failed' }
           New-Item -ItemType Directory -Force bin | Out-Null
           Copy-Item "$src\build\Release\tjs.exe" bin\tjs.exe
+          # WAMR's notes on that C invokeNative: argument passing to native
+          # functions is the weak spot (64-bit and float args). So run txiki's
+          # own WebAssembly/WASI tests against this binary, as its CI does.
+          $t = "$env:RUNNER_TEMP\wasm-tests"
+          New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item "$src\tests\test-wasm*.js" $t
+          foreach ($d in 'wasm', 'wasi', 'helpers', 'fixtures') {
+            if (Test-Path "$src\tests\$d") { Copy-Item -Recurse "$src\tests\$d" $t }
+          }
+          & bin\tjs.exe test $t
+          if ($LASTEXITCODE -ne 0) { throw 'txiki WebAssembly tests failed' }
 
       - name: Build (setup.ps1 — fetch tjs.exe + WebView2 header, compile launcher)
         run: powershell -ExecutionPolicy Bypass -File setup.ps1 -SkipPath
