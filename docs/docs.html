@@ -878,13 +878,29 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
     defined</code>), so query in the backend and return results through an
     <code>api</code> function:</p>
     <pre><b>import</b> { Database } <b>from</b> 'tjs:sqlite';
-<b>await</b> tjs.makeDir(dir, { recursive: true });  <i>// tjs.* fs is ASYNC — skip the</i>
-<i>// await and new Database() below races the mkdir ("database not initialized")</i>
-const db = new Database(dir + '/notes.db');   <i>// sqlite itself is SYNC — no await</i>
-db.exec('CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text)');
-const st = db.prepare('INSERT INTO notes (text) VALUES (?)');
-st.run('hello'); st.finalize();
-db.prepare('SELECT * FROM notes').all();  <i>// [{ id: 1, text: 'hello' }]</i></pre>
+<b>let</b> db;
+<b>export async function</b> init(app) {
+  <i>// the per-app data dir; paths() creates it before resolving</i>
+  const dir = (<b>await</b> app.paths()).data;
+  db = new Database(dir + '/notes.db');   <i>// sqlite itself is SYNC — no await</i>
+  db.exec('CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text)');
+  const st = db.prepare('INSERT INTO notes (text) VALUES (?)');
+  st.run('hello'); st.finalize();
+  db.prepare('SELECT * FROM notes').all();  <i>// [{ id: 1, text: 'hello' }]</i>
+}</pre>
+    <p class="note">Put the database in <code>paths().data</code>
+    (<code>~/Library/Application Support/&lt;id&gt;</code>,
+    <code>%APPDATA%\&lt;id&gt;</code>, <code>~/.local/share/&lt;id&gt;</code>),
+    not at a relative path. <code>'./notes.db'</code> resolves against the
+    process's working directory: under <code>tinyjs dev</code> that happens
+    to be your project folder, but a built app launched from Finder, the
+    Start menu or a desktop launcher gets a different one (often
+    <code>/</code>, which isn't writable), and a database inside the app
+    bundle would be lost on every update. For a different folder, create it
+    first with <code><b>await</b> tjs.makeDir(dir, { recursive: true })</code>.
+    <code>tjs.*</code> fs calls are async, so without the <code>await</code>,
+    <code>new Database()</code> races the mkdir and fails with "database not
+    initialized".</p>
     <p class="note">Coming from better-sqlite3: a statement has only
     <code>run()</code> / <code>all()</code> / <code>finalize()</code> — no
     <code>get()</code> (use <code>.all()[0]</code>) — and <code>run()</code>
