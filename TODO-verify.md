@@ -41,7 +41,20 @@ need a real update watched by hand (localhost manifest, as for `extras/`).
   anyway; relaunched exe in the same folder reported 0.2.0. Keyless 0.1.0
   build: `{signed}` only → no update; the full signed manifest → updated
   and relaunched as 0.2.0.)*
-- [ ] **Linux** — the same, with the per-arch `linux` block.
+- [x] **Linux** — the same, with the per-arch `linux` block.
+  *(2026-10-20, Ubuntu 24.04 arm64: `check.py` PASS, packaged part
+  SKIPped as designed. Then a Linux port of that packaged fixture (scratch
+  script, not committed): app pinning two keys, `publish` signed with the
+  second; each case ran from a fresh copy of the 1.0.0 `dist/` against a
+  localhost manifest. `linux.arm64` url edited inside `signed.payload` →
+  "signature verification failed"; `signed` dropped at install →
+  "signed Ed25519 … required"; hand-signed `expires` 2026-01-01 →
+  "expired … needs to re-sign"; signed with a wrong sha256 → "checksum
+  mismatch". Folder byte-identical after every rejection. Plain
+  `linux.arm64` url/sha256 edited → still installed the signed tarball;
+  untouched manifest → check → install → relaunched as 2.0.0. Keyless
+  build: `--signed-only` → no update, same signed manifest → 2.0.0. No
+  private-key bytes in the installed folder, no `tinyjs-update-*` left.)*
 
 ## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
 
