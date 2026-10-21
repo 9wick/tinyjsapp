@@ -88,7 +88,12 @@
           "type": ["object", "null"],
           "properties": {
             "url": { "$ref": "#/$defs/optionalString", "description": "URL of the application's update manifest." },
-            "auto": { "enum": ["launch", "daily", false, null], "description": "Automatic update checks in packaged apps: at launch, or at launch and then daily. Omit or false to check only when the app calls tiny.app.update.check()." }
+            "auto": { "enum": ["launch", "daily", false, null], "description": "Automatic update checks in packaged apps: at launch, or at launch and then daily. Omit or false to check only when the app calls tiny.app.update.check()." },
+            "publicKey": {
+              "type": ["string", "array", "null"],
+              "items": { "type": "string" },
+              "description": "Base64 of a raw 32-byte Ed25519 public key, or a list of them (a signing key plus a backup), baked into the app. When set, updates require a manifest signed by one of the matching private keys (tinyjs publish reads it from TINYJS_UPDATE_PRIVATE_KEY_FILE); omit, null, \"\" or [] for unsigned updates. See docs/signed-updates.md."
+            }
           }
         }
       }

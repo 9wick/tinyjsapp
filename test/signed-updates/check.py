@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='tinyjs-signed-updates-') as scratch:
     assert 'PASS RFC 8032' in p.stdout, p.stdout + p.stderr
     print(p.stdout.strip())
     p = run([TJS, 'run', TOOL / 'test/signed-updates/runtime-check.js'])
-    assert 'PASS 38' in p.stdout, p.stdout + p.stderr
+    assert 'PASS 73' in p.stdout, p.stdout + p.stderr
     print(p.stdout.strip())
     run([TJS, 'run', TOOL / 'cli.js', 'version'])
     project = root / 'project'
@@ -83,17 +83,63 @@ with tempfile.TemporaryDirectory(prefix='tinyjs-signed-updates-') as scratch:
     assert merged.read_bytes() == original, 'failed signing changed original input'
     cli('publish', '--sign-manifest', merged)
     envelope = json.loads(merged.read_text())
-    assert json.loads(envelope['payload']) == plain
+    assert json.loads(envelope['signed']['payload']) == plain
+    # Keyless apps read the plain fields beside the block: same data.
+    assert {k: v for k, v in envelope.items() if k != 'signed'} == plain
     # Verify actual command output independently in the runtime.
     verifier = root / 'verify.js'
     verifier.write_text('import { verifyManifest } from ' + json.dumps(str(TOOL / 'runtime/update-signing.js')) + ';\n'
                         'const m=JSON.parse(new TextDecoder().decode(await tjs.readFile(tjs.args[3])));\n'
                         'await verifyManifest(m, ' + json.dumps(public) + '); console.log("VERIFIED");\n')
     assert 'VERIFIED' in run([TJS, 'run', verifier, merged]).stdout
-    merged.write_text(json.dumps({**envelope, 'payload': envelope['payload'].replace('merged release', 'modified merge')}))
+    # Re-signing an envelope (a fresh --expires) verifies it first.
+    p = cli('publish', '--sign-manifest', merged, '--expires', 'soon', ok=False)
+    assert p.returncode and '--expires takes' in p.stdout + p.stderr
+    cli('publish', '--sign-manifest', merged, '--expires', '30d')
+    resigned = json.loads(merged.read_text())
+    assert json.loads(resigned['signed']['payload'])['expires'] > time.strftime('%Y-%m-%dT', time.gmtime())
+    assert resigned['expires'] == json.loads(resigned['signed']['payload'])['expires']
+    assert 'VERIFIED' in run([TJS, 'run', verifier, merged]).stdout
+    forged = {**resigned, 'signed': {**resigned['signed'], 'payload': resigned['signed']['payload'].replace('merged release', 'forged')}}
+    merged.write_text(json.dumps(forged))
+    p = cli('publish', '--sign-manifest', merged, '--expires', '30d', ok=False)
+    assert p.returncode and 'signature verification failed' in p.stdout + p.stderr
+    merged.write_text(json.dumps({**envelope, 'signed': {**envelope['signed'], 'payload': envelope['signed']['payload'].replace('merged release', 'modified merge')}}))
     p = run([TJS, 'run', verifier, merged], ok=False)
     assert 'signature verification failed' in p.stdout + p.stderr
-    print('PASS CLI version/new, fail-closed publish, final multi-platform signing, stale signature rejection')
+    # Plain fields edited beside a signed block (a hand merge that kept one
+    # platform's block): refused, never re-signing the stale payload.
+    merged.write_text(json.dumps(plain))
+    cli('publish', '--sign-manifest', merged)
+    edited = json.loads(merged.read_text())
+    edited['win'] = {'url': 'https://host/w2.zip', 'sha256': 'c' * 64}
+    merged.write_text(json.dumps(edited))
+    p = cli('publish', '--sign-manifest', merged, ok=False)
+    assert p.returncode and 'edits outside its signed block' in p.stdout + p.stderr
+    # --signed-only: just the block, and re-signing (a fresh --expires) keeps it so.
+    merged.write_text(json.dumps(plain))
+    cli('publish', '--sign-manifest', merged, '--signed-only')
+    assert list(json.loads(merged.read_text())) == ['signed']
+    cli('publish', '--sign-manifest', merged, '--expires', '30d')
+    assert list(json.loads(merged.read_text())) == ['signed']
+    assert 'VERIFIED' in run([TJS, 'run', verifier, merged]).stdout
+    # Two pinned keys: the private key may match either; signing still fails
+    # for a key in neither slot.
+    config['update']['publicKey'] = [(other / 'public.txt').read_text(), public]
+    save_config()
+    merged.write_text(json.dumps(plain))
+    cli('publish', '--sign-manifest', merged)
+    assert 'VERIFIED' in run([TJS, 'run', verifier, merged]).stdout
+    third = keys / 'third'
+    third.mkdir()
+    run([TJS, 'run', TOOL / 'test/signed-updates/crypto-probe.js', third])
+    merged.write_text(json.dumps(plain))
+    p = cli('publish', '--sign-manifest', merged,
+            key_env=dict(env, TINYJS_UPDATE_PRIVATE_KEY_FILE=str(third / 'private.der')), ok=False)
+    assert p.returncode and 'signature verification failed' in p.stdout + p.stderr
+    config['update']['publicKey'] = public
+    save_config()
+    print('PASS CLI version/new, fail-closed publish, final multi-platform signing, stale signature rejection, two pinned keys')
     if sys.platform != 'darwin':
         print('SKIP packaged-app integration: this fixture currently targets macOS')
         sys.exit(0)
@@ -110,10 +156,14 @@ with tempfile.TemporaryDirectory(prefix='tinyjs-signed-updates-') as scratch:
             if self.path == '/manifest.json':
                 state['requests'] += 1
                 data = json.loads((hosted / 'manifest.json').read_text())
-                if state['mode'] == 'legacy' or (state['mode'] == 'unsigned-after-check' and state['requests'] > 1):
-                    data = json.loads(data['payload'])
+                # 'legacy' serves the signed manifest untouched: one url
+                # for apps with and without a key.
+                if state['mode'] == 'unsigned-after-check' and state['requests'] > 1:
+                    data.pop('signed')
+                elif state['mode'] == 'signed-only':
+                    data = {'signed': data['signed']}
                 elif state['mode'] == 'tamper':
-                    data['payload'] = data['payload'].replace('2.0.0', '9.0.0')
+                    data['signed']['payload'] = data['signed']['payload'].replace('2.0.0', '9.0.0')
                 body = json.dumps(data).encode()
                 self.send_response(200)
                 self.send_header('Content-Length', str(len(body)))
@@ -152,8 +202,9 @@ export async function init(app) {
     for entry in (project / 'dist/publish').iterdir():
         shutil.copy2(entry, hosted / entry.name)
     output = json.loads((hosted / 'manifest.json').read_text())
-    assert output['format'] == 'tinyjs-update-v1'
-    assert json.loads(output['payload'])['notes'] == 'signed integration release'
+    assert output['signed']['format'] == 'tinyjs-update-v1'
+    assert json.loads(output['signed']['payload'])['notes'] == 'signed integration release'
+    assert output['notes'] == 'signed integration release'
     config['version'] = '1.0.0'
     save_config()
     cli('build', key_env=clean_env)
@@ -192,7 +243,7 @@ export async function init(app) {
         assert state['requests'] == 2 and hashlib.sha256(exe.read_bytes()).digest() == before
         # A valid signature must not bypass the archive checksum.
         valid_envelope = (hosted / 'manifest.json').read_text()
-        bad_hash = json.loads(json.loads(valid_envelope)['payload'])
+        bad_hash = json.loads(json.loads(valid_envelope)['signed']['payload'])
         bad_hash['sha256'] = '0' * 64
         merged.write_text(json.dumps(bad_hash))
         cli('publish', '--sign-manifest', merged)
@@ -210,9 +261,13 @@ export async function init(app) {
         del config['update']['publicKey']
         save_config()
         cli('build', key_env=clean_env)
+        before = hashlib.sha256(exe.read_bytes()).digest()
+        result = launch('signed-only')
+        assert 'expected update' in result.get('error', ''), result
+        assert hashlib.sha256(exe.read_bytes()).digest() == before
         result = launch('legacy')
         assert result == {'installed': '2.0.0'}, result
-        print('PASS legacy unsigned packaged check/install remains functional')
+        print('PASS keyless packaged app updates from the same signed manifest; signed-only hides it')
     finally:
         server.shutdown()
         server.server_close()

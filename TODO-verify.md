@@ -8,6 +8,31 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## PR #63 — signed update manifests (`feat/signed-updates`, 2026-10-20)
+
+`update.publicKey` (one key or a list) + `tinyjs publish` signing from
+`TINYJS_UPDATE_PRIVATE_KEY_FILE`; the hosted manifest keeps its plain fields
+plus a `signed` block, so keyless apps update from the same url. Guide:
+docs/signed-updates.md. `python3 -u test/signed-updates/check.py` runs the
+crypto + 73 runtime checks + CLI publish/sign checks everywhere, but its
+packaged update run is macOS-only and SKIPs elsewhere, so Windows and Linux
+need a real update watched by hand (localhost manifest, as for `extras/`).
+
+- [x] **macOS** — `check.py` PASS: signed publish → packaged check/install
+  → swap → relaunch 2.0.0; tamper, unsigned-at-install and checksum
+  rejection leave the bundle untouched; a keyless app updates from the
+  same signed manifest and sees nothing in a `--signed-only` one.
+  *(2026-10-20, macOS 27.0 arm64.)*
+- [ ] **Windows** — `check.py` PASS (txiki has Ed25519 there), then by
+  hand: an app with two keys in `publicKey`, `publish` with the second
+  key's private file, real update 0.1.0 → 0.2.0 from a localhost manifest
+  (check → install → relaunch shows 0.2.0). Edit the `win` url inside
+  `signed.payload` → `check()` errors "signature verification failed";
+  edit the plain `win` url instead → still installs the signed one.
+  `--expires` in the past (hand-signed) → "expired". Same manifest, app
+  without a key → updates; `--signed-only` → no update.
+- [ ] **Linux** — the same, with the per-arch `linux` block.
+
 ## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
 
 `test/extras/check.py` (README there) — builds and publishes only, no window
