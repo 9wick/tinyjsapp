@@ -4,6 +4,27 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Signed app updates (opt in).** The sha256 in an update manifest comes
+  from the same host as the download, so anyone who controls that host
+  (domain, DNS, bucket, release) could ship their own build to every
+  installed copy. Set `"update": { "publicKey": [...] }` to one or more
+  Ed25519 public keys and the app only installs a manifest signed by a
+  matching private key, which `tinyjs publish` reads from the file named by
+  `TINYJS_UPDATE_PRIVATE_KEY_FILE` and never copies into the project. Pin a
+  signing key plus an offline backup, so a lost or leaked key can be
+  replaced without reinstalling. The signed manifest keeps its plain fields,
+  so installs without a key keep updating from the same url;
+  `--signed-only` cuts them off. `--expires 30d` (or a date) makes a
+  manifest expire, and `publish --sign-manifest FILE` signs a manifest
+  merged from several platforms or extends an expiry. Apps without
+  `publicKey` behave as before. Guide:
+  [docs/signed-updates.md](docs/signed-updates.md).
+  ([#40](https://github.com/tarwin/tinyjsapp/issues/40),
+  [#63](https://github.com/tarwin/tinyjsapp/pull/63), thanks to
+  [@Zulut30](https://github.com/Zulut30) for the implementation.)
+
 ## 0.60.0 — 2026-10-20
 
 - **`extras/`: a README or licence beside the app in the download.** Files
