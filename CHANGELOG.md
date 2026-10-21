@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.61.0 — 2026-10-20
 
 - **Signed app updates (opt in).** The sha256 in an update manifest comes
   from the same host as the download, so anyone who controls that host
