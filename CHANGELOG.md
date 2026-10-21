@@ -26,6 +26,11 @@ https://tinyjs.app/changelog.
   compiles with llvm-mingw when it finds it.
   ([#82](https://github.com/tarwin/tinyjsapp/issues/82), thanks to
   [@zhuyuanmin](https://github.com/zhuyuanmin) for the request.)
+- **`tiny.system.architecture()` says `arm64` on Windows on ARM.** It
+  returned `x86_64` on every Windows machine, an ARM64 one included, and
+  so did `info().arch`. It now reports the machine, the way `tinyjs
+  doctor` does, so an x64 build running emulated on ARM64 says `arm64` as
+  well.
 
 ## 0.61.0 — 2026-10-20
 

@@ -30,10 +30,16 @@ const DEBUG = !['', '0', 'false', 'dev'].includes(String(tjs.env.TINYJS_DEBUG ||
 const IS_WIN = tjs.env.OS === 'Windows_NT';
 const IS_LINUX = !IS_WIN && /linux/i.test(globalThis.navigator?.platform ?? '');
 // navigator.platform here is the runtime's own (uname on Linux), not a
-// webview's — so unlike the page it reports the real machine.
-const ARCH = /aarch64|arm64/i.test(globalThis.navigator?.platform ?? '') ? 'arm64'
+// webview's — so unlike the page it reports the real machine. On Windows it
+// says "Win32" on every CPU, so read the environment: an x64 build emulated
+// on ARM64 sees PROCESSOR_ARCHITECTURE=AMD64, but PROCESSOR_IDENTIFIER
+// ("ARMv8 (64-bit) Family 8 …") isn't rewritten — the machine, like doctor.
+const ARCH = IS_WIN
+  ? (/arm64/i.test((tjs.env.PROCESSOR_ARCHITECTURE ?? '') + ' ' + (tjs.env.PROCESSOR_ARCHITEW6432 ?? '')) ||
+     /^ARM/i.test(tjs.env.PROCESSOR_IDENTIFIER ?? '') ? 'arm64' : 'x86_64')
+  : /aarch64|arm64/i.test(globalThis.navigator?.platform ?? '') ? 'arm64'
   : /x86_64|amd64/i.test(globalThis.navigator?.platform ?? '') ? 'x86_64'
-  : IS_WIN ? 'x86_64' : 'arm64';
+  : 'arm64';
 const OS = IS_WIN ? 'windows' : IS_LINUX ? 'linux' : 'macos';
 // Linux only: several capabilities exist on X11 but not on Wayland, which
 // hides other windows and the global pointer by design. GDK_BACKEND wins
