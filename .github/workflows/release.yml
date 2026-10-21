@@ -130,7 +130,26 @@ jobs:
             if (Test-Path "$src\tests\$d") { Copy-Item -Recurse "$src\tests\$d" $t }
           }
           & bin\tjs.exe test $t
-          if ($LASTEXITCODE -ne 0) { throw 'txiki WebAssembly tests failed' }
+          if ($LASTEXITCODE -ne 0) {
+            # The suite only reports exit codes; show what actually happened,
+            # and whether txiki's own x64 tjs.exe (emulated here) fails the
+            # same way — i.e. whether it's this build or the environment.
+            Write-Host '--- tjs.exe run wasi\test.wasm (arm64 build)'
+            $out = & bin\tjs.exe run "$t\wasi\test.wasm" 2>&1 | Out-String
+            Write-Host ('exit 0x{0:X8}' -f $LASTEXITCODE); Write-Host $out
+            Write-Host '--- same, with args'
+            $out = & bin\tjs.exe run "$t\wasi\test.wasm" a b 2>&1 | Out-String
+            Write-Host ('exit 0x{0:X8}' -f $LASTEXITCODE); Write-Host $out
+            $x = "$env:RUNNER_TEMP\txiki-x64"
+            Invoke-WebRequest "https://github.com/saghul/txiki.js/releases/download/$env:TJS_VERSION/txiki-windows-x86_64.zip" -OutFile "$x.zip" -UseBasicParsing
+            Expand-Archive "$x.zip" $x
+            $x64 = (Get-ChildItem $x -Recurse -Filter tjs.exe | Select-Object -First 1).FullName
+            Write-Host "--- txiki's own x64 tjs.exe ($x64), emulated"
+            $out = & $x64 run "$t\wasi\test.wasm" 2>&1 | Out-String
+            Write-Host ('exit 0x{0:X8}' -f $LASTEXITCODE); Write-Host $out
+            & $x64 test $t
+            throw 'txiki WebAssembly tests failed'
+          }
 
       - name: Build (setup.ps1 — fetch tjs.exe + WebView2 header, compile launcher)
         run: powershell -ExecutionPolicy Bypass -File setup.ps1 -SkipPath
