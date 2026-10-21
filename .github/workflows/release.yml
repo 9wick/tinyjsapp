@@ -67,7 +67,7 @@ jobs:
         with:
           path: bin/tjs.exe
           # Bump the suffix on any toolchain change (see the Linux cache note).
-          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v3
+          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v4
 
       - name: Set up vcpkg (arm64 tjs build)
         if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
@@ -87,10 +87,14 @@ jobs:
           git -c core.autocrlf=false clone --depth 1 --branch $env:TJS_VERSION --recurse-submodules --shallow-submodules -j4 https://github.com/saghul/txiki.js $src
           if ($LASTEXITCODE -ne 0) { throw 'clone failed' }
           # WAMR (txiki's WebAssembly engine) can't call native (WASI)
-          # functions on MSVC ARM64 at txiki's pinned version; this is the
-          # upstream fix, vendored. See the patch's header.
-          git -C "$src\deps\wamr" apply "$env:GITHUB_WORKSPACE\native\patches\wamr-4636-armasm64.patch"
-          if ($LASTEXITCODE -ne 0) { throw 'WAMR patch did not apply' }
+          # functions on MSVC ARM64 at txiki's pinned version: first the
+          # upstream armasm64 routine, vendored.
+          # Then our fix to WAMR's argument layout for that routine (it used
+          # the x64 convention on every Windows build). See each header.
+          foreach ($p in 'wamr-4636-armasm64.patch', 'wamr-win-arm64-abi.patch') {
+            git -C "$src\deps\wamr" apply "$env:GITHUB_WORKSPACE\native\patches\$p"
+            if ($LASTEXITCODE -ne 0) { throw "WAMR patch $p did not apply" }
+          }
           # run-vcpkg's checkout, held onto: vcvarsall below points VCPKG_ROOT
           # at the copy bundled with Visual Studio, which has no libffi.
           $vcpkg = $env:VCPKG_ROOT

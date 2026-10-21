@@ -1,0 +1,36 @@
+# Ours (not upstream yet): WAMR's wasm_runtime_invoke_native lays out
+# native-call arguments with the Windows x64 convention on every _WIN32
+# build — 4 register args, int and float sharing one position counter.
+# Windows on ARM64 passes them like AAPCS64 (8 integer + 8 FP/SIMD
+# registers, counted separately), which is what the armasm64 invokeNative
+# from wamr-4636-armasm64.patch loads, so every native (WASI) call read
+# garbage and crashed with 0xC0000005. Still present on WAMR main as of
+# 2026-10-21. Applied after wamr-4636-armasm64.patch by release.yml's
+# Windows arm64 leg; `git apply` skips this header.
+
+diff --git a/core/iwasm/common/wasm_runtime_common.c b/core/iwasm/common/wasm_runtime_common.c
+index 943b46fc..e8b99cc1 100644
+--- a/core/iwasm/common/wasm_runtime_common.c
++++ b/core/iwasm/common/wasm_runtime_common.c
+@@ -5868,7 +5868,10 @@ static V128FuncPtr invokeNative_V128 = (V128FuncPtr)(uintptr_t)invokeNative;
+ #endif
+ /* NOLINTEND */
+ 
+-#if defined(_WIN32) || defined(_WIN32_)
++/* The Windows x64 convention (4 register args, assigned by position). Windows
++   on ARM64 passes arguments like AAPCS64: 8 integer + 8 FP/SIMD registers,
++   counted separately, which is what invokeNative_armasm64*.asm loads. */
++#if (defined(_WIN32) || defined(_WIN32_)) && !defined(BUILD_TARGET_AARCH64)
+ #define MAX_REG_FLOATS 4
+ #define MAX_REG_INTS 4
+ #else /* else of defined(_WIN32) || defined(_WIN32_) */
+@@ -5923,7 +5926,8 @@ wasm_runtime_invoke_native(WASMExecEnv *exec_env, void *func_ptr,
+ #define fps ints
+ #endif /* end of BUILD_TARGET_RISCV64_LP64 */
+ 
+-#if defined(_WIN32) || defined(_WIN32_) || defined(BUILD_TARGET_RISCV64_LP64)
++#if ((defined(_WIN32) || defined(_WIN32_)) && !defined(BUILD_TARGET_AARCH64)) \
++    || defined(BUILD_TARGET_RISCV64_LP64)
+     /* important difference in calling conventions */
+ #define n_fps n_ints
+ #else
