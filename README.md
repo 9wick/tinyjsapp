@@ -1845,6 +1845,11 @@ valid on your own registered devices — not for distribution. One-time setup:
 
 ### Shipping updates (auto-update)
 
+To authenticate the update manifest with a key pinned in your app, opt in to
+[signed updates](docs/signed-updates.md): same url, same manifest plus a
+signed block, so existing installs keep updating. That guide covers keys,
+expiry and multi-platform publishing.
+
 Point `tinyjs.json` at a manifest you host anywhere (any static host —
 GitHub Releases, S3, nginx):
 

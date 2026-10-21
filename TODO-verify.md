@@ -8,6 +8,54 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## PR #63 — signed update manifests (`feat/signed-updates`, 2026-10-20)
+
+`update.publicKey` (one key or a list) + `tinyjs publish` signing from
+`TINYJS_UPDATE_PRIVATE_KEY_FILE`; the hosted manifest keeps its plain fields
+plus a `signed` block, so keyless apps update from the same url. Guide:
+docs/signed-updates.md. `python3 -u test/signed-updates/check.py` runs the
+crypto + 73 runtime checks + CLI publish/sign checks everywhere, but its
+packaged update run is macOS-only and SKIPs elsewhere, so Windows and Linux
+need a real update watched by hand (localhost manifest, as for `extras/`).
+
+- [x] **macOS** — `check.py` PASS: signed publish → packaged check/install
+  → swap → relaunch 2.0.0; tamper, unsigned-at-install and checksum
+  rejection leave the bundle untouched; a keyless app updates from the
+  same signed manifest and sees nothing in a `--signed-only` one.
+  *(2026-10-20, macOS 27.0 arm64.)*
+- [x] **Windows** — `check.py` PASS (txiki has Ed25519 there), then by
+  hand: an app with two keys in `publicKey`, `publish` with the second
+  key's private file, real update 0.1.0 → 0.2.0 from a localhost manifest
+  (check → install → relaunch shows 0.2.0). Edit the `win` url inside
+  `signed.payload` → `check()` errors "signature verification failed";
+  edit the plain `win` url instead → still installs the signed one.
+  `--expires` in the past (hand-signed) → "expired". Same manifest, app
+  without a key → updates; `--signed-only` → no update.
+  *(2026-10-20, Windows 11 26200 arm64: `check.py` PASS (txiki 26.6.0),
+  packaged run SKIPped as designed. By hand, scripted: `publicKey` =
+  [A, B], published with B's private file; installed 0.1.0 copy outside
+  `dist/`. Payload's `win.url` edited → "update manifest signature
+  verification failed", exe untouched. Payload re-signed with B and
+  `expires` 2026-01-01 → "update manifest expired … needs to re-sign it",
+  exe untouched. Plain `win` url → `127.0.0.1:1` + zeroed sha256 → installed
+  anyway; relaunched exe in the same folder reported 0.2.0. Keyless 0.1.0
+  build: `{signed}` only → no update; the full signed manifest → updated
+  and relaunched as 0.2.0.)*
+- [x] **Linux** — the same, with the per-arch `linux` block.
+  *(2026-10-20, Ubuntu 24.04 arm64: `check.py` PASS, packaged part
+  SKIPped as designed. Then a Linux port of that packaged fixture (scratch
+  script, not committed): app pinning two keys, `publish` signed with the
+  second; each case ran from a fresh copy of the 1.0.0 `dist/` against a
+  localhost manifest. `linux.arm64` url edited inside `signed.payload` →
+  "signature verification failed"; `signed` dropped at install →
+  "signed Ed25519 … required"; hand-signed `expires` 2026-01-01 →
+  "expired … needs to re-sign"; signed with a wrong sha256 → "checksum
+  mismatch". Folder byte-identical after every rejection. Plain
+  `linux.arm64` url/sha256 edited → still installed the signed tarball;
+  untouched manifest → check → install → relaunched as 2.0.0. Keyless
+  build: `--signed-only` → no update, same signed manifest → 2.0.0. No
+  private-key bytes in the installed folder, no `tinyjs-update-*` left.)*
+
 ## `extras/` — README, licence beside the app in the download (`feat/extras`, 2026-10-20)
 
 `test/extras/check.py` (README there) — builds and publishes only, no window

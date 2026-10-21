@@ -407,6 +407,9 @@
   <i># build + zip + auto-update manifest in dist/publish/</i>
   <i># --arch arm64, then --arch x86_64: both Mac builds, one manifest</i>
   <i># --notes "text" | --notes-file CHANGES.md: notes for the update prompt</i>
+  <i># --sign-manifest FILE: sign a hand-merged manifest (signed updates)</i>
+  <i># --expires 30d | 2027-01-31: signed manifest is refused after that</i>
+  <i># --signed-only: omit the plain fields, so apps without a key see nothing</i>
 
 <b>tinyjs notarize</b>
   <i># notarytool submit + staple (needs a Developer ID)</i>
@@ -802,7 +805,9 @@ import { MY_CONSTANT } from '../shared/settings.js';</pre>
                     <i># run against a different launcher binary</i>
 <b>TINYJS_HOME</b>=/opt/tinyjs   <i># where the CLI installs and looks for itself</i>
 <b>TINYJS_ARCH</b>=x86_64      <i># = build/publish/notarize --arch (macOS)</i>
-<b>TINYJS_UNIVERSAL</b>=1      <i># = --universal (macOS)</i></pre>
+<b>TINYJS_UNIVERSAL</b>=1      <i># = --universal (macOS)</i>
+<b>TINYJS_UPDATE_PRIVATE_KEY_FILE</b>=/private/key.der
+                    <i># publish signs the manifest (update.publicKey)</i></pre>
 
     <h3 style="margin-top:26px;font:700 15px var(--mono)">per-OS overrides</h3>
     <p class="note">Root keys apply everywhere. An optional
@@ -1818,6 +1823,21 @@ if (available) await <b>tiny.api.call</b>('update.install');
     await <b>tiny.api.call</b>('update.install');
 });
 <i>// backend twin: export function onUpdateAvailable(info, app) { … }</i></pre>
+    <p class="note"><b>Signed updates</b> (opt in): the sha256 in the
+    manifest comes from the same host as the zip, so whoever controls that
+    host can change both. Set <code>"update": { "publicKey": ["…", "…"] }</code>
+    to Ed25519 public keys (a signing key plus an offline backup) and the app
+    only accepts a manifest signed by one of the matching private keys, which
+    never leave your machine or CI secret store. Leave it unset, empty or
+    <code>null</code> for unsigned updates. The signed
+    manifest keeps the plain fields too, so installs from before the key
+    still update from the same url (<code>--signed-only</code> cuts them
+    off). Key setup, expiry and multi-platform signing are in
+    <a href="https://github.com/tarwin/tinyjsapp/blob/main/docs/signed-updates.md" style="color:var(--accent)">docs/signed-updates.md</a>.</p>
+    <pre><i># key generation: see the guide; keep the private key outside the project</i>
+<b>TINYJS_UPDATE_PRIVATE_KEY_FILE</b>=/private/update-private.der tinyjs publish
+<i># merged several platforms' manifests by hand? sign the result:</i>
+<b>TINYJS_UPDATE_PRIVATE_KEY_FILE</b>=… tinyjs publish --sign-manifest merged.json</pre>
   </section>
 
   <section id="howitworks">

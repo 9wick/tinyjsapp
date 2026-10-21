@@ -21,6 +21,10 @@
 // identity, the update's Team ID must match (ad-hoc builds have no identity
 // to pin, so the https+sha256 manifest is their only anchor — use a real
 // Developer ID for anything security-sensitive).
+// With update.publicKey (a non-empty string or list), an Ed25519 envelope authenticates the complete
+// manifest before platform selection; TLS, sha256 and code checks still apply.
+
+import { pinnedKeys, verifyManifest } from './update-signing.js';
 
 const dec = new TextDecoder();
 const IS_WIN = tjs.env.OS === 'Windows_NT';
@@ -138,14 +142,25 @@ async function portableBundleInit() {
   }
 }
 
-export async function checkForUpdate({ url, version }) {
+export async function checkForUpdate({ url, version, publicKey }) {
+  // Copy the pinned key list before any await, so it can't change mid-check.
+  const pin = pinnedKeys(publicKey);
   if (!url) throw new Error('no update url configured (tinyjs.json "update": { "url": … })');
   assertSafeUrl(url, 'update url');
   const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } });
   if (!res.ok) throw new Error('update check failed: HTTP ' + res.status);
   // A redirect must not downgrade the transport.
   if (res.url) assertSafeUrl(res.url, 'update url (after redirect)');
-  const manifest = await res.json();
+  const response = await res.json();
+  const manifest = pin ? await verifyManifest(response, pin) : response;
+  // Optional signed expiry (`tinyjs publish --expires`): past it, a host
+  // replaying this manifest gets refused. Unsigned apps ignore it — anyone
+  // who can edit their manifest can edit the date.
+  if (pin && manifest.expires != null) {
+    const until = typeof manifest.expires === 'string' ? Date.parse(manifest.expires) : NaN;
+    if (!Number.isFinite(until)) throw new Error('update manifest has an invalid expires date');
+    if (Date.now() > until) throw new Error('update manifest expired ' + manifest.expires + ' — the publisher needs to re-sign it');
+  }
   let latest = manifest?.version ?? null;
   // Per-platform downloads: `url`/`sha256` are the macOS zip (the original,
   // pre-Windows fields); a `win: { url, sha256, version? }` block carries
@@ -206,7 +221,16 @@ export async function checkForUpdate({ url, version }) {
 // Downloads, verifies, swaps the bundle. Returns the bundle path on success;
 // the caller is expected to relaunch() + quit. Throws with a human-readable
 // reason on any failure (the running app is untouched or rolled back).
-export async function installUpdate({ url, version, manifest }) {
+export async function installUpdate({ url, version, manifest, publicKey }) {
+  // A check result is mutable/untrusted. Fetch and authenticate again for
+  // signed installs, even when the caller supplies a manifest. Parameters
+  // (especially the baked key) are captured by value before any await.
+  const pin = pinnedKeys(publicKey);
+  if (pin) {
+    const checked = await checkForUpdate({ url, version, publicKey: pin });
+    if (!checked.available) throw new Error('no newer signed update available for this platform');
+    manifest = checked.manifest;
+  }
   const bundle = await bundlePath();
   if (!bundle) {
     throw new Error('auto-update only works from the packaged .app build');

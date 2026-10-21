@@ -8,6 +8,8 @@
 //
 // Runs on txiki.js itself (via the `tinyjs` wrapper script).
 
+import { pinnedKeys, signManifest, verifyManifest } from './runtime/update-signing.js';
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -1332,6 +1334,7 @@ async function generateBuild(cfg, dev = false) {
     enc.encode(JSON.stringify({ version: 0, build: {}, main: 'entry.js' })));
   await tjs.writeFile(B + '/bridge.js', await tjs.readFile(TOOL_DIR + 'runtime/bridge.js'));
   await tjs.writeFile(B + '/update.js', await tjs.readFile(TOOL_DIR + 'runtime/update.js'));
+  await tjs.writeFile(B + '/update-signing.js', await tjs.readFile(TOOL_DIR + 'runtime/update-signing.js'));
 
   // Backend: TypeScript (or any entry, with npm packages) bundles via esbuild;
   // plain JS copies sources as before.
@@ -3398,8 +3401,83 @@ async function sha256File(path) {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Key-order-independent JSON, to compare a hand-edited manifest with its
+// signed payload.
+function canonicalJson(v) {
+  if (Array.isArray(v)) return '[' + v.map(canonicalJson).join(',') + ']';
+  if (v && typeof v === 'object')
+    return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+  return JSON.stringify(v);
+}
+
 async function cmdPublish() {
   const cfg = await loadConfig();
+  // Opt in only with an explicit baked publicKey; private material is never
+  // read from config or copied into generated app sources.
+  // Anything but a non-empty string (or list of them) leaves updates
+  // unsigned, as at runtime. The private key may match any listed key.
+  const publicKey = pinnedKeys(cfg.update?.publicKey);
+  const keyFile = tjs.env.TINYJS_UPDATE_PRIVATE_KEY_FILE;
+  let signingKey = null;
+  if (cfg.update?.publicKey != null && !publicKey)
+    console.log('note: update.publicKey is not a non-empty string or list — publishing an unsigned manifest');
+  if (publicKey) {
+    if (!keyFile) fail('signed updates require TINYJS_UPDATE_PRIVATE_KEY_FILE (external PKCS8 DER file)');
+    try {
+      signingKey = await crypto.subtle.importKey('pkcs8', await tjs.readFile(keyFile), 'Ed25519', false, ['sign']);
+      await signManifest({ version: cfg.version ?? '0.0.0' }, signingKey, publicKey);
+    } catch (e) {
+      fail('cannot sign updates: ' + (e?.message ?? e));
+    }
+  } else if (keyFile) {
+    fail('set update.publicKey before using TINYJS_UPDATE_PRIVATE_KEY_FILE');
+  }
+  // --expires 30d | 2027-01-31: signed manifests only (an unsigned one could
+  // just have the date edited). Apps refuse the manifest after that moment.
+  const ei = args.indexOf('--expires');
+  let expires = null;
+  if (ei >= 0) {
+    if (!signingKey) fail('--expires needs signed updates (update.publicKey + TINYJS_UPDATE_PRIVATE_KEY_FILE)');
+    const v = args[ei + 1] ?? '';
+    const days = /^(\d+)d$/.exec(v);
+    const at = days ? Date.now() + Number(days[1]) * 86400000 : Date.parse(v);
+    if (!Number.isFinite(at) || at <= Date.now()) fail('--expires takes a number of days (30d) or a future date (2027-01-31)');
+    expires = new Date(at).toISOString();
+  }
+  // --signed-only: host just the signed block, no plain fields, so apps
+  // without a key (older installs included) see no update at all.
+  let signedOnly = args.includes('--signed-only');
+  if (signedOnly && !signingKey) fail('--signed-only needs signed updates (update.publicKey + TINYJS_UPDATE_PRIVATE_KEY_FILE)');
+  const si = args.indexOf('--sign-manifest');
+  if (si >= 0) {
+    if (!signingKey || !args[si + 1]) fail('--sign-manifest FILE requires update.publicKey and a private key');
+    const path = args[si + 1];
+    try {
+      let manifest = JSON.parse(dec.decode(await tjs.readFile(path)));
+      // An already-signed manifest is re-signed (e.g. a fresh --expires),
+      // but only once it checks out against the pinned key, and keeps its
+      // shape: a signed-only one stays signed-only.
+      if (manifest?.signed !== undefined) {
+        const { signed: _, ...fields } = manifest;
+        const payload = await verifyManifest(manifest, publicKey);
+        if (typeof manifest.version !== 'string') signedOnly = true;
+        // Plain fields that differ from the payload are hand edits (a merge
+        // of several platforms): re-signing the old payload would silently
+        // throw them away, and signing them unchecked could sign whatever a
+        // compromised host put there. Make the edit explicit instead.
+        else if (canonicalJson(fields) !== canonicalJson(payload))
+          fail('cannot sign manifest: ' + path + ' has edits outside its signed block — delete the "signed" block to sign the plain fields as they are');
+        manifest = payload;
+      }
+      if (expires) manifest.expires = expires;
+      const signed = await signManifest(manifest, signingKey, publicKey, { signedOnly });
+      await tjs.writeFile(path, enc.encode(JSON.stringify(signed, null, 2) + '\n'));
+    } catch (e) {
+      fail('cannot sign manifest: ' + (e?.message ?? e));
+    }
+    console.log('==> signed ' + path);
+    return;
+  }
   const version = cfg.version;
   if (!version) fail('tinyjs.json needs a "version" to publish (e.g. "1.0.0")');
   const PUB = 'dist/publish';
@@ -3415,7 +3493,13 @@ async function cmdPublish() {
   await cmdBuild();
   let prev = null;
   if (MAC_SUFFIX && (await exists(KEEP))) {
-    try { prev = JSON.parse(dec.decode(await tjs.readFile(KEEP + '/manifest.json'))); } catch {}
+    try {
+      prev = JSON.parse(dec.decode(await tjs.readFile(KEEP + '/manifest.json')));
+      // Signed: merge only the verified payload. Unsigned: drop a signed
+      // block left from an earlier signed publish (it would be stale).
+      if (publicKey) prev = await verifyManifest(prev, publicKey);
+      else delete prev.signed;
+    } catch { prev = null; }
     // Another version's leftovers don't belong in this release.
     if (prev?.version === version) await tjs.rename(KEEP, PUB);
     else prev = null;
@@ -3489,7 +3573,9 @@ async function cmdPublish() {
       ? dec.decode(await tjs.readFile(args[ni + 1])).trim()
       : args[ni + 1];
   }
-  await tjs.writeFile(PUB + '/manifest.json', enc.encode(JSON.stringify(manifest, null, 2) + '\n'));
+  if (expires) manifest.expires = expires;
+  const output = signingKey ? await signManifest(manifest, signingKey, publicKey, { signedOnly }) : manifest;
+  await tjs.writeFile(PUB + '/manifest.json', enc.encode(JSON.stringify(output, null, 2) + '\n'));
 
   console.log('==> dist/publish/ ready:');
   for (const z of Object.values(manifest.mac ?? {}).map((m) => m.url.replace(/.*\//, '')).filter((z) => z !== zipName))
@@ -3795,6 +3881,12 @@ usage:
   tinyjs publish      build + zip the .app + auto-update manifest (takes --arch /
                       --universal; run once per --arch, the manifest merges both)
                       (--notes "text" | --notes-file FILE → manifest notes)
+                      (--sign-manifest FILE: sign a final merged manifest without building;
+                      requires update.publicKey + TINYJS_UPDATE_PRIVATE_KEY_FILE)
+                      (--expires 30d | 2027-01-31: signed manifests stop being
+                      accepted after that; re-sign with --sign-manifest to extend)
+                      (--signed-only: no plain fields, so apps without a key see
+                      no update)
   tinyjs notarize     submit dist/<Name>.app to Apple notarization + staple
                       (--dmg: also rebuild dist/<name>-<version>.dmg from the
                       stapled .app; auto-rebuilt if a dmg already exists;
