@@ -93,7 +93,7 @@ jobs:
           # its AArch64 one is GNU assembler syntax, which MSVC can't build.
           cmake -S $src -B "$src\build" -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-windows-static -DWAMR_BUILD_TARGET=AARCH64 -DWAMR_BUILD_INVOKE_NATIVE_GENERAL=1
           if ($LASTEXITCODE -ne 0) { throw 'configure failed' }
-          cmake --build "$src\build" --config Release --target tjs
+          cmake --build "$src\build" --config Release --target tjs-cli
           if ($LASTEXITCODE -ne 0) { throw 'build failed' }
           New-Item -ItemType Directory -Force bin | Out-Null
           Copy-Item "$src\build\Release\tjs.exe" bin\tjs.exe
