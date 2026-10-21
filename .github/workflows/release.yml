@@ -67,7 +67,7 @@ jobs:
         with:
           path: bin/tjs.exe
           # Bump the suffix on any toolchain change (see the Linux cache note).
-          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v2
+          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v3
 
       - name: Set up vcpkg (arm64 tjs build)
         if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
@@ -82,24 +82,43 @@ jobs:
         if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
         run: |
           $src = "$env:RUNNER_TEMP\txiki-src"
-          git clone --depth 1 --branch $env:TJS_VERSION --recurse-submodules --shallow-submodules -j4 https://github.com/saghul/txiki.js $src
+          # autocrlf off (passed down to the submodule clones): the WAMR patch
+          # below has LF context lines.
+          git -c core.autocrlf=false clone --depth 1 --branch $env:TJS_VERSION --recurse-submodules --shallow-submodules -j4 https://github.com/saghul/txiki.js $src
           if ($LASTEXITCODE -ne 0) { throw 'clone failed' }
+          # WAMR (txiki's WebAssembly engine) can't call native (WASI)
+          # functions on MSVC ARM64 at txiki's pinned version; this is the
+          # upstream fix, vendored. See the patch's header.
+          git -C "$src\deps\wamr" apply "$env:GITHUB_WORKSPACE\native\patches\wamr-4636-armasm64.patch"
+          if ($LASTEXITCODE -ne 0) { throw 'WAMR patch did not apply' }
           & "$env:VCPKG_ROOT\vcpkg.exe" install libffi:arm64-windows-static
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
-          # WAMR (txiki's WebAssembly engine) picks its CPU by matching
-          # CMAKE_SYSTEM_PROCESSOR case-sensitively against "arm64|aarch64";
-          # Windows reports "ARM64", so it fell to X86_64 and fed an x64 MASM
-          # file to the build. Name the target, and use WAMR's C invokeNative:
-          # its AArch64 one is GNU assembler syntax, which MSVC can't build.
-          cmake -S $src -B "$src\build" -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-windows-static -DWAMR_BUILD_TARGET=AARCH64 -DWAMR_BUILD_INVOKE_NATIVE_GENERAL=1
+          # The patch drives armasm64 through a Ninja/NMake compile rule (the
+          # Visual Studio generator routes .asm through MSBuild's x64-only
+          # MASM step instead) and finds it via VCToolsInstallDir, so build
+          # with Ninja inside the VS developer environment, imported here.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvarsall.bat`" arm64 >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2]) }
+          }
+          if (-not $env:VCToolsInstallDir) { throw 'vcvarsall arm64 did not set up the environment' }
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { throw 'ninja not on PATH after vcvarsall' }
+          # WAMR picks its CPU by matching CMAKE_SYSTEM_PROCESSOR
+          # case-sensitively against arm64|aarch64; Windows says ARM64.
+          cmake -S $src -B "$src\build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-windows-static -DWAMR_BUILD_TARGET=AARCH64
           if ($LASTEXITCODE -ne 0) { throw 'configure failed' }
-          cmake --build "$src\build" --config Release --target tjs-cli
+          # tjs-cli is the executable (OUTPUT_NAME tjs); "tjs" is the core lib.
+          cmake --build "$src\build" --target tjs-cli
           if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+          # Static CRT (txiki sets MultiThreaded): nothing that needs the VC++
+          # redistributable on a user's machine.
+          $deps = dumpbin /nologo /dependents "$src\build\tjs.exe" | Out-String
+          Write-Host $deps
+          if ($deps -match '(?i)vcruntime|msvcp') { throw 'tjs.exe links the VC++ runtime DLLs' }
           New-Item -ItemType Directory -Force bin | Out-Null
-          Copy-Item "$src\build\Release\tjs.exe" bin\tjs.exe
-          # WAMR's notes on that C invokeNative: argument passing to native
-          # functions is the weak spot (64-bit and float args). So run txiki's
-          # own WebAssembly/WASI tests against this binary, as its CI does.
+          Copy-Item "$src\build\tjs.exe" bin\tjs.exe
+          # Run txiki's own WebAssembly/WASI tests against this binary, as its
+          # CI does: the WASI ones are what a broken invokeNative breaks.
           $t = "$env:RUNNER_TEMP\wasm-tests"
           New-Item -ItemType Directory -Force $t | Out-Null
           Copy-Item "$src\tests\test-wasm*.js" $t

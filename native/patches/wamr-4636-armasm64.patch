@@ -1,0 +1,273 @@
+# WAMR PR #4636 (bytecodealliance/wasm-micro-runtime commit
+# 1b9542830e9fa3d6eaabf4df16a9b7224db85473, Apache-2.0 WITH LLVM-exception):
+# invokeNative in armasm64 syntax, for MSVC on Windows ARM64. txiki.js
+# v26.6.0 pins WAMR 8c18e3f (a 2.4.x release-branch commit) that lacks it,
+# and without it WAMR has no working way to call native (WASI) functions
+# there: its AArch64 routine is GNU-assembler syntax MSVC can't build, and
+# its "general" C fallback passes 32-bit args, splitting 64-bit pointers.
+# Applied in deps/wamr by release.yml's Windows arm64 leg; `git apply`
+# skips this header. Drop it once txiki pins a WAMR that includes #4636.
+
+From 1b9542830e9fa3d6eaabf4df16a9b7224db85473 Mon Sep 17 00:00:00 2001
+From: Hiroshi Hatake <cosmo0920.oucc@gmail.com>
+Date: Thu, 9 Oct 2025 13:09:00 +0900
+Subject: [PATCH] Implement invokeNative asm code for armasm64 assembler on
+ ARM64 Windows (#4636)
+
+* Implement invokeNative asm code for armasm64 assembler on ARM64 Windows
+* Use more solid wrapper for armasm64 executable
+
+Signed-off-by: Hiroshi Hatake <cosmo0920.oucc@gmail.com>
+---
+ .../common/arch/invokeNative_armasm64.asm     | 73 +++++++++++++++++++
+ .../arch/invokeNative_armasm64_simd.asm       | 73 +++++++++++++++++++
+ core/iwasm/common/iwasm_common.cmake          | 68 ++++++++++++++++-
+ 3 files changed, 212 insertions(+), 2 deletions(-)
+ create mode 100644 core/iwasm/common/arch/invokeNative_armasm64.asm
+ create mode 100644 core/iwasm/common/arch/invokeNative_armasm64_simd.asm
+
+diff --git a/core/iwasm/common/arch/invokeNative_armasm64.asm b/core/iwasm/common/arch/invokeNative_armasm64.asm
+new file mode 100644
+index 0000000000..0abe160e61
+--- /dev/null
++++ b/core/iwasm/common/arch/invokeNative_armasm64.asm
+@@ -0,0 +1,73 @@
++        ; Copyright (C) 2019 Intel Corporation.  All rights reserved.
++        ; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++        AREA    |.text|, CODE, READONLY, ALIGN=2
++
++        EXPORT  invokeNative
++
++; ------------------------ direct call path ------------------------
++
++call_func
++        mov     x20, x30                 ; save x30(lr)
++        blr     x19
++        mov     sp, x22                  ; restore sp saved before function call
++
++return_label
++        mov     x30,  x20                ; restore x30(lr)
++        ldp     x19, x20, [sp, #0x20]
++        ldp     x21, x22, [sp, #0x10]
++        ldp     x23, x24, [sp, #0x0]
++        add     sp, sp, #0x30
++        ret
++
++; ------------------------ stack-args path ------------------------
++
++handle_stack
++        ; Reserve aligned stack space for stack arguments and copy them
++        mov     x23, sp
++        bic     sp,  x23, #15            ; Ensure 16-byte alignment
++        lsl     x23, x21, #3             ; x23 = nstacks * 8
++        add     x23, x23, #15
++        bic     x23, x23, #15
++        sub     sp, sp, x23
++        mov     x23, sp
++
++copy_loop
++        cmp     x21, #0
++        b.eq    call_func                ; when done, branch back to call path
++        ldr     x24, [x20], #8
++        str     x24, [x23], #8
++        sub     x21, x21, #1
++        b       copy_loop
++
++; ------------------------ function entry ------------------------
++
++invokeNative
++        sub     sp, sp, #0x30
++        stp     x19, x20, [sp, #0x20]    ; save the registers
++        stp     x21, x22, [sp, #0x10]
++        stp     x23, x24, [sp, #0x0]
++
++        mov     x19, x0                  ; x19 = function ptr
++        mov     x20, x1                  ; x20 = argv
++        mov     x21, x2                  ; x21 = nstacks
++        mov     x22, sp                  ; save the sp before call function
++
++        ; Fill in floating-point registers
++        ldp     d0, d1, [x20], #16
++        ldp     d2, d3, [x20], #16
++        ldp     d4, d5, [x20], #16
++        ldp     d6, d7, [x20], #16
++
++        ; Fill integer registers
++        ldp     x0, x1, [x20], #16       ; x0 = argv[8] = exec_env, x1 = argv[9]
++        ldp     x2, x3, [x20], #16
++        ldp     x4, x5, [x20], #16
++        ldp     x6, x7, [x20], #16
++
++        ; Now x20 points to stack args
++        cmp     x21, #0
++        b.ne    handle_stack             ; backward: there are stack args
++        b       call_func                ; backward: no stack args
++
++        END
+diff --git a/core/iwasm/common/arch/invokeNative_armasm64_simd.asm b/core/iwasm/common/arch/invokeNative_armasm64_simd.asm
+new file mode 100644
+index 0000000000..d209f10751
+--- /dev/null
++++ b/core/iwasm/common/arch/invokeNative_armasm64_simd.asm
+@@ -0,0 +1,73 @@
++        ; Copyright (C) 2019 Intel Corporation.  All rights reserved.
++        ; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++        AREA    |.text|, CODE, READONLY, ALIGN=2
++
++        EXPORT  invokeNative
++
++; ------------------------ direct call path ------------------------
++
++call_func
++        mov     x20, x30                 ; save x30(lr)
++        blr     x19
++        mov     sp, x22                  ; restore sp saved before function call
++
++return_label
++        mov     x30,  x20                ; restore x30(lr)
++        ldp     x19, x20, [sp, #0x20]
++        ldp     x21, x22, [sp, #0x10]
++        ldp     x23, x24, [sp, #0x0]
++        add     sp, sp, #0x30
++        ret
++
++; ------------------------ stack-args path ------------------------
++
++handle_stack
++        ; Reserve aligned stack space for stack arguments and copy them
++        mov     x23, sp
++        bic     sp,  x23, #15            ; Ensure 16-byte alignment
++        lsl     x23, x21, #3             ; x23 = nstacks * 8
++        add     x23, x23, #15
++        bic     x23, x23, #15
++        sub     sp, sp, x23
++        mov     x23, sp
++
++copy_loop
++        cmp     x21, #0
++        b.eq    call_func                ; when done, branch back to call path
++        ldr     x24, [x20], #8
++        str     x24, [x23], #8
++        sub     x21, x21, #1
++        b       copy_loop
++
++; ------------------------ function entry ------------------------
++
++invokeNative
++        sub     sp, sp, #0x30
++        stp     x19, x20, [sp, #0x20]    ; save the registers
++        stp     x21, x22, [sp, #0x10]
++        stp     x23, x24, [sp, #0x0]
++
++        mov     x19, x0                  ; x19 = function ptr
++        mov     x20, x1                  ; x20 = argv
++        mov     x21, x2                  ; x21 = nstacks
++        mov     x22, sp                  ; save the sp before call function
++
++        ; Fill in floating-point registers
++        ; v0 = argv[0], v1 = argv[1], v2 = argv[2], v3 = argv[3]
++        ld1     {v0.2D, v1.2D, v2.2D, v3.2D}, [x20], #64
++        ; v4 = argv[4], v5 = argv[5], v6 = argv[6], v7 = argv[7]
++        ld1     {v4.2D, v5.2D, v6.2D, v7.2D}, [x20], #64
++
++        ; Fill integer registers
++        ldp     x0, x1, [x20], #16       ; x0 = argv[8] = exec_env, x1 = argv[9]
++        ldp     x2, x3, [x20], #16
++        ldp     x4, x5, [x20], #16
++        ldp     x6, x7, [x20], #16
++
++        ; Now x20 points to stack args
++        cmp     x21, #0
++        b.ne    handle_stack             ; (backward) there are stack args
++        b       call_func                ; (backward) no stack args
++
++        END
+diff --git a/core/iwasm/common/iwasm_common.cmake b/core/iwasm/common/iwasm_common.cmake
+index 15895b8e5e..c3653f156c 100644
+--- a/core/iwasm/common/iwasm_common.cmake
++++ b/core/iwasm/common/iwasm_common.cmake
+@@ -4,6 +4,42 @@
+ set (IWASM_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR})
+ 
+ include_directories (${IWASM_COMMON_DIR})
++if (MSVC AND WAMR_BUILD_PLATFORM STREQUAL "windows" AND WAMR_BUILD_TARGET MATCHES "AARCH64.*")
++  if (DEFINED ENV{VCToolsInstallDir})
++    # Detect host tool dir
++    set(_ARMASM64_CANDIDATES
++        "$ENV{VCToolsInstallDir}/bin/HostX64/ARM64/armasm64.exe"
++        "$ENV{VCToolsInstallDir}/bin/HostARM64/arm64/armasm64.exe")
++    set(_ARMASM64_EXE "")
++    foreach(_p IN LISTS _ARMASM64_CANDIDATES)
++      if (EXISTS "${_p}")
++        set(_ARMASM64_EXE "${_p}")
++        break()
++      endif()
++    endforeach()
++    if (_ARMASM64_EXE STREQUAL "")
++      message(FATAL_ERROR "armasm64.exe not found under VCToolsInstallDir")
++    endif()
++
++    # Wrapper without spaces to avoid quoting hell on NMake/cmd.exe
++    set(_WRAP "${CMAKE_BINARY_DIR}/armasm64_wrapper.bat")
++    file(WRITE "${_WRAP}"
++"@echo off\r\n\"${_ARMASM64_EXE}\" %*\r\n")
++
++    # Use wrapper as compiler (no spaces in path)
++    set(CMAKE_ASM_MASM_COMPILER
++        "${_WRAP}"
++        CACHE FILEPATH "" FORCE)
++
++    # Quote ONLY object and source (compiler path has no spaces now)
++    set(CMAKE_ASM_MASM_COMPILE_OBJECT
++        "<CMAKE_ASM_MASM_COMPILER> /nologo -o \"<OBJECT>\" \"<SOURCE>\""
++        CACHE STRING "" FORCE)
++
++  else()
++    message(FATAL_ERROR "VCToolsInstallDir is not defined. Please run from a Developer Command Prompt or specify armasm64.exe manually.")
++  endif()
++endif()
+ 
+ add_definitions(-DBH_MALLOC=wasm_runtime_malloc)
+ add_definitions(-DBH_FREE=wasm_runtime_free)
+@@ -79,9 +115,37 @@ elseif (WAMR_BUILD_TARGET MATCHES "THUMB.*")
+   endif ()
+ elseif (WAMR_BUILD_TARGET MATCHES "AARCH64.*")
+   if (NOT WAMR_BUILD_SIMD EQUAL 1)
+-    set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64.s)
++    if (WAMR_BUILD_PLATFORM STREQUAL "windows")
++      if (MSVC)
++        set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64.asm)
++        set(_WAMR_ARM64_MASM_SOURCES ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64.asm)
++        set_source_files_properties(${_WAMR_ARM64_MASM_SOURCES}
++          PROPERTIES
++            LANGUAGE ASM_MASM
++            COMPILE_DEFINITIONS ""
++            INCLUDE_DIRECTORIES ""
++            COMPILE_OPTIONS "/nologo"
++        )
++      endif ()
++    else ()
++      set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64.s)
++    endif ()
+   else()
+-    set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64_simd.s)
++    if (WAMR_BUILD_PLATFORM STREQUAL "windows")
++      if (MSVC)
++        set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64_simd.asm)
++        set(_WAMR_ARM64_MASM_SOURCES_SIMD ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64_simd.asm)
++        set_source_files_properties(${_WAMR_ARM64_MASM_SOURCES_SIMD}
++          PROPERTIES
++            LANGUAGE ASM_MASM
++            COMPILE_DEFINITIONS ""
++            INCLUDE_DIRECTORIES ""
++            COMPILE_OPTIONS "/nologo"
++        )
++      endif ()
++    else ()
++      set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64_simd.s)
++    endif ()
+   endif()
+ elseif (WAMR_BUILD_TARGET STREQUAL "MIPS")
+   set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_mips.s)

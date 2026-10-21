@@ -2,3 +2,6 @@
 # the default on Git for Windows and the CI runners): the Windows release zip
 # ships it for Git Bash, and a CRLF shebang breaks strict shells.
 tinyjs text eol=lf
+# Patches apply against LF sources (release.yml clones txiki with
+# core.autocrlf=false); a CRLF checkout of the patch itself won't apply.
+*.patch -text
