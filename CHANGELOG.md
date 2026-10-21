@@ -4,6 +4,18 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **macOS: `contextMenu: false` also covers dialogs.** The title and
+  message of an alert, confirm or prompt (`tiny.dialog.*` and the page's
+  own `alert()`/`confirm()`/`prompt()`) could be selected, and
+  right-clicking them opened the system text menu (Look Up, Translate,
+  Services…). With `contextMenu: false` that text is now plain and shows no
+  menu; a prompt's input keeps its menu. Apps without the setting keep the
+  standard macOS behaviour.
+  ([#83](https://github.com/tarwin/tinyjsapp/issues/83), thanks to
+  [@Blatman](https://github.com/Blatman) for the report.)
+
 ## 0.62.0 — 2026-10-21
 
 - **Windows on ARM: native arm64 builds.** Releases now include

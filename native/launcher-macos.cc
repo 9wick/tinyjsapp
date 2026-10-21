@@ -721,6 +721,9 @@ static void apply_type_filter(NSSavePanel *panel, const std::string &csv) {
 #endif
 
 static void tiny_test_autodlg_arm(); // test hook, defined with the JS dialogs
+#ifdef __APPLE__
+static void tiny_alert_ctx(NSAlert *a); // defined with the context-menu hook
+#endif
 static void do_dialog(webview_t w, void *arg) {
   DlgReq *req = static_cast<DlgReq *>(arg);
   std::string json = "null";
@@ -746,6 +749,7 @@ static void do_dialog(webview_t w, void *arg) {
       if (req->op == "confirm") {
         [alert addButtonWithTitle:ns(a(3).empty() ? "Cancel" : a(3))];
       }
+      tiny_alert_ctx(alert);
       NSModalResponse r = [alert runModal];
       json = (req->op == "alert") ? "true"
                                   : (r == NSAlertFirstButtonReturn ? "true" : "false");
@@ -760,6 +764,7 @@ static void do_dialog(webview_t w, void *arg) {
       alert.window.initialFirstResponder = field;
       [alert addButtonWithTitle:ns(a(2).empty() ? "OK" : a(2))];
       [alert addButtonWithTitle:ns(a(3).empty() ? "Cancel" : a(3))];
+      tiny_alert_ctx(alert);
       if ([alert runModal] == NSAlertFirstButtonReturn) {
         json = json_escape([field.stringValue UTF8String]);
       }
@@ -4060,6 +4065,26 @@ static void tiny_willOpenMenu(id self, SEL cmd, NSMenu *menu, NSEvent *ev) {
   // Empty menu -> AppKit shows nothing, so removeAllItems suppresses it.
   if (g_ctx_suppress)
     [menu removeAllItems];
+}
+
+// NSAlert's title/message are selectable labels, so right-clicking them pops
+// AppKit's text menu (Look Up, Translate, Services…) — the webview hook above
+// never sees it (#83). Under contextMenu:false, make them plain labels.
+// Editable fields (prompt's input) keep their menu. [a layout] builds the
+// subviews early; runModal keeps the change.
+static void tiny_alert_unselect(NSView *v) {
+  for (NSView *s in v.subviews) {
+    if ([s isKindOfClass:[NSTextField class]] && !((NSTextField *)s).editable)
+      ((NSTextField *)s).selectable = NO;
+    tiny_alert_unselect(s);
+  }
+}
+
+static void tiny_alert_ctx(NSAlert *a) {
+  if (!g_ctx_suppress)
+    return;
+  [a layout];
+  tiny_alert_unselect(a.window.contentView);
 }
 
 // Context menus are built lazily at right-click, so state updates and reads
@@ -7601,6 +7626,7 @@ static void tiny_js_alert(id, SEL, WKWebView *, NSString *msg,
     a.messageText = tiny_js_dialog_title(frame);
     a.informativeText = msg ?: @"";
     [a addButtonWithTitle:@"OK"];
+    tiny_alert_ctx(a);
     tiny_test_autodlg_arm();
     [a runModal];
   }
@@ -7616,6 +7642,7 @@ static void tiny_js_confirm(id, SEL, WKWebView *, NSString *msg,
     a.informativeText = msg ?: @"";
     [a addButtonWithTitle:@"OK"];
     [a addButtonWithTitle:@"Cancel"];
+    tiny_alert_ctx(a);
     tiny_test_autodlg_arm();
     ok = [a runModal] == NSAlertFirstButtonReturn;
   }
@@ -7637,6 +7664,7 @@ static void tiny_js_prompt(id, SEL, WKWebView *, NSString *msg,
     a.window.initialFirstResponder = field;
     [a addButtonWithTitle:@"OK"];
     [a addButtonWithTitle:@"Cancel"];
+    tiny_alert_ctx(a);
     tiny_test_autodlg_arm();
     if ([a runModal] == NSAlertFirstButtonReturn)
       // OWNED copy, not autorelease: the pool drains at the closing brace
