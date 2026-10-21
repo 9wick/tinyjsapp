@@ -100,12 +100,16 @@ tinyjs notarize --dmg   # submit + staple + REBUILD the dmg from the stapled app
 ## Windows
 
 ```sh
-tinyjs publish     # dist/publish/<name>-<ver>-win.zip + manifest fragment
+tinyjs publish     # dist/publish/<name>-<ver>-win.zip (x64) or -win-arm64.zip + manifest fragment
 ```
 
 Portable folder in a zip: `<name>.exe` + `launcher.exe` + `frontend/`. No
-codesigning step — https + the manifest's sha256 is the update trust anchor.
-Built and packaged ON Windows (use `tinyjs.cmd`).
+codesigning step — https + the manifest's sha256 is the update trust anchor
+(or a signed manifest: `update.publicKey`). Built and packaged ON Windows
+(use `tinyjs.cmd`). The build's CPU is the tinyjs install's: publish once
+with an x64 tinyjs and once with an arm64 one, from the same project, and
+both land in one manifest's `"win"` block (x64 also in `win.url`, which
+older installs read). Windows on ARM can run both installs.
 
 ## Linux — the glibc floor rule (learned the hard way)
 

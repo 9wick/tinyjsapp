@@ -4,6 +4,8 @@
 #
 # Downloads the latest release (or $env:TINYJS_VERSION = 'vX.Y.Z') into
 # %LOCALAPPDATA%\tinyjs (or $env:TINYJS_HOME) and adds it to your user PATH.
+# Picks the build for this machine: x86_64, or arm64 on Windows on ARM
+# (falling back to x86_64, which runs emulated, for a release without one).
 # Needs the WebView2 runtime (preinstalled on Windows 11) — no git, no
 # compiler. Each release ships a copy, and `tinyjs update` runs that one.
 #
@@ -15,7 +17,11 @@ $ProgressPreference = 'SilentlyContinue'
 $Repo = 'tarwin/tinyjsapp'
 $InstallDir = if ($env:TINYJS_HOME) { $env:TINYJS_HOME } else { Join-Path $env:LOCALAPPDATA 'tinyjs' }
 $Version = if ($env:TINYJS_VERSION) { $env:TINYJS_VERSION } else { 'latest' }
-$Asset = 'tinyjs-windows-x86_64.zip'
+# The machine's architecture from the registry, not this process's own
+# $env:PROCESSOR_ARCHITECTURE: an x64 shell emulated on ARM64 reports AMD64.
+$machineArch = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -ErrorAction SilentlyContinue).PROCESSOR_ARCHITECTURE
+$Arch = if ($machineArch -eq 'ARM64' -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x86_64' }
+$Asset = "tinyjs-windows-$Arch.zip"
 
 $tmp = Join-Path $env:TEMP "tinyjs-install-$PID"
 New-Item -ItemType Directory -Force $tmp | Out-Null
@@ -38,7 +44,7 @@ try {
         }
         $base = "https://github.com/$Repo/releases/download/$Version"
 
-        Write-Host "==> downloading tinyjs $Version (windows-x86_64)"
+        Write-Host "==> downloading tinyjs $Version (windows-$Arch)"
         $zip = Join-Path $tmp $Asset
         try {
             # -UseBasicParsing everywhere: without it PS 5.1 parses responses
@@ -46,7 +52,17 @@ try {
             # non-interactive shells.
             Invoke-WebRequest "$base/$Asset" -OutFile $zip -UseBasicParsing
         } catch {
-            throw "no Windows build in release $Version (it may predate Windows support) - $_"
+            if ($Arch -ne 'arm64') { throw "no Windows build in release $Version (it may predate Windows support) - $_" }
+            # Releases before 0.62.0 have no arm64 build; the x64 one runs
+            # emulated on Windows on ARM.
+            Write-Host "    (no arm64 build in $Version - installing the x86_64 one, which runs emulated)"
+            $Asset = 'tinyjs-windows-x86_64.zip'
+            $zip = Join-Path $tmp $Asset
+            try {
+                Invoke-WebRequest "$base/$Asset" -OutFile $zip -UseBasicParsing
+            } catch {
+                throw "no Windows build in release $Version (it may predate Windows support) - $_"
+            }
         }
 
         Write-Host '==> verifying checksum'

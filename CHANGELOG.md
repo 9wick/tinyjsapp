@@ -4,6 +4,25 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Windows on ARM: native arm64 builds.** Releases now include
+  `tinyjs-windows-arm64.zip`, and the Windows installer picks it on an
+  ARM64 machine; before, Windows on ARM ran the x64 build under emulation.
+  txiki.js publishes no Windows ARM64 runtime, so release CI builds
+  `tjs.exe` from source the way txiki builds its x64 one, and compiles the
+  launcher with llvm-mingw. Apps build for the CPU of the tinyjs that
+  builds them, so an arm64 tinyjs makes arm64 apps. `tinyjs publish` names
+  that zip `<name>-<ver>-win-arm64.zip`. Publishing the same project with
+  an x64 and an arm64 tinyjs merges both into the manifest's `"win"` block;
+  the x64 build also stays in `win.url`, where existing installs look. An
+  x64 app on an ARM64 machine updates to the arm64 build when there is one,
+  and an arm64 app never falls back to an x64 build. In a source checkout,
+  `setup.ps1` fetches the arm64 `tjs.exe` from the latest release and
+  compiles with llvm-mingw when it finds it.
+  ([#82](https://github.com/tarwin/tinyjsapp/issues/82), thanks to
+  [@zhuyuanmin](https://github.com/zhuyuanmin) for the request.)
+
 ## 0.61.0 — 2026-10-20
 
 - **Signed app updates (opt in).** The sha256 in an update manifest comes

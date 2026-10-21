@@ -3,6 +3,10 @@ name: release
 on:
   push:
     tags: ['v*']
+    # A dry run of the whole release (every build, smoke and verify step)
+    # without publishing: push a branch named release-test/<anything>. Only a
+    # tag reaches "Create GitHub release".
+    branches: ['release-test/**']
 
 permissions:
   contents: write
@@ -13,16 +17,95 @@ env:
 jobs:
   # Windows binaries: built here, shipped by the release job below so one
   # checksums.txt covers every asset.
+  # x86_64 uses txiki's own release tjs.exe (setup.ps1 downloads it, hash
+  # pinned) and MinGW g++. txiki publishes no Windows ARM64 build, so the
+  # arm64 leg builds tjs.exe from source exactly as txiki's release workflow
+  # does for x64 (MSVC + vcpkg, static libffi), and compiles the launcher with
+  # llvm-mingw's clang — same flags as g++. Both run natively on their own
+  # runner, so the smoke tests below exercise the real binaries.
   windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x86_64
+            machine: '8664'   # PE IMAGE_FILE_MACHINE_AMD64
+          - runner: windows-11-arm
+            arch: arm64
+            machine: 'AA64'   # PE IMAGE_FILE_MACHINE_ARM64
+    runs-on: ${{ matrix.runner }}
+    env:
+      ZIP: tinyjs-windows-${{ matrix.arch }}.zip
     steps:
       - uses: actions/checkout@v5
 
       - name: Install MinGW-w64
+        if: matrix.arch == 'x86_64'
         run: choco install mingw -y --no-progress
+
+      - name: Install llvm-mingw (arm64 launcher compiler)
+        if: matrix.arch == 'arm64'
+        run: |
+          $v = '20260922'
+          $name = "llvm-mingw-$v-ucrt-aarch64"
+          $zip = "$env:RUNNER_TEMP\$name.zip"
+          Invoke-WebRequest "https://github.com/mstorsjo/llvm-mingw/releases/download/$v/$name.zip" -OutFile $zip -UseBasicParsing
+          $got = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($got -ne 'a317514a7a63badd692032c0c2b8e165f630bbaebbe7a3254348051f43a64949') { throw "llvm-mingw sha256 mismatch: $got" }
+          Expand-Archive $zip $env:RUNNER_TEMP
+          # setup.ps1 compiles with $env:CXX when set.
+          "CXX=$env:RUNNER_TEMP\$name\bin\aarch64-w64-mingw32-clang++.exe" >> $env:GITHUB_ENV
+
+      - name: Cache txiki.js build (arm64)
+        if: matrix.arch == 'arm64'
+        id: tjs-cache
+        uses: actions/cache@v5
+        with:
+          path: bin/tjs.exe
+          # Bump the suffix on any toolchain change (see the Linux cache note).
+          key: tjs-${{ env.TJS_VERSION }}-windows-arm64-v1
+
+      - name: Set up vcpkg (arm64 tjs build)
+        if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
+        uses: lukka/run-vcpkg@v11
+        with:
+          # txiki's own pin (its release.yml at TJS_VERSION).
+          vcpkgGitCommitId: '66c0373dc7fca549e5803087b9487edfe3aca0a1'
+
+      - name: Build txiki.js from source (arm64)
+        if: matrix.arch == 'arm64' && steps.tjs-cache.outputs.cache-hit != 'true'
+        run: |
+          $src = "$env:RUNNER_TEMP\txiki-src"
+          git clone --depth 1 --branch $env:TJS_VERSION --recurse-submodules --shallow-submodules -j4 https://github.com/saghul/txiki.js $src
+          if ($LASTEXITCODE -ne 0) { throw 'clone failed' }
+          & "$env:VCPKG_ROOT\vcpkg.exe" install libffi:arm64-windows-static
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
+          cmake -S $src -B "$src\build" -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-windows-static
+          if ($LASTEXITCODE -ne 0) { throw 'configure failed' }
+          cmake --build "$src\build" --config Release --target tjs
+          if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+          New-Item -ItemType Directory -Force bin | Out-Null
+          Copy-Item "$src\build\Release\tjs.exe" bin\tjs.exe
 
       - name: Build (setup.ps1 — fetch tjs.exe + WebView2 header, compile launcher)
         run: powershell -ExecutionPolicy Bypass -File setup.ps1 -SkipPath
+
+      # A wrong-arch binary still runs on these runners (x64 emulation on ARM64)
+      # and every test passes, so assert the PE machine field: a silent
+      # fallback to an x64 compiler or tjs.exe would otherwise ship as "arm64".
+      - name: Verify the shipped binaries' architecture
+        run: |
+          $fail = 0
+          foreach ($f in 'bin\tjs.exe', 'native\launcher-win.exe') {
+            $b = [IO.File]::ReadAllBytes((Resolve-Path $f))
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $m = '{0:X4}' -f [BitConverter]::ToUInt16($b, $pe + 4)
+            Write-Host "$f machine 0x$m"
+            if ($m -ne '${{ matrix.machine }}') { Write-Host "::error::$f is 0x$m, expected 0x${{ matrix.machine }} (${{ matrix.arch }})"; $fail = 1 }
+          }
+          & bin\tjs.exe --version
+          if ($fail) { exit 1 }
 
       - name: Stamp version
         run: echo "${env:GITHUB_REF_NAME}" | Out-File -Encoding ascii -NoNewline VERSION
@@ -42,13 +125,18 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           # Zip the CONTENTS (no wrapper dir): install.ps1 extracts straight
           # into the install dir.
-          Compress-Archive -Path "$stage\*" -DestinationPath out\tinyjs-windows-x86_64.zip
+          Compress-Archive -Path "$stage\*" -DestinationPath "out\$env:ZIP"
+          # The arm64 tjs.exe on its own too, for setup.ps1 in a source
+          # checkout (the twin of tjs-linux-<arch>.gz).
+          if ('${{ matrix.arch }}' -eq 'arm64') {
+            Compress-Archive -Path bin\tjs.exe -DestinationPath out\tjs-windows-arm64.zip
+          }
 
       - name: Smoke test (build pipeline; no GUI on a runner)
         run: |
           $ErrorActionPreference = 'Stop'
           $extract = Join-Path $env:TEMP 'tinyjs-ci'
-          Expand-Archive out\tinyjs-windows-x86_64.zip $extract
+          Expand-Archive "out\$env:ZIP" $extract
           & "$extract\tinyjs.cmd" version
           $work = Join-Path $env:TEMP 'tinyjs-ci-work'
           New-Item -ItemType Directory -Force $work | Out-Null
@@ -79,8 +167,8 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: windows-zip
-          path: out/tinyjs-windows-x86_64.zip
+          name: windows-${{ matrix.arch }}
+          path: out/*.zip
 
   # Linux binaries (x86_64 + arm64): txiki.js has no upstream Linux releases,
   # so tjs is built from source here (cached per version) and shipped both
@@ -334,10 +422,11 @@ jobs:
             tar -czf "out/tinyjs-macos-$ARCH.tar.gz" -C "/tmp/stage-$ARCH" tinyjs
           done
 
-      - name: Fetch Windows zip
+      - name: Fetch Windows zips
         uses: actions/download-artifact@v7
         with:
-          name: windows-zip
+          pattern: windows-*
+          merge-multiple: true
           path: out
 
       - name: Fetch Linux tarballs
@@ -363,6 +452,8 @@ jobs:
           echo "build + bundle signature OK"
 
       - name: Create GitHub release
+        # Tags only: a release-test/** branch runs everything above as a dry run.
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

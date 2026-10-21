@@ -7,6 +7,10 @@
 # Needs a C++17 compiler: MinGW-w64 g++ on PATH, or the WinLibs toolchain
 # installed via winget (auto-detected):
 #   winget install BrechtSanders.WinLibs.POSIX.UCRT
+# On Windows on ARM, llvm-mingw builds a native launcher (auto-detected; g++
+# there makes an x64 one that runs emulated):
+#   winget install MartinStorsjo.LLVM-MinGW.UCRT
+# $env:CXX overrides the compiler search.
 param([switch]$SkipPath)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -14,6 +18,32 @@ Set-Location $PSScriptRoot
 
 $TJS_VERSION = if ($env:TJS_VERSION) { $env:TJS_VERSION } else { 'v26.6.0' }
 $WEBVIEW2_VERSION = '1.0.2903.40'
+$REPO = 'tarwin/tinyjsapp'
+
+# The machine's architecture, read from the registry rather than this
+# process's own $env:PROCESSOR_ARCHITECTURE: an x64 PowerShell running under
+# emulation on ARM64 reports AMD64.
+$machineArch = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -ErrorAction SilentlyContinue).PROCESSOR_ARCHITECTURE
+$ARCH = if ($machineArch -eq 'ARM64' -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x86_64' }
+
+# --- txiki.js runtime, ARM64 ---------------------------------------------------
+# txiki publishes no Windows ARM64 build; our release CI builds one from
+# source (the twin of tjs-linux-<arch>.gz). No prebuilt yet (an older
+# release) → fall through to the x64 download below, which runs emulated.
+if ($ARCH -eq 'arm64' -and -not (Test-Path 'bin\tjs.exe')) {
+    $rel = if ($env:TINYJS_TJS_RELEASE) { "download/$env:TINYJS_TJS_RELEASE" } else { 'latest/download' }
+    $zip = Join-Path $env:TEMP "tjs-arm64-$PID.zip"
+    Write-Host "==> downloading tjs (windows-arm64) from $REPO releases"
+    try {
+        Invoke-WebRequest -Uri "https://github.com/$REPO/releases/$rel/tjs-windows-arm64.zip" -OutFile $zip -UseBasicParsing
+        New-Item -ItemType Directory -Force bin | Out-Null
+        Expand-Archive -Force $zip bin
+    } catch {
+        Write-Host '    (no prebuilt arm64 tjs in that release - using the x64 one, which runs emulated)'
+    } finally {
+        Remove-Item -Force $zip -ErrorAction SilentlyContinue
+    }
+}
 
 # --- txiki.js runtime --------------------------------------------------------
 if (-not (Test-Path 'bin\tjs.exe')) {
@@ -62,8 +92,26 @@ $header = "// GENERATED from runtime/tiny.js by setup.ps1 - do not edit.`n" +
 
 # --- find a compiler ---------------------------------------------------------
 $gxx = $null
-$cmd = Get-Command g++ -ErrorAction SilentlyContinue
-if ($cmd) { $gxx = $cmd.Source }
+if ($env:CXX) { $gxx = $env:CXX }
+if (-not $gxx -and $ARCH -eq 'arm64') {
+    # llvm-mingw, for a native ARM64 launcher: on PATH, or where winget puts it.
+    $cmd = Get-Command aarch64-w64-mingw32-clang++ -ErrorAction SilentlyContinue
+    if ($cmd) { $gxx = $cmd.Source }
+    if (-not $gxx) {
+        $gxx = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW*" -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-ChildItem $_.FullName -Directory } |
+            ForEach-Object { Join-Path $_.FullName 'bin\aarch64-w64-mingw32-clang++.exe' } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    if (-not $gxx) {
+        Write-Host '    (no llvm-mingw found - the launcher will be x64 and run emulated;'
+        Write-Host '     winget install MartinStorsjo.LLVM-MinGW.UCRT for a native one)'
+    }
+}
+if (-not $gxx) {
+    $cmd = Get-Command g++ -ErrorAction SilentlyContinue
+    if ($cmd) { $gxx = $cmd.Source }
+}
 if (-not $gxx) {
     # WinLibs installed via winget lands here (no PATH entry needed).
     $winlibs = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\BrechtSanders.WinLibs*" -Directory -ErrorAction SilentlyContinue |

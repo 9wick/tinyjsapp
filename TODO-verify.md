@@ -8,6 +8,41 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #82 — Windows on ARM: native arm64 builds (`feat/82-windows-arm64`, 2026-10-20)
+
+Release CI builds `tjs.exe` from source on `windows-11-arm` (MSVC + vcpkg,
+as txiki's own x64 release) and the launcher with llvm-mingw; its verify
+step asserts both are ARM64 (PE machine 0xAA64) and its smoke tests run
+them natively. A `release-test/**` branch runs the whole release without
+publishing. `python3 test/update-win-arch/check.py` (macOS/Linux) covers
+which download an app picks; the env-var ARM detection below is the part
+nothing has seen on a real machine.
+
+- [ ] **CI** — a `release-test/**` dry run: arm64 leg green, verify step
+  prints `machine 0xAA64` for both binaries, GUI smoke passes.
+- [ ] **Windows on ARM, install** — `irm …/install.ps1 | iex` (or
+  `TINYJS_INSTALL_ZIP` with the CI zip) installs arm64: Task Manager's
+  Details tab shows `tjs.exe` as ARM64, not x64. From the usual (ARM64)
+  PowerShell, and from an x64 shell too if one is to hand: the installer
+  reads the machine's arch from the registry so that one should pick arm64
+  as well.
+- [ ] **Windows on ARM, app** — `tinyjs new` + `build` + run: the app's
+  exe and launcher.exe show as ARM64; `tiny.system.architecture()` says
+  arm64; window, tray, dialogs, audio as usual (`test/appsurface.html`).
+- [ ] **Windows on ARM, publish + update** — publish 0.2.0 with the arm64
+  tinyjs then the x64 one in the same project: one manifest, `win.arm64`,
+  `win.x86_64`, and `win.url` = the x64 zip. Then from a localhost
+  manifest: an arm64 0.1.0 updates to the arm64 0.2.0; an **x64** 0.1.0
+  updates to the **arm64** 0.2.0 (this is the PROCESSOR_IDENTIFIER /
+  PROCESSOR_ARCHITEW6432 detection — log both from the x64 app if it
+  doesn't); an arm64 app against an x64-only manifest sees no update.
+- [ ] **Windows on ARM, source checkout** — `setup.ps1` downloads
+  `tjs-windows-arm64.zip` and, with llvm-mingw installed, builds an ARM64
+  launcher; without it, prints the emulated-launcher note.
+- [ ] **Windows x64** — nothing regressed: `publish` still names the zip
+  `-win.zip` and fills `win.url` plus `win.x86_64`; an existing x64 app
+  updates from it.
+
 ## PR #63 — signed update manifests (`feat/signed-updates`, 2026-10-20)
 
 `update.publicKey` (one key or a list) + `tinyjs publish` signing from
