@@ -1,0 +1,15 @@
+<!doctype html><title>emit test</title>
+<script>
+(async () => {
+  for (let i = 0; i < 100 && !window.tiny; i++) await new Promise((r) => setTimeout(r, 50));
+  const got = [];
+  let reported = 0;
+  window.addEventListener('error', () => reported++);
+  tiny.api.on('ping', (d) => { got.push('first ' + d.n); throw new Error('listener bug'); });
+  tiny.api.on('ping', (d) => got.push('second ' + d.n));
+  await tiny.api.call('ready');             // backend pushes 'ping' twice
+  await new Promise((r) => setTimeout(r, 1500));
+  await tiny.store.set('emittest', { got, reported });
+  await tiny.api.call('done');
+})();
+</script>

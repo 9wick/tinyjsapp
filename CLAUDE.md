@@ -8,11 +8,18 @@ delimited lines over a Unix socket; `CMD@<winid>` targets a window, bare
 global app handle.
 
 Releases are git tags (`vX.Y.Z` on main); a tag push builds macOS + Windows
-+ linux-x86_64 + linux-arm64 in CI. Update CHANGELOG.md AND
-docs/changelog.html before tagging. If the API changed (tiny.d.ts, bridge.js's
-`app`, tiny.js), also regenerate docs/api-map.html with
-`scripts/api-map/run.sh` — never hand-edit it. If a tinyjs.json key was
-added, add it to docs/schema/tinyjs.schema.json; `python3
++ linux-x86_64 + linux-arm64 in CI. Update CHANGELOG.md before tagging
+(the site's /changelog includes it). If the API changed (tiny.d.ts, bridge.js's
+`app`, tiny.js), update the matching page in docs/docs/ and regenerate
+docs/docs/api-map.md with
+`scripts/api-map/run.sh` — never hand-edit it. When TJS_VERSION changes
+(setup.sh, setup.ps1, release.yml), regenerate template/types/tjs.d.ts
+with `python3 scripts/txiki-types/update.py` — never hand-edit it either.
+Docs pages can use
+`::: tabs` (`== Title` per tab), `::: pagelink`, `::: download`,
+`::: carousel` and `::: embed <YouTube/Vimeo url>` — syntax at the top of
+docs/.vitepress/markdown.ts. If a tinyjs.json key was
+added, add it to docs/public/schema/tinyjs.schema.json; `python3
 test/config-schema/coverage.py` catches a missed top-level key (not nested
 ones). Linux legs build on ubuntu-22.04
 runners ON PURPOSE — the linker bakes the build image's glibc floor into

@@ -1,0 +1,5 @@
+{ "name": "eventgate", "id": "test.tinyjs.eventgate",
+  "url": "http://127.0.0.1:8767/site.html",
+  "api": { "disable": ["*"], "enable": ["win.close"],
+           "origins": { "http://127.0.0.1:8767": { "preset": "wrapper", "enable": ["ready", "report"] },
+                        "file://*": "all" } } }

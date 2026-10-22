@@ -644,6 +644,10 @@ async function projectToolFiles(dir = '.') {
       items.push({ rel, src: TOOL_DIR + 'skill', isDir: true, linked: await linkOnPath(rel, dir) });
   for (const sub of ['types', 'src', 'backend'])
     for (const f of ['tiny.d.ts', 'tjs.d.ts']) {
+      // A Vite project's src/ is the page, which has no tjs: older scaffolds
+      // left a tjs.d.ts stub there, and txiki's real types would only offer
+      // the page calls it can't make. Leave it alone rather than upgrade it.
+      if (sub === 'src' && f === 'tjs.d.ts') continue;
       const rel = `${sub}/${f}`;
       if (await lexists(dir + '/' + rel))
         items.push({ rel, src: TOOL_DIR + 'template/types/' + f, isDir: false, linked: await linkOnPath(rel, dir) });
@@ -1174,7 +1178,7 @@ async function cmdUninstall() {
 // chrome.frame); scalars and arrays replace outright.
 const OS_KEYS = ['macos', 'windows', 'linux'];
 // Written as "$schema" into new projects' tinyjs.json for editor completion;
-// served from docs/schema/ by the site. tinyjs itself ignores the key.
+// served from docs/public/schema/ by the site. tinyjs itself ignores the key.
 const CONFIG_SCHEMA = 'https://tinyjs.app/schema/tinyjs.schema.json';
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -1716,10 +1720,10 @@ export function init(app${ts ? ': TinyApp' : ''}) {
 `));
 
   // Ambient types where each side's editor picks them up automatically.
-  for (const d of ['/src', '/backend']) {
+  // txiki's types (tjs) go to the backend only: the page has no tjs.
+  for (const d of ['/src', '/backend'])
     await tjs.writeFile(dir + d + '/tiny.d.ts', await tjs.readFile(TOOL_DIR + 'template/types/tiny.d.ts'));
-    await tjs.writeFile(dir + d + '/tjs.d.ts', await tjs.readFile(TOOL_DIR + 'template/types/tjs.d.ts'));
-  }
+  await tjs.writeFile(dir + '/backend/tjs.d.ts', await tjs.readFile(TOOL_DIR + 'template/types/tjs.d.ts'));
   // backend/ needs its own project file: the Vite tsconfig only covers src/,
   // and TS "inferred projects" don't load sibling ambient .d.ts files.
   const beConfig = {
@@ -2452,11 +2456,11 @@ async function launcherStaleSources() {
   const srcs = IS_WIN
     // win32_edge.hh carries tinyjs patches (env options, origin queue,
     // per-app profile) — an edit there must rebuild too.
-    ? ['native/launcher-win.cc', 'runtime/tiny.js',
+    ? ['native/launcher-win.cc', 'native/combo.h', 'runtime/tiny.js',
        'native/include/webview/detail/backends/win32_edge.hh']
     : IS_LINUX
-      ? ['native/launcher-linux.cc', 'runtime/tiny.js']
-      : ['native/launcher-macos.cc', 'runtime/tiny.js'];
+      ? ['native/launcher-linux.cc', 'native/combo.h', 'runtime/tiny.js']
+      : ['native/launcher-macos.cc', 'native/combo.h', 'runtime/tiny.js'];
   const mtime = async (p) => {
     try { return (await tjs.stat(p)).mtim.getTime(); } catch { return null; }
   };

@@ -128,7 +128,7 @@
     // keys that allow media.proxy (#30).
     proxyURL: (url) => 'tiny-media://proxy/?u=' + encodeURIComponent(String(url)),
 
-    // A correct file:// URL for a disk path on BOTH platforms — hand-rolled
+    // A correct file:// URL for a disk path on every platform — hand-rolled
     // versions break on Windows (file://C:/… makes the drive the URL host).
     // Use for <audio>/<img>/<video> src of backend-provided paths.
     //
@@ -391,7 +391,7 @@
       // -> { found, matches, activeMatch }: the next match is selected and
       // scrolled into view; call again to step. Counts are a JS text-walk on
       // top of the native find (approximate on exotic pages — hidden text
-      // counts, shadow DOM doesn't). macOS today — ask
+      // counts, shadow DOM doesn't). All three platforms — ask
       // tiny.system.capabilities().findInPage.
       find: (term, opts = {}) => call('win.find', { term, forward: opts.forward !== false, matchCase: !!opts.matchCase }),
       stopFind: () => call('win.stopFind'),
@@ -458,7 +458,7 @@
     // Read the app's (or system's) rendered audio output as PCM — for VU
     // meters / visualizers, including audio that bypasses Web Audio (native
     // HLS, CORS-tainted streams). Read-only: it observes, it can't process.
-    // Requires an "audioTap" key in tinyjs.json. macOS 14.4+.
+    // Requires an "audioTap" key in tinyjs.json. macOS 14.2+.
     //   await tiny.audioTap.start({ scope: 'app', interval: 80 });
     //   tiny.audioTap.on(({ pcm, sampleRate, channels, frames, t }) => {
     //     const bin = atob(pcm), n = bin.length / 2, s = new Int16Array(n);
@@ -981,8 +981,16 @@
 
   window.__emit = (msg) => {
     // Snapshot: a handler that unsubscribes (itself or a sibling) mid-dispatch
-    // must not make forEach skip the next one.
-    (handlers[msg.event] || []).slice().forEach((fn) => fn(msg.data));
+    // must not make forEach skip the next one. And one handler's mistake must
+    // not silence the rest (the backend's fire() works the same way): report
+    // it as an uncaught error — it still shows in the console — and go on.
+    (handlers[msg.event] || []).slice().forEach((fn) => {
+      try { fn(msg.data); }
+      catch (e) {
+        if (typeof reportError === 'function') reportError(e);
+        else setTimeout(() => { throw e; });
+      }
+    });
   };
 
   // The tiny.audio.sampler HOST — the Web Audio mixer the bridge drives by

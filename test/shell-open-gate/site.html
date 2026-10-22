@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>wrapped site</title>
+<p>A remote site in a wrapper: tries to open local things with tiny.app.shell.open.</p>
+<script>
+(async () => {
+  for (let i = 0; i < 100 && !window.tiny; i++) await new Promise((r) => setTimeout(r, 100));
+  const res = { origin: location.origin };
+  // None of these exist, so nothing can open even if the check fails: the
+  // error text tells which layer refused (the gate vs. the OS).
+  const targets = {
+    localPath: '/tmp/tinyjs-shell-open-gate-does-not-exist/setup.command',
+    fileUrl: 'file:///tmp/tinyjs-shell-open-gate-does-not-exist/run.app',
+    scheme: 'tinyjs-no-such-scheme-x:payload',
+  };
+  for (const [k, t] of Object.entries(targets)) {
+    try { await tiny.app.shell.open(t); res[k] = 'OPENED'; }
+    catch (e) { res[k] = String(e && e.message || e); }
+  }
+  await tiny.store.set('shellgate', res);
+})();
+</script>

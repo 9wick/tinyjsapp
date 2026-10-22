@@ -66,6 +66,10 @@ async function handle(conn) {
 // ── throwaway install ─────────────────────────────────────────────────────
 const inst = await tjs.makeTempDir(tjs.tmpDir + '/tinyjs-update-test-XXXXXX');
 await tjs.writeFile(inst + '/cli.js', await tjs.readFile(root + 'cli.js'));
+// cli.js imports this at load (signed updates); without it every case dies
+// before the update check even starts.
+await tjs.makeDir(inst + '/runtime');
+await tjs.writeFile(inst + '/runtime/update-signing.js', await tjs.readFile(root + 'runtime/update-signing.js'));
 await tjs.writeFile(inst + '/VERSION', enc.encode('v0.0.1\n'));
 const emptyBin = await tjs.makeTempDir(tjs.tmpDir + '/tinyjs-nocurl-XXXXXX');
 

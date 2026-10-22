@@ -76,6 +76,23 @@ function assertSafeUrl(u, what) {
   throw new Error(what + ' must be https:// (got ' + (s || 'nothing') + ')');
 }
 
+// fetch, following redirects one hop at a time and checking EVERY hop with
+// assertSafeUrl. Checking only where it ended (res.url) let https → http →
+// https through: a network attacker on the plain-http hop could send the
+// app to a manifest of their choosing — the sha256 protects the archive only
+// if the manifest that names it wasn't swapped.
+async function fetchEveryHopSafe(url, what, init = {}) {
+  let u = String(url ?? '');
+  for (let hop = 0; ; hop++) {
+    assertSafeUrl(u, hop ? what + ' (after redirect)' : what);
+    const res = await fetch(u, { ...init, redirect: 'manual' });
+    const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+    if (!loc) return res;
+    if (hop >= 20) throw new Error(what + ': too many redirects');
+    u = new URL(loc, u).href;
+  }
+}
+
 function parseVer(v) {
   const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v));
   return m ? [+m[1], +m[2], +m[3]] : null;
@@ -171,11 +188,8 @@ export async function checkForUpdate({ url, version, publicKey }) {
   // Copy the pinned key list before any await, so it can't change mid-check.
   const pin = pinnedKeys(publicKey);
   if (!url) throw new Error('no update url configured (tinyjs.json "update": { "url": … })');
-  assertSafeUrl(url, 'update url');
-  const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } });
+  const res = await fetchEveryHopSafe(url, 'update url', { headers: { 'cache-control': 'no-cache' } });
   if (!res.ok) throw new Error('update check failed: HTTP ' + res.status);
-  // A redirect must not downgrade the transport.
-  if (res.url) assertSafeUrl(res.url, 'update url (after redirect)');
   const response = await res.json();
   const manifest = pin ? await verifyManifest(response, pin) : response;
   // Optional signed expiry (`tinyjs publish --expires`): past it, a host
@@ -264,23 +278,32 @@ export async function installUpdate({ url, version, manifest, publicKey }) {
     const checked = await checkForUpdate({ url, version, publicKey: pin });
     if (!checked.available) throw new Error('no newer signed update available for this platform');
     manifest = checked.manifest;
+  } else if (!manifest) {
+    // Unsigned installs get the same rule: install only what check() calls
+    // an update for THIS OS and CPU. checkForUpdate answers available:false
+    // with the manifest's top-level url still in place when there's no entry
+    // for this platform or nothing newer — installing that put an
+    // arm64-only build on an Intel Mac, or the mac zip over a Windows arm64
+    // install (whose swap then pruned resources/ and executables/), and
+    // reinstalled or downgraded when nothing was newer.
+    const checked = await checkForUpdate({ url, version });
+    if (!checked.available) throw new Error('no newer update available for this platform');
+    manifest = checked.manifest;
   }
   const bundle = await bundlePath();
   if (!bundle) {
-    throw new Error('auto-update only works from the packaged .app build');
+    throw new Error(IS_WIN || IS_LINUX
+      ? 'auto-update only works in a built app, not in tinyjs dev'
+      : 'auto-update only works from the packaged .app build');
   }
   if (bundle.includes('/AppTranslocation/')) {
     throw new Error('the app is running from a quarantined location — move it to /Applications and relaunch');
   }
 
-  if (!manifest) manifest = (await checkForUpdate({ url, version })).manifest;
   if (!manifest?.url) throw new Error('update manifest has no download url');
   if (!manifest.sha256) throw new Error('update manifest has no sha256 — refusing to install');
-  assertSafeUrl(manifest.url, 'download url');
-
-  const res = await fetch(manifest.url);
+  const res = await fetchEveryHopSafe(manifest.url, 'download url');
   if (!res.ok) throw new Error('download failed: HTTP ' + res.status);
-  if (res.url) assertSafeUrl(res.url, 'download url (after redirect)');
   const data = new Uint8Array(await res.arrayBuffer());
 
   const tmp = await tjs.makeTempDir(tjs.tmpDir + '/tinyjs-update-XXXXXX');
@@ -351,37 +374,17 @@ export async function installUpdate({ url, version, manifest, publicKey }) {
       return bundle;
     }
 
-    // Swap with rollback. Renaming a running .app/folder is fine on macOS
-    // and Linux: open files keep working via their inodes until the process
-    // exits. (The rename can cross filesystems when tmp is a different
-    // mount; the rollback path covers that failure.)
-    const backup = bundle + '.update-backup';
-    await rmrf(backup);
-    try {
-      await tjs.rename(bundle, backup);
-    } catch {
-      throw new Error('cannot move the current app (insufficient permissions?)');
-    }
-    try {
-      await tjs.rename(newApp, bundle);
-    } catch {
-      // Cross-filesystem rename (tmp is tmpfs on most Linux systems) can't
-      // move a directory — copy it instead.
-      const copied = await copyTree(newApp, bundle);
-      if (!copied) {
-        await tjs.rename(backup, bundle).catch(() => {});
-        throw new Error('failed to move the new app into place');
-      }
-    }
-    await rmrf(backup);
+    await swapBundle(newApp, bundle);
     return bundle;
   } finally {
     rmrf(tmp);
   }
 }
 
-// Recursive copy preserving the executable bit (cross-filesystem fallback
-// for the bundle swap). Returns false on any failure.
+// Recursive copy preserving the executable bit and symlinks (the
+// cross-filesystem fallback for the bundle swap — an .app can hold links, and
+// reading through one copied its target, or failed on a linked folder).
+// Returns false on any failure.
 async function copyTree(src, dst) {
   try {
     await tjs.makeDir(dst, { recursive: true }).catch(() => {});
@@ -389,7 +392,9 @@ async function copyTree(src, dst) {
     for await (const e of iter) {
       const s = src + '/' + e.name;
       const d = dst + '/' + e.name;
-      if (e.isDirectory) {
+      if (e.isSymbolicLink) {
+        await tjs.symlink(await tjs.readLink(s), d);
+      } else if (e.isDirectory) {
         if (!(await copyTree(s, d))) return false;
       } else {
         await tjs.writeFile(d, await tjs.readFile(s));
@@ -401,6 +406,49 @@ async function copyTree(src, dst) {
   } catch {
     return false;
   }
+}
+
+// macOS / Linux: put newApp where bundle is, keeping the current app intact
+// until the new one is completely in place. Renaming a running .app/folder
+// is fine: open files keep working via their inodes until the process exits.
+//
+// The new app is first moved — or, across filesystems, COPIED — to a staging
+// folder beside the current one, so the swap itself is two renames within
+// one folder. It used to move the current app aside first and copy straight
+// into its place: a copy that failed partway (tmp is a tmpfs on most Linux
+// systems, so the copy was the normal path there) left a half-copied app,
+// and the rollback rename onto that non-empty folder failed silently,
+// stranding the real app at .update-backup.
+// `rename` is injectable so test/update-swap can force the copy path.
+export async function swapBundle(newApp, bundle, { rename = tjs.rename } = {}) {
+  const rmrf = (p) => runOk(['rm', '-rf', p]);
+  const staged = bundle + '.update-new';
+  const backup = bundle + '.update-backup';
+  await rmrf(staged);
+  await rmrf(backup);
+  try {
+    await rename(newApp, staged);
+  } catch {
+    if (!(await copyTree(newApp, staged))) {
+      await rmrf(staged);
+      throw new Error('could not copy the new version next to the app (disk full?) — the current version is intact');
+    }
+  }
+  try {
+    await rename(bundle, backup);
+  } catch {
+    await rmrf(staged);
+    throw new Error('cannot move the current app (insufficient permissions?)');
+  }
+  try {
+    await rename(staged, bundle);
+  } catch (e) {
+    // bundle's path is free again (it moved to backup), so this can land
+    await rename(backup, bundle).catch(() => {});
+    await rmrf(staged);
+    throw new Error('failed to move the new app into place — the current version is intact');
+  }
+  await rmrf(backup);
 }
 
 // Windows in-place update: recursively move src's files over dst. Existing

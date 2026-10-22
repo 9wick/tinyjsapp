@@ -8,6 +8,177 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Linux: globalHotkeys capability, and file types join the existing type (2026-10-21)
+
+Bridge only. `bin/tjs run test/linux-mime/check.js` covers the globs2
+lookup on any OS.
+
+- [ ] **Linux, Wayland with the GlobalShortcuts portal** (KDE, GNOME 48+) —
+  `capabilities().globalHotkeys` true; `requirements(['globalHotkeys'])` ok.
+- [ ] **Linux, Wayland without it** (e.g. an older GNOME) — false, and the
+  requirement explains and names `xdg-desktop-portal`.
+- [ ] **Linux** — a built app with `"fileExtensions": ["md", "zzqx"]`:
+  the .desktop `MimeType=` lists `text/markdown` and
+  `application/x-<id>-zzqx`; `~/.local/share/mime/packages/<id>.xml`
+  only defines the zzqx one; `xdg-mime query filetype notes.md` still says
+  text/markdown; the app is in a .md file's Open With. An install made by
+  an older tinyjs: after one launch its old package no longer defines md.
+- [ ] **Linux** — `setAsDefaultHandler('md')` → 'ok', and
+  `xdg-mime query default text/markdown` names the app.
+
+## Hotkey / keystroke key names: one set everywhere (2026-10-21)
+
+`canonical_key` in native/combo.h folds spellings; each launcher's table
+gained the names it lacked. Windows and Linux edited without compiling.
+Note: on macOS a SYNTHESISED F-key or arrow (app.keystroke) doesn't trigger
+a registered hotkey — true of f12/left before this change too — so check
+those with real key presses.
+
+- [x] **macOS** — `cmd+shift+home`, `cmd+shift+f13` and `ctrl+alt+-`
+  register (`true`; home/f13 were unknown keys before); `ctrl+alt+-`
+  fired from a synthesised keystroke. *(2026-10-21)*
+- [ ] **macOS** — press ⌘⇧Home and ⌘⇧F13 for real: the hotkeys fire.
+- [ ] **Windows** — `register('m','ctrl+alt+minus')`, `'ctrl+alt+quote'`,
+  `'ctrl+alt+/'` → true and fire on real presses; `app.keystroke('delete')`
+  in a text field deletes BACKWARD now (forwarddelete deletes forward).
+- [ ] **Linux, X11** — `'ctrl+alt+quote'` → true and fires (was refused).
+
+## hotkey.register() answers true/false (2026-10-21)
+
+New wire shape `HKREG <qid> <id>\t<combo>` → `GOT <qid> {"ok":…}` in all
+three launchers; the bridge falls back to `true` after 3 s if no answer
+comes. Windows and Linux edited without compiling here.
+
+- [x] **macOS** — `test/hotkey-combos/`: `registered` is
+  `{"sk": true, "bad": false}`. *(2026-10-21)*
+- [ ] **Windows** — same test; also register a combo another app holds
+  (e.g. one PowerToys uses): `false`, logged "the system refused it".
+- [ ] **Linux, X11** — same test; a combo another client grabbed (e.g.
+  register it in two tinyjs apps): the second gets `false` (the new
+  error trap around XGrabKey).
+- [ ] **Linux, Wayland** — `register()` → `true` and the portal dialog
+  still appears; `'hyper+j'` → `false`.
+
+## Page events through the "api" gate (2026-10-21)
+
+Bridge only, but each launcher's origin stamp (file:// especially) and its
+`location.origin` / `location.protocol` must agree for the guard to deliver.
+`bin/tjs run test/event-gate/check.js` covers the decisions headless.
+
+- [x] **macOS** — `test/event-gate/` README run: site `["menu","theme"]`,
+  own page all six; the original bridge gave the site all six. *(2026-10-21)*
+- [ ] **Windows** — same run. Also check an app with NO `"api"` block
+  still gets every event in every window (the broadcast path).
+- [ ] **Linux** — same two runs.
+
+## Windows: userAgent on popups and secondary windows (2026-10-21)
+
+`apply_user_agent` in launcher-win.cc, now called for every webview. Edited
+without compiling here.
+
+- [ ] **Windows** — compiles; with `"userAgent": "TinyTest/1.0"` and
+  `"popups": "window"`, a page that `window.open`s a page printing
+  `navigator.userAgent` shows `TinyTest/1.0` in the popup (and in a
+  `win.open` secondary), as in the main window.
+
+## macOS: rel=noopener popups reach onWindowOpen (2026-10-21)
+
+- [x] **macOS** — `test/popup-noopener/`: both urls in `asked` and
+  `events`; the launcher built from HEAD missed the link. *(2026-10-21)*
+- [ ] **Windows**, **Linux** — same test, to confirm they already ask for
+  the link (the bug was a macOS-only code path).
+
+## Linux Wayland: keystroke / paste / permissions answer honestly (2026-10-21)
+
+Bridge only (runtime/bridge.js), keyed on the same ON_X11 test as
+`capabilities()`.
+
+- [ ] **Linux, Wayland** — `app.keystroke('cmd+v')` → `{ ok: false,
+  trusted: false }`; `permissions.check('accessibility')` and
+  `check('screen')` → `'unsupported'`; `check('camera')` still `'granted'`.
+- [ ] **Linux, X11** — unchanged: keystroke `ok: true`, all five `'granted'`.
+
+## Windows: clipboard temp files, empty paths, interrupted say() (2026-10-21)
+
+Edited without compiling here.
+
+- [ ] **Windows** — compiles. Copy an image, `clipboard.read()` three
+  times: one `tinyjs-clip-<pid>-<n>.png` in %TEMP% and no `tjc*.tmp`;
+  copy another image and read: the old png is gone. Copy text only:
+  `paths` is `[]`. `captureScreen()` leaves no empty `tjp*.tmp`.
+- [ ] **Windows** — `say('long sentence…')` then `say('hi')`: the first
+  resolves `false`, the second `true`; `say(…)` then `stopSpeaking()`:
+  `false`.
+
+## Update swap: stage beside the app, then rename (2026-10-21)
+
+`swapBundle` (runtime/update.js). `bin/tjs run test/update-swap/check.js`
+forces each failure on macOS/Linux. Owed: a real update end to end.
+
+- [ ] **macOS** — a real published update installs and relaunches;
+  nothing named `.update-new` / `.update-backup` is left beside the app.
+- [ ] **Linux** — same, from a tmpfs `/tmp` (the copy path).
+
+## Native 'gain' filter defaults to 1, not 0 (2026-10-21)
+
+The row the bridge sends (`audioFilterRow`) — `bin/tjs run
+test/audio-filter-rows/check.js` covers it on any OS. What's owed is
+hearing it: `filters([{ type: 'gain', gainR: 0.4 }])` should pan left at
+full level instead of going silent.
+
+- [ ] **macOS** — packaged app with System Audio Recording granted.
+- [ ] **Linux** — native chain; measure with the null-sink rig in
+  CLAUDE.md (left ≈ full, right ≈ 0.4).
+
+## Page events: a throwing listener doesn't stop the rest (2026-10-21)
+
+`window.__emit` in runtime/tiny.js (compiled into every launcher) now
+catches per listener and reports with `reportError`.
+
+- [x] **macOS** — two `tiny.api.on('ping')` listeners, the first throws,
+  backend pushes twice: both run both times, two `error` events reported.
+  The old launcher ran only the first. *(2026-10-21)*
+- [ ] **Windows** — `test/page-events/` (WebView2 has `reportError`).
+- [ ] **Linux** — `test/page-events/`; on a WebKitGTK without `reportError` the
+  fallback rethrows on a timer, so the console still shows it.
+
+## Hotkey / keystroke combos: one parser, never a bare key (2026-10-21)
+
+`native/combo.h` replaces each launcher's own combo parsing (hotkeys and
+keystrokes). `c++ -std=c++17 native/combo_test.cc -o /tmp/ct && /tmp/ct`
+covers the words on any OS; `test/hotkey-combos/` drives the launcher wiring.
+Windows and Linux were edited without being compiled here.
+
+- [x] **macOS** — rebuilt; a self-driving app registered `super+k` and
+  `hyper+j`, sent ⌘K with `app.keystroke`: `super+k` fired (the old
+  launcher, built from HEAD, fired nothing — it had registered a bare K),
+  and `hyper+j` logged `not registered: needs exactly one key plus
+  modifiers`. *(2026-10-21)*
+- [ ] **Windows** — compiles (CI or setup.ps1); `app.hotkey.register('k',
+  'k+ctrl+shift')` fires on Ctrl+Shift+K (modifiers after the key used to
+  be refused); `'hyper+k'` and `'a+b'` log "not registered" and K / B stay
+  free; a combo another app holds logs "the system refused it".
+- [ ] **Linux, X11** — compiles; `'super+k'` fires on Super+K; `'hyper+k'`
+  logs "not registered" and a bare K typed in another app is NOT swallowed
+  (it used to be grabbed).
+- [ ] **Linux, Wayland** — `'hyper+k'` is never offered to the portal (logs
+  "not registered"); a valid combo still shows the portal dialog.
+
+## shell.open from a wrapped site: web and mail links only (2026-10-21)
+
+`shellOpenAllowed` (runtime/bridge.js) refuses any other target when the
+call's origin isn't the app's own. The check is in the bridge, so it's the
+same code everywhere; what differs per OS is the origin the launcher stamps.
+`bin/tjs run test/shell-open-gate/check.js` covers the decision; the
+hostile-page run in that folder's README covers the stamp.
+
+- [x] **macOS** — hostile-page run: all three targets refused with the
+  gate's message; with the check bypassed they reached the OS ("no such
+  file", "no application registered for URL"). *(2026-10-21)*
+- [ ] **Windows** — same run; the wrapped origin must be refused (it's the
+  ShellExecuteW case that matters most).
+- [ ] **Linux** — same run.
+
 ## #82 — Windows on ARM: native arm64 builds (`feat/82-windows-arm64`, 2026-10-20)
 
 Release CI builds `tjs.exe` from source on `windows-11-arm` (MSVC + vcpkg,

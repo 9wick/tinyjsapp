@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>wrapped site</title>
+<p>wrapped site: which events reach me?</p>
+<script>
+(async () => {
+  for (let i = 0; i < 100 && !window.tiny; i++) await new Promise((r) => setTimeout(r, 50));
+  const got = [];
+  for (const ev of ['menu', 'theme', 'open-url', 'drop', 'download', 'tick'])
+    tiny.api.on(ev, () => got.push(ev));
+  await tiny.api.call('ready', { who: 'site' });
+  await new Promise((r) => setTimeout(r, 2500));
+  await tiny.api.call('report', { who: 'site', got });
+})();
+</script>

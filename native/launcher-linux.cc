@@ -67,6 +67,7 @@
 #include <functional>
 
 #include "tiny_client.h"  // TINY_CLIENT_JS, generated from runtime/tiny.js
+#include "combo.h"        // hotkey / keystroke combo parsing, shared by the three launchers
 
 // ---------------------------------------------------------------- globals ---
 
@@ -4657,31 +4658,17 @@ struct KeyCombo { unsigned mods = 0; unsigned long keysym = 0; bool ok = false; 
 #ifdef TINYJS_X11
 static KeyCombo parse_combo(const std::string& combo) {
   KeyCombo out;
-  std::string key;
-  size_t start = 0;
-  std::vector<std::string> parts;
-  for (;;) {
-    size_t i = combo.find('+', start);
-    if (i == std::string::npos) { parts.push_back(combo.substr(start)); break; }
-    parts.push_back(combo.substr(start, i - start));
-    start = i + 1;
-  }
-  for (auto& raw : parts) {
-    std::string p;
-    for (char c : raw) p += g_ascii_tolower(c);
-    if (p == "cmd" || p == "command" || p == "meta" || p == "ctrl" || p == "control") {
-      out.mods |= ControlMask;
-    } else if (p == "alt" || p == "opt" || p == "option") {
-      out.mods |= Mod1Mask;
-    } else if (p == "shift") {
-      out.mods |= ShiftMask;
-    } else if (p == "win" || p == "super") {
-      out.mods |= Mod4Mask;
-    } else {
-      key = p;
-    }
-  }
-  if (key.empty()) return out;
+  // The words come from combo.h, shared with the other launchers: an unknown
+  // word used to become the key here and then be overwritten by the real
+  // one, so "hyper+k" grabbed a bare K. Now anything but exactly one key plus
+  // known modifiers is refused (ok stays false).
+  Combo c = read_combo(combo);
+  if (!c.ok) return out;
+  if (c.primary || c.ctrl) out.mods |= ControlMask;
+  if (c.alt) out.mods |= Mod1Mask;
+  if (c.shift) out.mods |= ShiftMask;
+  if (c.os_key) out.mods |= Mod4Mask;
+  std::string key = c.key;
   static const std::map<std::string, unsigned long> named = {
     {"enter", XK_Return}, {"return", XK_Return}, {"tab", XK_Tab},
     {"space", XK_space}, {"esc", XK_Escape}, {"escape", XK_Escape},
@@ -4689,6 +4676,9 @@ static KeyCombo parse_combo(const std::string& combo) {
     {"forwarddelete", XK_Delete}, {"up", XK_Up}, {"down", XK_Down},
     {"left", XK_Left}, {"right", XK_Right}, {"home", XK_Home}, {"end", XK_End},
     {"pageup", XK_Page_Up}, {"pagedown", XK_Page_Down},
+    // X's keysym is "apostrophe"; the other punctuation names (minus,
+    // slash, bracketleft…) are keysym names already
+    {"quote", XK_apostrophe},
   };
   auto it = named.find(key);
   if (it != named.end()) out.keysym = it->second;
@@ -4780,23 +4770,32 @@ static bool on_x11() {
 #endif
 }
 
-static void x11_hotkey_register(const std::string& id, const std::string& combo) {
+// -> "" once the key is grabbed, else why it wasn't (register() reports it).
+static std::string x11_hotkey_register(const std::string& id, const std::string& combo) {
   GdkDisplay* gd = gdk_display_get_default();
 #ifdef GDK_WINDOWING_X11
-  if (!GDK_IS_X11_DISPLAY(gd)) return;
+  if (!GDK_IS_X11_DISPLAY(gd)) return "not an X11 display";
   Display* dpy = GDK_DISPLAY_XDISPLAY(gd);
   KeyCombo c = parse_combo(combo);
-  if (!c.ok) return;
-  KeyCode code = XKeysymToKeycode(dpy, c.keysym);
-  if (!code) return;
+  KeyCode code = c.ok ? XKeysymToKeycode(dpy, c.keysym) : 0;
+  if (!code) return "unknown key";
   Window root = DefaultRootWindow(dpy);
   auto it = g_hotkeys.find(id);
   if (it != g_hotkeys.end()) {
     grab_key(dpy, root, it->second.code, it->second.mods, false);
     g_hotkeys.erase(it);
   }
+  // XGrabKey fails asynchronously (BadAccess when another client holds the
+  // combo); the trap syncs and hands back the error instead of crashing.
+  gdk_x11_display_error_trap_push(gd);
   grab_key(dpy, root, code, c.mods, true);
   XFlush(dpy);
+  if (gdk_x11_display_error_trap_pop(gd)) {
+    gdk_x11_display_error_trap_push(gd);
+    grab_key(dpy, root, code, c.mods, false);  // drop any variant that did land
+    gdk_x11_display_error_trap_pop_ignored(gd);
+    return "the system refused it (another app may hold it)";
+  }
   g_hotkeys[id] = {code, c.mods};
   if (!g_hotkey_filter_installed) {
     g_hotkey_filter_installed = true;
@@ -4805,6 +4804,10 @@ static void x11_hotkey_register(const std::string& id, const std::string& combo)
     XSelectInput(dpy, root, KeyPressMask);
     gdk_window_add_filter(rootwin, hotkey_filter, nullptr);
   }
+  return "";
+#else
+  (void)gd; (void)id; (void)combo;
+  return "not an X11 display";
 #endif
 }
 
@@ -4823,7 +4826,9 @@ static void x11_hotkey_unregister(const std::string& id) {
 #else
 static bool do_keystroke(const std::string&) { return false; }
 static bool on_x11() { return false; }
-static void x11_hotkey_register(const std::string&, const std::string&) {}
+static std::string x11_hotkey_register(const std::string&, const std::string&) {
+  return "no X11 support in this build";
+}
 static void x11_hotkey_unregister(const std::string&) {}
 #endif
 
@@ -4975,11 +4980,23 @@ static void gs_create_session() {
       G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, 30000, nullptr, nullptr, nullptr);
 }
 
-static void hotkey_register(const std::string& id, const std::string& combo) {
-  if (on_x11()) { x11_hotkey_register(id, combo); return; }
-  g_portal_shortcuts[id] = combo;
-  if (g_gs_session.empty()) gs_create_session();  // binds once ready
-  else gs_bind_shortcuts();
+// -> "" when registered (on Wayland: handed to the GlobalShortcuts portal,
+// which then asks the user), else why not. Logged either way it fails.
+static std::string hotkey_register(const std::string& id, const std::string& combo) {
+  // Same rule as the other launchers (combo.h): never register a combo that
+  // isn't exactly one key plus known modifiers — on X11 that used to be a
+  // root-window grab of a bare key, swallowing it in every app.
+  std::string why;
+  if (!read_combo(combo).ok) why = "needs exactly one key plus modifiers";
+  else if (on_x11()) why = x11_hotkey_register(id, combo);
+  else {
+    g_portal_shortcuts[id] = combo;
+    if (g_gs_session.empty()) gs_create_session();  // binds once ready
+    else gs_bind_shortcuts();
+  }
+  if (!why.empty())
+    std::fprintf(stderr, "tinyjs: hotkey \"%s\" not registered: %s\n", combo.c_str(), why.c_str());
+  return why;
 }
 
 static void hotkey_unregister(const std::string& id) {
@@ -7474,8 +7491,15 @@ static void handle_line(const std::string& line) {
   }
 
   if (line.rfind("HKREG ", 0) == 0) {
-    auto f = split_tabs(line.substr(6));
-    hotkey_register(tab_field(f, 0), tab_field(f, 1));
+    // HKREG <qid> <id>\t<combo> — answered, so register() can say whether
+    // it worked
+    std::string rest = line.substr(6);
+    size_t sp = rest.find(' ');
+    std::string qid = rest.substr(0, sp);
+    auto f = split_tabs(sp == std::string::npos ? "" : rest.substr(sp + 1));
+    std::string why = hotkey_register(tab_field(f, 0), tab_field(f, 1));
+    send_got(qid, why.empty() ? "{\"ok\":true}"
+                              : "{\"ok\":false,\"error\":" + json_escape(why) + "}");
     return;
   }
   if (line.rfind("HKUNREG ", 0) == 0) { hotkey_unregister(line.substr(8)); return; }

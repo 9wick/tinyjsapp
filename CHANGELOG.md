@@ -4,6 +4,161 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Upcoming
+
+- **Security: a wrapped site can no longer open local files or programs.**
+  `tinyjs wrap` gives the wrapped site the `"wrapper"` preset, which
+  includes `shell.open`, and `shell.open` handed any target to the OS — a
+  local path, a `file://` URL, any URL scheme (on Windows, straight to
+  ShellExecuteW). A site could open a program it had just downloaded. A
+  page the app didn't ship now gets `http(s)` and `mailto` links only;
+  the app's own pages (`file://`, the dev server) can still open anything.
+  `test/shell-open-gate/` has the headless check and the hostile-page run.
+- **Auto-update no longer installs the wrong build.** Without signed
+  updates, `install()` didn't check that an update had been found. When a
+  release had no build for this OS and CPU — an arm64-only Mac release on
+  an Intel Mac, a Windows arm64 app with no `win.arm64` entry — it installed
+  the manifest's top-level download anyway (on Windows arm64, the mac zip,
+  whose swap then deleted the app's `resources/` and `executables/`), and
+  with nothing newer it reinstalled or downgraded. It now installs only
+  what `check()` calls an update for this machine, and rejects with
+  `no newer update available for this platform` otherwise. Signed updates
+  already worked this way. `test/update-install-check/check.js` covers it.
+- **Security: `"api"` gate values that looked restrictive no longer allow
+  everything.** `"api": false` and `""` meant no gate at all, the same as
+  leaving `api` out; they now mean `"none"`. An object with only an
+  `enable` list — `{ "enable": ["notify"] }`, at the top level or inside
+  `origins` — disabled nothing and so allowed every call; it now means
+  "only these", like the list form. Any other value that isn't a string,
+  list or object denies everything and logs why. Apps that wrote these get
+  stricter, never looser. `test/api-gate/check.js` covers every form.
+- **Hotkeys and keystrokes: a combo is never mistaken for a bare key.**
+  On macOS `super`/`win` weren't modifiers, so `'super+k'` registered a
+  bare K as a global hotkey — every K typed in every app went to your app.
+  On Linux any unknown word did the same (`'hyper+k'`), and on Windows
+  `'a+b'` kept the last key. The three launchers now share one parser:
+  modifiers in any order (Windows used to need them first), exactly one
+  key, and anything else is refused and logged
+  (`tinyjs: hotkey "…" not registered: …`). On macOS `win`/`super` mean ⌘,
+  as they already did in menus. A combo the OS won't register (taken by
+  another app) is logged too, instead of failing silently.
+- **One throwing `tiny.api.on` listener no longer silences the rest.** If
+  a page listener threw, the listeners registered after it never ran for
+  that event — for tinyjs's own events too (`menu`, `tray`, `drop`…). Each
+  listener now runs regardless; the error is still reported in the
+  console. The backend's hooks already worked this way.
+- **A `'gain'` audio filter without a `gain` no longer mutes the app.**
+  The native filter chain defaulted every filter's `gain` to 0 — right for
+  the EQ shapes (dB), but for type `'gain'` it's a linear multiplier, so
+  `{ type: 'gain' }` (say, with only `gainR` to pan) silenced the output
+  on macOS and Linux while the page chain left it unchanged. It now
+  defaults to 1 there, as it does in `pageChain`.
+- **`tiny.d.ts` says what the code does.** Editor hovers were wrong in
+  about a dozen places: `notify()` resolves `true` once the notification
+  is handed to the OS (not `false` on failure); `proxyURL` does nothing on
+  Windows; `audioTap` needs macOS 14.2, not 14.4, and never rejects with
+  `'denied'`; `TinyBattery.percent` can be `null`; `tray.position()` is
+  always `null` on Linux; `win.share()` is macOS-only and resolves `true`;
+  `log()` takes any JSON value; plus the filter limit per OS, `attention()`
+  per OS, the `captureScreen` default, `spotlight` per OS, tray icon paths,
+  `win.open`'s `page`, and the call origin (stamped on all three OSes).
+- **Security: update redirects are checked at every hop.** The update
+  manifest and download had to end at an `https://` address, but the hops
+  in between weren't checked, so https → http → https passed — and a
+  network attacker on the plain-http hop could hand the app a manifest of
+  their choosing. Each hop is now checked before it's requested.
+  `test/update-redirects/check.js` covers it.
+- **A failed update can't leave a half-copied app (macOS, Linux).** The
+  current app was moved aside before the new one was in place; when the
+  new one had to be copied (always on Linux, where the temp folder is
+  another filesystem) and the copy failed partway, the app folder was left
+  half-copied and the rollback silently failed. The new version is now
+  staged beside the app first, and the current app is only touched once
+  it's complete. The copy also keeps symbolic links. `test/update-swap/`
+  covers it.
+- **Editor hints for `tinyjs.json` match the docs.** The schema's
+  descriptions — what editors show on hover — now say which OSes each key
+  works on and what it really does (`activation` works on all three,
+  `permissions` differ per OS, `downloads`/`popups` aren't wrapper-only,
+  `frontend.dev` needs `devUrl`, the `api` forms…). `title` and `id` no
+  longer accept `null`, which replaced the default and built
+  `dist/null.app`.
+- **Windows: clipboard reads stop leaving files behind.** Every
+  `clipboard.read()` of an image wrote a new temp PNG, plus an empty
+  placeholder file, and nothing removed them. There's now one file per
+  clipboard change, deleted when the clipboard changes again (as on
+  macOS). `paths` is `[]` rather than `null` when no files are copied, as
+  on macOS and Linux. Screenshots stop leaving an empty placeholder too.
+- **Windows: an interrupted `say()` resolves `false`.** One cut off by a
+  newer `say()` or by `stopSpeaking()` resolved `true`, as if it had
+  finished; it now resolves `false`, as on macOS.
+- **Linux under Wayland: keystrokes and permissions answer honestly.**
+  `keystroke()` and `paste()` posted keys into XWayland and answered
+  `ok: true`, though the Wayland app in front never saw them; they now
+  send nothing and answer `{ ok: false, trusted: false }`, matching
+  `capabilities().keystroke`. `permissions.check('accessibility')` and
+  `check('screen')` answer `'unsupported'` there instead of `'granted'`.
+- **macOS: every popup goes through `onWindowOpen`.** A link with
+  `target="_blank" rel="noopener"` (which WebKit sends as a navigation with
+  no target frame) opened the browser directly — `onWindowOpen` never heard
+  of it and the page got no `popup` event. It now gets the same ask and
+  event as `window.open`.
+- **Windows: `userAgent` applies to every window.** It was set on the
+  main window only, so a wrapped site's sign-in popup — and any other
+  window — went out with WebView2's stock user agent. macOS and Linux
+  already applied it everywhere.
+- **Security: events to pages go through the `"api"` gate.** Every event
+  the backend sent reached every window, so a wrapped site heard deep
+  links (with their OAuth codes), dropped and downloaded file paths,
+  navigation, the audio tap and every event the app pushed. With an
+  `"api"` block, a page the app didn't ship now gets an event only if its
+  rules allow it: tinyjs's own events count as their calls (`menu.*`,
+  `win.*`, `theme.get`…, so the `"wrapper"` preset keeps menu, tray,
+  window, theme, locale, Now Playing and notification events), and the
+  rest — including every event your app pushes — need `event.<name>`.
+  The check is made against the page actually in the window when it's
+  delivered. Apps without an `"api"` block are unchanged. An app that
+  pushed its own events to a wrapped site now has to grant them.
+  `test/event-gate/` has the headless check and the wrapped-site run.
+- **`hotkey.register()` says whether it worked.** It resolves `true` once
+  the system has the hotkey and `false` when the combo isn't valid or
+  another app holds it (the reason is logged), on the page and in the
+  backend. It used to resolve the same either way. On Linux under X11 a
+  combo another client has grabbed is now detected too; under Wayland
+  `true` means it was handed to the desktop, which asks the user.
+- **Hotkeys and keystrokes: the same key names on every OS.** Each
+  launcher knew a different set: Windows had no `minus`/`slash`/`quote`…,
+  macOS no `home`/`end`/`pageup`/`pagedown`/`backspace` or keys above
+  F12, Linux no `quote`, and only Windows took punctuation typed as
+  itself. All of them now take the full set, punctuation characters
+  (`'cmd+,'`) and the aliases (`enter`, `esc`, `apostrophe`…).
+  **Windows: `delete` now means Backspace,** as it always did on macOS and
+  Linux; use `forwarddelete` for the Delete key.
+- **Linux: `capabilities().globalHotkeys` is honest under Wayland.** It
+  said `true` everywhere; on a Wayland desktop without the GlobalShortcuts
+  portal hotkeys never fire, and it now says `false` there. A new
+  requirement, `tiny.system.requirements(['globalHotkeys'])`, explains why
+  and what to install.
+- **Linux: file associations join the existing file type.** For each
+  `fileExtensions` entry the app defined a type of its own
+  (`application/x-<id>-md`) with the same `*.md` pattern as the real one,
+  which could change how file managers and other apps classify those
+  files. It now lists the app under the type the system already has
+  (`text/markdown`), and only an extension nothing claims gets its own.
+  The type file an earlier version wrote is removed on the next launch.
+  `setAsDefaultHandler()` uses the same type.
+- **Full txiki.js types for the backend.** `types/tjs.d.ts` was a stub
+  that typed `tjs` as `any`; it's now txiki.js's own definitions
+  (`@txikijs/types`, matching the bundled 26.6.0) in one file, so editors
+  complete and check `tjs.*` calls and every `tjs:*` module import —
+  without npm. New projects get it, and `tinyjs update-project` upgrades
+  existing ones. Vite projects get it in `backend/` only: `src/` is the
+  page, which has no `tjs`, so it no longer gets a `tjs.d.ts`.
+- **New docs site.** The docs are now pages at
+  [tinyjs.app/docs](https://tinyjs.app/docs/), one per topic, with search.
+  Old `docs.html#…` and `api-map.html#…` links still land on the right
+  page.
+
 ## 0.62.1 — 2026-10-21
 
 - **macOS: `contextMenu: false` also covers dialogs.** The title and
@@ -60,7 +215,7 @@ https://tinyjs.app/changelog.
   manifest expire, and `publish --sign-manifest FILE` signs a manifest
   merged from several platforms or extends an expiry. Apps without
   `publicKey` behave as before. Guide:
-  [docs/signed-updates.md](docs/signed-updates.md).
+  [docs/signed-updates.md](https://tinyjs.app/docs/signed-updates).
   ([#40](https://github.com/tarwin/tinyjsapp/issues/40),
   [#63](https://github.com/tarwin/tinyjsapp/pull/63), thanks to
   [@Zulut30](https://github.com/Zulut30) for the implementation.)
@@ -566,10 +721,10 @@ backend call beside its page twin.
 - **macOS: help books.** Put an Apple help book folder in `assets/` and name
   it with `"macos": { "helpBook": "My App Help" }`. The build bundles it,
   registers it in Info.plist and rebuilds its search index, and the app gets
-  a Help menu with "<App> Help" (⌘?) and a search field that searches the
+  a Help menu with "\<App> Help" (⌘?) and a search field that searches the
   book. Thanks to Blatman for the request and a sample book (#47).
 - **`{ role: 'help' }` in `setMenu`.** Your own Help menu items: on macOS the
-  menu always goes last and gets the system search field (plus "<App> Help"
+  menu always goes last and gets the system search field (plus "\<App> Help"
   when there's a help book); on Windows and Linux it's a plain "Help" menu.
 - **macOS: `Credits.rtf` and `Credits.rtfd` work as About panel credits,** as
   well as `Credits.html`.
@@ -2225,7 +2380,7 @@ are gone rather than deprecated.
   sticky windows) — all fail cleanly so cross-platform code can
   feature-detect: capability calls reject with a specific reason, query
   calls resolve `null`, fire-and-forget ones are silent no-ops. Burn-down
-  list: [TODO-linux.md](TODO-linux.md).
+  list: [TODO-linux.md](https://github.com/tarwin/tinyjsapp/blob/main/TODO-linux.md).
 
 - **`tiny.system` — know where you are, and what's missing.**
   `os()`/`isMacOS()`/`isWindows()`/`isLinux()` answer synchronously;
@@ -2402,7 +2557,7 @@ one-by-one sweep of all 25 apps shook out of the framework.
   (`IDropTarget` in, `DoDragDrop`/`CF_HDROP` out), `printToPDF`,
   `captureScreen` (no permission dance), `thumbnail` (shell image factory),
   `say`/`voices` (SAPI), clipboard image write (`CF_DIB`), menu `key:`
-  accelerators (Ctrl+<key> via WebView2 AcceleratorKeyPressed),
+  accelerators (Ctrl+\<key> via WebView2 AcceleratorKeyPressed),
   `launchAtLogin` for built apps (HKCU Run), chrome `transparent` +
   vibrancy→mica/acrylic backdrops (Win11 22H2+), accessory apps drop the
   taskbar button, and `tinyjs publish` + app auto-update: manifest sha256 via

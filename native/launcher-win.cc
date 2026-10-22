@@ -36,6 +36,7 @@
 
 #include "webview/webview.h"
 #include "tiny_client.h" // generated from runtime/tiny.js (gen-client)
+#include "combo.h"       // hotkey / keystroke combo parsing, shared by the three launchers
 
 #include <windows.h>
 #include <windowsx.h>
@@ -2941,7 +2942,8 @@ static std::string clipboard_json(bool count_only) {
     return "{\"changeCount\":" + std::to_string(seq) + "}";
   if (!OpenClipboard(g_host))
     return "{\"kind\":\"empty\",\"changeCount\":" + std::to_string(seq) + "}";
-  std::string kind = "empty", text = "null", html = "null", paths = "null",
+  // paths is [] when there are no files, as on macOS/Linux and in tiny.d.ts
+  std::string kind = "empty", text = "null", html = "null", paths = "[]",
               image = "null", imageSize = "null";
   // files
   if (IsClipboardFormatAvailable(CF_HDROP)) {
@@ -2968,11 +2970,24 @@ static std::string clipboard_json(bool count_only) {
     if (hbm) {
       Gdiplus::Bitmap *bmp = Gdiplus::Bitmap::FromHBITMAP(hbm, nullptr);
       if (bmp && bmp->GetLastStatus() == Gdiplus::Ok) {
-        wchar_t tmp[MAX_PATH], file[MAX_PATH];
+        // One file per clipboard CHANGE, not per read. Every read used to
+        // write a fresh temp png (plus GetTempFileName's empty placeholder)
+        // and nothing removed them. Now the path is named by the change
+        // count, reused while the clipboard is unchanged, and the previous
+        // one deleted when it changes — valid until the clipboard changes,
+        // as on macOS.
+        static std::wstring last_png;
+        wchar_t tmp[MAX_PATH];
         GetTempPathW(MAX_PATH, tmp);
-        GetTempFileNameW(tmp, L"tjc", 0, file);
-        std::wstring png = std::wstring(file) + L".png";
-        if (bmp->Save(png.c_str(), &g_png_clsid, nullptr) == Gdiplus::Ok) {
+        std::wstring png = std::wstring(tmp) + L"tinyjs-clip-" +
+                           std::to_wstring(GetCurrentProcessId()) + L"-" +
+                           std::to_wstring(seq) + L".png";
+        bool have = png == last_png &&
+                    GetFileAttributesW(png.c_str()) != INVALID_FILE_ATTRIBUTES;
+        if (!have && !last_png.empty() && last_png != png)
+          DeleteFileW(last_png.c_str());
+        if (have || bmp->Save(png.c_str(), &g_png_clsid, nullptr) == Gdiplus::Ok) {
+          last_png = png;
           image = json_escape(narrow(png));
           imageSize = "{\"width\":" + std::to_string(bmp->GetWidth()) +
                       ",\"height\":" + std::to_string(bmp->GetHeight()) + "}";
@@ -3212,10 +3227,16 @@ static bool parse_key_token(const std::string &tok, WORD &vk) {
   static const std::map<std::string, WORD> named = {
       {"enter", VK_RETURN},  {"return", VK_RETURN}, {"tab", VK_TAB},
       {"space", VK_SPACE},   {"esc", VK_ESCAPE},    {"escape", VK_ESCAPE},
-      {"delete", VK_DELETE}, {"backspace", VK_BACK}, {"up", VK_UP},
+      // "delete" reaches here as "backspace" (combo.h canonical_key), as on
+      // macOS and Linux; it used to be the forward Delete key here only.
+      {"backspace", VK_BACK}, {"forwarddelete", VK_DELETE}, {"up", VK_UP},
       {"down", VK_DOWN},     {"left", VK_LEFT},     {"right", VK_RIGHT},
       {"home", VK_HOME},     {"end", VK_END},       {"pageup", VK_PRIOR},
-      {"pagedown", VK_NEXT}, {"comma", VK_OEM_COMMA}, {"period", VK_OEM_PERIOD}};
+      {"pagedown", VK_NEXT}, {"comma", VK_OEM_COMMA}, {"period", VK_OEM_PERIOD},
+      // punctuation by name, as macOS and Linux take it (US-layout keys)
+      {"minus", VK_OEM_MINUS}, {"equal", VK_OEM_PLUS}, {"slash", VK_OEM_2},
+      {"semicolon", VK_OEM_1}, {"quote", VK_OEM_7}, {"backslash", VK_OEM_5},
+      {"grave", VK_OEM_3}, {"bracketleft", VK_OEM_4}, {"bracketright", VK_OEM_6}};
   auto it = named.find(k);
   if (it == named.end())
     return false;
@@ -3224,54 +3245,36 @@ static bool parse_key_token(const std::string &tok, WORD &vk) {
 }
 
 // combo 'cmd+shift+k' -> modifier vks + key vk. cmd maps to Ctrl on Windows.
+// The words come from combo.h, shared with the other launchers: modifiers in
+// any order (this used to need them before the key), exactly one key, and a
+// combo with anything else is refused rather than registered as a bare key.
 static bool parse_combo(const std::string &combo, std::vector<WORD> &mods,
                         WORD &key, UINT *hotkey_mods) {
   mods.clear();
   key = 0;
   if (hotkey_mods)
     *hotkey_mods = 0;
-  size_t start = 0;
-  std::vector<std::string> toks;
-  for (;;) {
-    size_t plus = combo.find('+', start);
-    if (plus == std::string::npos) {
-      toks.push_back(combo.substr(start));
-      break;
-    }
-    toks.push_back(combo.substr(start, plus - start));
-    start = plus + 1;
+  Combo c = read_combo(combo);
+  if (!c.ok)
+    return false;
+  if (c.primary || c.ctrl) {
+    mods.push_back(VK_CONTROL);
+    if (hotkey_mods) *hotkey_mods |= MOD_CONTROL;
   }
-  for (size_t i = 0; i < toks.size(); i++) {
-    std::string t = toks[i];
-    for (auto &c : t)
-      c = (char)tolower((unsigned char)c);
-    bool last = i + 1 == toks.size();
-    if (!last || toks.size() == 1) {
-      if (t == "cmd" || t == "meta" || t == "command" || t == "ctrl" ||
-          t == "control") {
-        mods.push_back(VK_CONTROL);
-        if (hotkey_mods) *hotkey_mods |= MOD_CONTROL;
-        continue;
-      }
-      if (t == "alt" || t == "opt" || t == "option") {
-        mods.push_back(VK_MENU);
-        if (hotkey_mods) *hotkey_mods |= MOD_ALT;
-        continue;
-      }
-      if (t == "shift") {
-        mods.push_back(VK_SHIFT);
-        if (hotkey_mods) *hotkey_mods |= MOD_SHIFT;
-        continue;
-      }
-      if (t == "win" || t == "super") {
-        mods.push_back(VK_LWIN);
-        if (hotkey_mods) *hotkey_mods |= MOD_WIN;
-        continue;
-      }
-    }
-    if (!parse_key_token(t, key))
-      return false;
+  if (c.alt) {
+    mods.push_back(VK_MENU);
+    if (hotkey_mods) *hotkey_mods |= MOD_ALT;
   }
+  if (c.shift) {
+    mods.push_back(VK_SHIFT);
+    if (hotkey_mods) *hotkey_mods |= MOD_SHIFT;
+  }
+  if (c.os_key) {
+    mods.push_back(VK_LWIN);
+    if (hotkey_mods) *hotkey_mods |= MOD_WIN;
+  }
+  if (!parse_key_token(c.key, key))
+    return false;
   return key != 0;
 }
 
@@ -3336,7 +3339,9 @@ static void send_stock_edit(const std::string &role) {
 
 struct HotkeyReq {
   std::string id, combo; // empty combo = unregister
+  std::string qid;       // HKREG's: answered GOT <qid> {"ok":…}; empty = no reply
 };
+static void got(const std::string &qid, const std::string &json);  // below
 
 static void do_hotkey(webview_t, void *arg) {
   HotkeyReq *req = static_cast<HotkeyReq *>(arg);
@@ -3349,6 +3354,7 @@ static void do_hotkey(webview_t, void *arg) {
       ++it;
     }
   }
+  std::string why;  // set when a registration fails; empty = ok
   if (!req->combo.empty()) {
     std::vector<WORD> mods;
     WORD key = 0;
@@ -3357,8 +3363,18 @@ static void do_hotkey(webview_t, void *arg) {
       int id = g_next_hotkey++;
       if (RegisterHotKey(g_host, id, hmods | MOD_NOREPEAT, key))
         g_hotkeys[id] = req->id;
+      else
+        why = "the system refused it (another app may hold it)";
+    } else {
+      why = "needs exactly one known key plus modifiers";
     }
+    if (!why.empty())
+      std::fprintf(stderr, "tinyjs: hotkey \"%s\" not registered: %s\n", req->combo.c_str(),
+                   why.c_str());
   }
+  if (!req->qid.empty())
+    got(req->qid, why.empty() ? "{\"ok\":true}"
+                              : "{\"ok\":false,\"error\":" + json_escape(why) + "}");
   delete req;
 }
 
@@ -3548,6 +3564,9 @@ static std::string hbitmap_to_temp_png(HBITMAP hbm, UINT *w_out, UINT *h_out) {
   wchar_t tmp[MAX_PATH], file[MAX_PATH];
   GetTempPathW(MAX_PATH, tmp);
   GetTempFileNameW(tmp, L"tjp", 0, file);
+  // GetTempFileName creates `file` (empty) to reserve the name; the png goes
+  // beside it, so drop the placeholder rather than leave one per call.
+  DeleteFileW(file);
   std::wstring png = std::wstring(file) + L".png";
   bool ok = bmp->Save(png.c_str(), &g_png_clsid, nullptr) == Gdiplus::Ok;
   if (w_out)
@@ -3946,6 +3965,10 @@ static ISpObjectToken *voice_token_by_id(const std::wstring &want) {
   return found;
 }
 
+// Bumped by every say() and stopSpeaking(): a waiting say() whose number is
+// no longer current was cut off.
+static std::atomic<unsigned> g_say_gen{0};
+
 static void do_say(webview_t, void *arg) {
   QReq *req = static_cast<QReq *>(arg);
   std::vector<std::string> p = split_tabs(req->rest);
@@ -3968,22 +3991,25 @@ static void do_say(webview_t, void *arg) {
   if (rate > 0)
     g_voice->SetRate((long)((rate - 0.5) * 20.0));
   std::string qid = req->qid;
+  unsigned gen = ++g_say_gen;  // a newer say() or stopSpeaking() moves it on
   g_voice->Speak(widen(text).c_str(),
                  SPF_ASYNC | SPF_PURGEBEFORESPEAK | SPF_IS_NOT_XML, nullptr);
   // Resolve when playback finishes (mirrors macOS `say`); a worker waits so
-  // the UI thread stays free. Interrupted (purged by a newer Speak) still
-  // resolves — WaitUntilDone returns once this utterance leaves the queue.
+  // the UI thread stays free. WaitUntilDone also returns when this utterance
+  // is purged by a newer Speak — that one resolves false (interrupted), as on
+  // macOS, where it used to resolve true like a finished one.
   ISpVoice *v = g_voice;
   v->AddRef();
-  std::thread([v, qid]() {
+  std::thread([v, qid, gen]() {
     v->WaitUntilDone(INFINITE);
-    got(qid, "{\"ok\":true}");
+    got(qid, g_say_gen.load() == gen ? "{\"ok\":true}" : "{\"ok\":false}");
     v->Release();
   }).detach();
   delete req;
 }
 
 static void do_saystop(webview_t, void *) {
+  ++g_say_gen;  // whatever is speaking now resolves false (interrupted)
   if (g_voice)
     g_voice->Speak(nullptr, SPF_PURGEBEFORESPEAK, nullptr);
 }
@@ -5021,9 +5047,35 @@ static void apply_ctx_suppress_fallback(bool suppress) {
 // (2021); on anything older the QI fails and the engine keys stay enabled —
 // old behavior, not breakage. Menu accelerators are unaffected either way:
 // they ride AcceleratorKeyPressed, which Settings3 does not touch.
+// Custom User-Agent (TINYJS_UA, createApp's userAgent) for any webview: the
+// main one in run(), and every secondary and popup through
+// apply_webview_policy — which used to skip it, so a wrapped site's sign-in
+// popup went out with the stock UA (the macOS launcher sets it on popups).
+static void apply_user_agent(ICoreWebView2 *wv) {
+  static std::wstring ua = []() {
+    char buf[2048];
+    DWORD n = GetEnvironmentVariableA("TINYJS_UA", buf, sizeof(buf));
+    return n > 0 && n < sizeof(buf) ? widen(std::string(buf, n)) : std::wstring();
+  }();
+  if (!wv || ua.empty())
+    return;
+  ICoreWebView2Settings *settings = nullptr;
+  if (SUCCEEDED(wv->get_Settings(&settings)) && settings) {
+    ICoreWebView2Settings2 *s2 = nullptr;
+    if (SUCCEEDED(settings->QueryInterface(IID_ICoreWebView2Settings2,
+                                           (void **)&s2)) &&
+        s2) {
+      s2->put_UserAgent(ua.c_str());
+      s2->Release();
+    }
+    settings->Release();
+  }
+}
+
 static void apply_webview_policy(ICoreWebView2 *wv) {
   if (!wv)
     return;
+  apply_user_agent(wv);
   ICoreWebView2Settings *settings = nullptr;
   if (FAILED(wv->get_Settings(&settings)) || !settings)
     return;
@@ -8567,9 +8619,14 @@ static void pipe_read_loop() {
           apply_ctx_suppress_fallback(arg != nullptr);
         }, g_ctx_suppress ? (void *)1 : nullptr);
       } else if (line.rfind("HKREG ", 0) == 0) {
-        std::vector<std::string> p = split_tabs(line.substr(6));
+        // HKREG <qid> <id>\t<combo> — answered, so register() can say
+        // whether it worked
+        std::string rest = line.substr(6);
+        size_t sp = rest.find(' ');
+        std::vector<std::string> p =
+            split_tabs(sp == std::string::npos ? "" : rest.substr(sp + 1));
         if (p.size() >= 2)
-          tiny_dispatch(do_hotkey, new HotkeyReq{p[0], p[1]});
+          tiny_dispatch(do_hotkey, new HotkeyReq{p[0], p[1], rest.substr(0, sp)});
       } else if (line.rfind("HKUNREG ", 0) == 0) {
         tiny_dispatch(do_hotkey, new HotkeyReq{line.substr(8), ""});
       } else if (line.rfind("MENUUPD", 0) == 0 &&
@@ -9548,23 +9605,7 @@ static int run(int argc, char **argv) {
     g_ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
 
   // Custom User-Agent (TINYJS_UA env; see createApp userAgent).
-  {
-    char ua[2048];
-    DWORD n = GetEnvironmentVariableA("TINYJS_UA", ua, sizeof(ua));
-    if (n > 0 && n < sizeof(ua) && g_wv2) {
-      ICoreWebView2Settings *settings = nullptr;
-      if (SUCCEEDED(g_wv2->get_Settings(&settings)) && settings) {
-        ICoreWebView2Settings2 *s2 = nullptr;
-        if (SUCCEEDED(settings->QueryInterface(IID_ICoreWebView2Settings2,
-                                               (void **)&s2)) &&
-            s2) {
-          s2->put_UserAgent(widen(ua).c_str());
-          s2->Release();
-        }
-        settings->Release();
-      }
-    }
-  }
+  apply_user_agent(g_wv2);
 
   // A main window that starts hidden (accessory, rememberWindows' deferred
   // show) is cloaked until the hide below: webview_set_size's first call

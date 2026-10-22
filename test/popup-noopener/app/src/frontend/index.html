@@ -1,0 +1,14 @@
+<!doctype html><title>popup test</title>
+<a id="l" href="https://example.invalid/noopener-link" target="_blank" rel="noopener">link</a>
+<script>
+(async () => {
+  for (let i = 0; i < 100 && !window.tiny; i++) await new Promise((r) => setTimeout(r, 50));
+  const events = [];
+  tiny.api.on('popup', (e) => events.push(e.url + ' -> ' + e.action));
+  document.getElementById('l').click();
+  await new Promise((r) => setTimeout(r, 800));
+  window.open('https://example.invalid/noopener-open', '_blank', 'noopener');
+  await new Promise((r) => setTimeout(r, 1500));
+  await tiny.api.call('done', { events });
+})();
+</script>

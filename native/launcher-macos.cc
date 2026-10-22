@@ -319,6 +319,7 @@
 #include <objc/message.h>
 #include <objc/runtime.h>
 #include "tiny_client.h" // generated from runtime/tiny.js (gen-client.sh)
+#include "combo.h"       // hotkey / keystroke combo parsing, shared by the three launchers
 #endif
 
 #include <map>
@@ -2078,6 +2079,7 @@ static void install_accessory_mode() {
 
 struct HotkeyReq {
   std::string id, combo; // combo empty = unregister
+  std::string qid;       // HKREG's: answered GOT <qid> {"ok":…}; empty = no reply
 };
 
 #ifdef __APPLE__
@@ -2098,7 +2100,11 @@ static int keycode_for(const std::string &k) {
     {"f11",103},{"f12",111},{"minus",27},{"equal",24},{"comma",43},
     {"period",47},{"slash",44},{"semicolon",41},{"quote",39},
     {"bracketleft",33},{"bracketright",30},{"backslash",42},{"grave",50},
-    {"delete",51},
+    {"delete",51},{"backspace",51},
+    // the names the other launchers already had (combo.h canonical_key)
+    {"forwarddelete",117},{"home",115},{"end",119},{"pageup",116},
+    {"pagedown",121},{"f13",105},{"f14",107},{"f15",113},{"f16",106},
+    {"f17",64},{"f18",79},{"f19",80},{"f20",90},
   };
   auto it = m.find(k);
   return it == m.end() ? -1 : it->second;
@@ -2132,21 +2138,23 @@ static void do_hotkey(webview_t, void *arg) {
     UnregisterEventHotKey(existing->second);
     g_hotkeys.erase(existing);
   }
+  std::string why;  // set when a registration fails; empty = ok
   if (!req->combo.empty()) {
+    // combo.h: "win"/"super" are Cmd here (macOS has no separate OS key) —
+    // they used to be taken as the KEY, so "super+k" registered a bare K
+    // that swallowed every K typed in every app.
+    Combo c = read_combo(req->combo);
     UInt32 mods = 0;
-    std::string key;
-    std::stringstream ss(req->combo);
-    std::string part;
-    while (std::getline(ss, part, '+')) {
-      for (auto &c : part) c = (char)tolower(c);
-      if (part == "cmd" || part == "command" || part == "meta") mods |= cmdKey;
-      else if (part == "ctrl" || part == "control") mods |= controlKey;
-      else if (part == "alt" || part == "opt" || part == "option") mods |= optionKey;
-      else if (part == "shift") mods |= shiftKey;
-      else key = part;
-    }
-    int code = keycode_for(key);
-    if (code >= 0) {
+    if (c.primary || c.os_key) mods |= cmdKey;
+    if (c.ctrl) mods |= controlKey;
+    if (c.alt) mods |= optionKey;
+    if (c.shift) mods |= shiftKey;
+    int code = c.ok ? keycode_for(c.key) : -1;
+    if (code < 0) {
+      why = c.ok ? "unknown key" : "needs exactly one key plus modifiers";
+      std::fprintf(stderr, "tinyjs: hotkey \"%s\" not registered: %s\n", req->combo.c_str(),
+                   why.c_str());
+    } else {
       ensure_hotkey_handler();
       EventHotKeyID hkid = {'tnyj', g_hotkey_seq++};
       EventHotKeyRef ref = NULL;
@@ -2154,9 +2162,16 @@ static void do_hotkey(webview_t, void *arg) {
                               GetApplicationEventTarget(), 0, &ref) == noErr) {
         g_hotkeys[req->id] = ref;
         g_hotkey_ids[hkid.id] = req->id;
+      } else {
+        why = "the system refused it (already taken?)";
+        std::fprintf(stderr, "tinyjs: hotkey \"%s\" not registered: %s\n", req->combo.c_str(),
+                     why.c_str());
       }
     }
   }
+  if (!req->qid.empty())
+    sock_write_line("GOT " + req->qid + (why.empty() ? " {\"ok\":true}"
+                    : " {\"ok\":false,\"error\":" + json_escape(why) + "}"));
   delete req;
 }
 #else
@@ -2634,19 +2649,15 @@ struct PermReq {
 #ifdef __APPLE__
 static void do_keystroke(webview_t, void *arg) {
   KeystrokeReq *req = static_cast<KeystrokeReq *>(arg);
+  // combo.h, as for hotkeys: "win"/"super" are Cmd, and a combo that isn't
+  // exactly one key plus modifiers sends nothing (ok:false).
+  Combo c = read_combo(req->combo);
   CGEventFlags flags = 0;
-  std::string key;
-  std::stringstream ss(req->combo);
-  std::string part;
-  while (std::getline(ss, part, '+')) {
-    for (auto &c : part) c = (char)tolower(c);
-    if (part == "cmd" || part == "command" || part == "meta") flags |= kCGEventFlagMaskCommand;
-    else if (part == "ctrl" || part == "control") flags |= kCGEventFlagMaskControl;
-    else if (part == "alt" || part == "opt" || part == "option") flags |= kCGEventFlagMaskAlternate;
-    else if (part == "shift") flags |= kCGEventFlagMaskShift;
-    else key = part;
-  }
-  int code = keycode_for(key);
+  if (c.primary || c.os_key) flags |= kCGEventFlagMaskCommand;
+  if (c.ctrl) flags |= kCGEventFlagMaskControl;
+  if (c.alt) flags |= kCGEventFlagMaskAlternate;
+  if (c.shift) flags |= kCGEventFlagMaskShift;
+  int code = c.ok ? keycode_for(c.key) : -1;
   bool trusted = AXIsProcessTrusted();
   if (code >= 0) {
     CGEventRef down = CGEventCreateKeyboardEvent(NULL, (CGKeyCode)code, true);
@@ -7185,6 +7196,14 @@ static void tiny_test_autodlg_arm(); // test hook, defined with the JS dialogs
 
 @interface TinyWebDelegate : NSObject <WKNavigationDelegate, WKDownloadDelegate>
 @end
+// Defined with window.open's handling below; the navigation delegate uses
+// them for targetless popups (rel=noopener).
+static void tiny_popup_ask(const std::string &pid, const std::string &opener,
+                           const std::string &u, const std::string &mode,
+                           void (^resolver)(const std::string &));
+static void tiny_popup_event(const std::string &pid, const std::string &u,
+                             const std::string &action);
+
 @implementation TinyWebDelegate
 
 - (void)webView:(WKWebView *)wv
@@ -7199,12 +7218,22 @@ static void tiny_test_autodlg_arm(); // test hook, defined with the JS dialogs
   }
   // No target frame = a popup the UI delegate's createWebView didn't take
   // (rel=noopener paths). Same policy as window.open, minus the ability to
-  // hand back a webview from here: window mode degrades to external.
+  // hand back a webview from here: window mode degrades to external. It
+  // goes through the same onWindowOpen ask and 'popup' event as window.open
+  // (it used to open the browser directly, so the hook never heard of it).
   if (!action.targetFrame) {
-    if (g_popup_mode != "deny" && url &&
-        (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0))
-      [[NSWorkspace sharedWorkspace] openURL:url];
     decide(WKNavigationActionPolicyCancel);
+    bool web = url && (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0);
+    std::string mode = g_popup_mode == "deny" ? "deny" : "external";
+    std::string u2 = u;
+    NSURL *ext = url;
+    tiny_popup_ask("", tiny_winid_for_webview(wv), u, mode,
+                   ^(const std::string &v) {
+                     std::string a = (v == "external" || v == "deny") ? v : mode;
+                     if (a == "external" && web && ext)
+                       [[NSWorkspace sharedWorkspace] openURL:ext];
+                     tiny_popup_event("", u2, a);
+                   });
     return;
   }
   if (tiny_other_scheme(u)) {
@@ -8878,9 +8907,14 @@ static void sock_read_loop() {
       } else if (line.rfind("ABOUTHOOK ", 0) == 0) {
         g_about_to_app = line.substr(10) == "1";
       } else if (line.rfind("HKREG ", 0) == 0) {
-        std::vector<std::string> p = split_tabs(line.substr(6));
+        // HKREG <qid> <id>\t<combo> — answered, so register() can say
+        // whether it worked
+        std::string rest = line.substr(6);
+        size_t sp = rest.find(' ');
+        std::vector<std::string> p =
+            split_tabs(sp == std::string::npos ? "" : rest.substr(sp + 1));
         if (p.size() >= 2)
-          launcher_dispatch(g_w, do_hotkey, new HotkeyReq{p[0], p[1]});
+          launcher_dispatch(g_w, do_hotkey, new HotkeyReq{p[0], p[1], rest.substr(0, sp)});
       } else if (line.rfind("HKUNREG ", 0) == 0) {
         launcher_dispatch(g_w, do_hotkey, new HotkeyReq{line.substr(8), ""});
       } else if (line.rfind("AUDIOTAP STOP", 0) == 0) {
