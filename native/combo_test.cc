@@ -46,6 +46,8 @@ int main() {
   expect("cmd+'",            true,  "quote", true,  false, false, false, false);
   expect("cmd+apostrophe",   true,  "quote", true,  false, false, false, false);
   expect("alt+[",            true,  "bracketleft", false, false, true, false, false);
-  std::printf(fails ? "%d of %d FAILED\n" : "PASS %2$d cases\n", fails, runs);
+  // No positional %2$d: MinGW's printf prints it literally.
+  if (fails) std::printf("%d of %d FAILED\n", fails, runs);
+  else std::printf("PASS %d cases\n", runs);
   return fails ? 1 : 0;
 }

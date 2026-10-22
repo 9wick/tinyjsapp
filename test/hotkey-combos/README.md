@@ -10,7 +10,9 @@ The backend registers `super+k` and `hyper+j`, sends `cmd+k` with
 `app.keystroke` (needs Accessibility on macOS), stores the result and quits.
 
 - `store.json` → `"hotkeytest"`: `registered` should be `{"sk": true, "bad": false}`
-  on every OS (register() answers whether it worked).
+  on every OS (register() answers whether it worked). Except Windows,
+  where `sk` is `false`, logged "the system refused it": the shell holds
+  Win+K (Cast). That is the refusal path working.
 - `store.json` → `"hotkeytest"`: `fired` should be `["sk"]` on macOS,
   where `super` means ⌘ (on Windows/Linux `cmd+k` is Ctrl+K and `super+k`
   is the Super key, so `fired` is `[]` there — that's expected).

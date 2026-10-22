@@ -38,9 +38,14 @@ those with real key presses.
   register (`true`; home/f13 were unknown keys before); `ctrl+alt+-`
   fired from a synthesised keystroke. *(2026-10-21)*
 - [ ] **macOS** — press ⌘⇧Home and ⌘⇧F13 for real: the hotkeys fire.
-- [ ] **Windows** — `register('m','ctrl+alt+minus')`, `'ctrl+alt+quote'`,
+- [x] **Windows** — `register('m','ctrl+alt+minus')`, `'ctrl+alt+quote'`,
   `'ctrl+alt+/'` → true and fire on real presses; `app.keystroke('delete')`
   in a text field deletes BACKWARD now (forwarddelete deletes forward).
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
+  all three → true and each fired once, pressed with `app.keystroke` —
+  SendInput, which RegisterHotKey can't tell from a real press, unlike
+  macOS. In an input holding `abc|def`: delete → `abdef`, forwarddelete →
+  `abef`.)*
 - [ ] **Linux, X11** — `'ctrl+alt+quote'` → true and fires (was refused).
 
 ## hotkey.register() answers true/false (2026-10-21)
@@ -51,8 +56,14 @@ comes. Windows and Linux edited without compiling here.
 
 - [x] **macOS** — `test/hotkey-combos/`: `registered` is
   `{"sk": true, "bad": false}`. *(2026-10-21)*
-- [ ] **Windows** — same test; also register a combo another app holds
+- [x] **Windows** — same test; also register a combo another app holds
   (e.g. one PowerToys uses): `false`, logged "the system refused it".
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
+  `{"sk": false, "bad": false}`. `sk` is false correctly: Win+K belongs to
+  the shell (Cast), logged "the system refused it". So that is the held-combo
+  case, and so is a second tinyjs app registering `ctrl+alt+shift+f9` while
+  the first holds it: `false`, and `ctrl+alt+shift+f10` → `true` in the
+  same app.)*
 - [ ] **Linux, X11** — same test; a combo another client grabbed (e.g.
   register it in two tinyjs apps): the second gets `false` (the new
   error trap around XGrabKey).
@@ -67,8 +78,11 @@ Bridge only, but each launcher's origin stamp (file:// especially) and its
 
 - [x] **macOS** — `test/event-gate/` README run: site `["menu","theme"]`,
   own page all six; the original bridge gave the site all six. *(2026-10-21)*
-- [ ] **Windows** — same run. Also check an app with NO `"api"` block
+- [x] **Windows** — same run. Also check an app with NO `"api"` block
   still gets every event in every window (the broadcast path).
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
+  site `["menu","theme"]`, own all six. The same app with the `"api"`
+  block removed: site and own both heard all six.)*
 - [ ] **Linux** — same two runs.
 
 ## Windows: userAgent on popups and secondary windows (2026-10-21)
@@ -76,17 +90,26 @@ Bridge only, but each launcher's origin stamp (file:// especially) and its
 `apply_user_agent` in launcher-win.cc, now called for every webview. Edited
 without compiling here.
 
-- [ ] **Windows** — compiles; with `"userAgent": "TinyTest/1.0"` and
+- [x] **Windows** — compiles; with `"userAgent": "TinyTest/1.0"` and
   `"popups": "window"`, a page that `window.open`s a page printing
   `navigator.userAgent` shows `TinyTest/1.0` in the popup (and in a
   `win.open` secondary), as in the main window.
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated;
+  `navigator.userAgent` read in every webview over CDP.)* Main and secondary
+  said TinyTest/1.0, but **the popup still had the stock Edge UA: FIXED.**
+  WebView2 seems to reset the UA when `put_NewWindow` adopts the webview,
+  so it is set again right after. With the fix the popup's
+  `navigator.userAgent` and the User-Agent header its server logged are both
+  `TinyTest/1.0`.
 
 ## macOS: rel=noopener popups reach onWindowOpen (2026-10-21)
 
 - [x] **macOS** — `test/popup-noopener/`: both urls in `asked` and
   `events`; the launcher built from HEAD missed the link. *(2026-10-21)*
-- [ ] **Windows**, **Linux** — same test, to confirm they already ask for
-  the link (the bug was a macOS-only code path).
+- [x] **Windows** — same test, to confirm it already asks for the link (the
+  bug was a macOS-only code path). *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
+  both urls twice in `asked`, both `-> deny` in `events`.)*
+- [ ] **Linux** — same test.
 
 ## Linux Wayland: keystroke / paste / permissions answer honestly (2026-10-21)
 
@@ -102,13 +125,21 @@ Bridge only (runtime/bridge.js), keyed on the same ON_X11 test as
 
 Edited without compiling here.
 
-- [ ] **Windows** — compiles. Copy an image, `clipboard.read()` three
+- [x] **Windows** — compiles. Copy an image, `clipboard.read()` three
   times: one `tinyjs-clip-<pid>-<n>.png` in %TEMP% and no `tjc*.tmp`;
   copy another image and read: the old png is gone. Copy text only:
   `paths` is `[]`. `captureScreen()` leaves no empty `tjp*.tmp`.
-- [ ] **Windows** — `say('long sentence…')` then `say('hi')`: the first
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated;
+  images set from PowerShell): three reads → the same
+  `tinyjs-clip-3552-39.png`, the only matching file; a second image →
+  `-48.png`, and `-39` is gone; text → `paths: []`; captureScreen → only
+  its own `tjp65D.tmp.png`, no empty placeholder. Note: the last clip png
+  stays after the app quits (one per process; it's removed only when
+  another image is read).)*
+- [x] **Windows** — `say('long sentence…')` then `say('hi')`: the first
   resolves `false`, the second `true`; `say(…)` then `stopSpeaking()`:
-  `false`.
+  `false`. *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated: false / true /
+  false.)*
 
 ## Update swap: stage beside the app, then rename (2026-10-21)
 
@@ -138,7 +169,9 @@ catches per listener and reports with `reportError`.
 - [x] **macOS** — two `tiny.api.on('ping')` listeners, the first throws,
   backend pushes twice: both run both times, two `error` events reported.
   The old launcher ran only the first. *(2026-10-21)*
-- [ ] **Windows** — `test/page-events/` (WebView2 has `reportError`).
+- [x] **Windows** — `test/page-events/` (WebView2 has `reportError`).
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
+  `{"got": ["first 1","second 1","first 2","second 2"], "reported": 2}`.)*
 - [ ] **Linux** — `test/page-events/`; on a WebKitGTK without `reportError` the
   fallback rethrows on a timer, so the console still shows it.
 
@@ -154,10 +187,16 @@ Windows and Linux were edited without being compiled here.
   launcher, built from HEAD, fired nothing — it had registered a bare K),
   and `hyper+j` logged `not registered: needs exactly one key plus
   modifiers`. *(2026-10-21)*
-- [ ] **Windows** — compiles (CI or setup.ps1); `app.hotkey.register('k',
+- [x] **Windows** — compiles (CI or setup.ps1); `app.hotkey.register('k',
   'k+ctrl+shift')` fires on Ctrl+Shift+K (modifiers after the key used to
   be refused); `'hyper+k'` and `'a+b'` log "not registered" and K / B stay
   free; a combo another app holds logs "the system refused it".
+  *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated;
+  `combo_test.cc` passes with MinGW g++): `k+ctrl+shift` → true and fired
+  on a synthesised Ctrl+Shift+K. `hyper+k` / `a+b` → false, logged "needs
+  exactly one known key plus modifiers", and typing k then b into the
+  focused input inserted both. Win+K and a combo held by a second tinyjs
+  app → false, logged "the system refused it".)*
 - [ ] **Linux, X11** — compiles; `'super+k'` fires on Super+K; `'hyper+k'`
   logs "not registered" and a bare K typed in another app is NOT swallowed
   (it used to be grabbed).
@@ -175,8 +214,12 @@ hostile-page run in that folder's README covers the stamp.
 - [x] **macOS** — hostile-page run: all three targets refused with the
   gate's message; with the check bypassed they reached the OS ("no such
   file", "no application registered for URL"). *(2026-10-21)*
-- [ ] **Windows** — same run; the wrapped origin must be refused (it's the
-  ShellExecuteW case that matters most).
+- [x] **Windows** — same run; the wrapped origin must be refused (it's the
+  ShellExecuteW case that matters most). *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
+  all three targets read the gate's message for `http://127.0.0.1:8766`,
+  so the origin the launcher stamps is the one the gate sees. The check
+  scripts for shell-open-gate, event-gate, api-gate, audio-filter-rows and
+  linux-mime pass here too, run from their own folders.)*
 - [ ] **Linux** — same run.
 
 ## #82 — Windows on ARM: native arm64 builds (`feat/82-windows-arm64`, 2026-10-20)

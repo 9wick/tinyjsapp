@@ -5641,6 +5641,7 @@ struct SecCtrlHandler
         // window.open popup: hand WebView2 the webview and let IT navigate —
         // an explicit Navigate here would sever window.opener.
         popup_args->put_NewWindow(tw->wv);
+        apply_user_agent(tw->wv);
         popup_args->put_Handled(TRUE);
         if (popup_deferral) {
           popup_deferral->Complete();
