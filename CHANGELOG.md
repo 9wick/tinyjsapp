@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Upcoming
+## 0.63.0 — 2026-10-21
 
 - **Security: a wrapped site can no longer open local files or programs.**
   `tinyjs wrap` gives the wrapped site the `"wrapper"` preset, which
