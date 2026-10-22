@@ -1141,10 +1141,15 @@ export function compileApiGate(spec) {
 // shared-mime-info's globs2 files ("weight:type:glob[:flags]") in each data
 // dir — the user's first, then XDG_DATA_DIRS — highest weight wins. `skip` is
 // the prefix of types an app invented for itself (older tinyjs registered
-// application/x-<id>-<ext> for every extension), so those don't count.
+// application/x-<id>-<ext> for every extension), so those don't count —
+// nor do ANY app's (application/x-<reverse.dns.id>-<ext>): another app's
+// leftover ties text/markdown's weight from the user's dir, which is read
+// first, so every later app would join it instead of the real type.
 // null when nothing claims the extension.
 export async function systemMimeForExt(ext, dataDirs, skip = '') {
   const e = String(ext).replace(/^\./, '');
+  const appType = (t) => /^application\/x-[a-z0-9-]+(\.[a-z0-9-]+)+-/.test(t)
+    && t.endsWith('-' + e.toLowerCase());
   let best = null, bestWeight = -1;
   for (const dir of dataDirs) {
     let text;
@@ -1152,7 +1157,7 @@ export async function systemMimeForExt(ext, dataDirs, skip = '') {
     for (const line of text.split('\n')) {
       if (!line || line[0] === '#') continue;
       const [w, type, glob, flags = ''] = line.split(':');
-      if (!type || !glob || (skip && type.startsWith(skip))) continue;
+      if (!type || !glob || (skip && type.startsWith(skip)) || appType(type)) continue;
       const hit = flags.split(',').includes('cs') ? glob === '*.' + e
                                                   : glob.toLowerCase() === '*.' + e.toLowerCase();
       if (hit && Number(w) > bestWeight) { bestWeight = Number(w); best = type; }

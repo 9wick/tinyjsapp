@@ -146,7 +146,9 @@ https://tinyjs.app/changelog.
   files. It now lists the app under the type the system already has
   (`text/markdown`), and only an extension nothing claims gets its own.
   The type file an earlier version wrote is removed on the next launch.
-  `setAsDefaultHandler()` uses the same type.
+  Types other tinyjs apps invented are ignored too (one still installed
+  from an older version would otherwise be joined instead of
+  `text/markdown`). `setAsDefaultHandler()` uses the same type.
 - **Full txiki.js types for the backend.** `types/tjs.d.ts` was a stub
   that typed `tjs` as `any`; it's now txiki.js's own definitions
   (`@txikijs/types`, matching the bundled 26.6.0) in one file, so editors

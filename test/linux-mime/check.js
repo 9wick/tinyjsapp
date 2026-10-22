@@ -12,6 +12,8 @@ async function db(dir, lines) {
 }
 const user = await db('user', [
   '50:application/x-com.example.notes-md:*.md',    // left by an older tinyjs: ignored
+  '50:application/x-org.other.app-md:*.md',        // ANOTHER app's leftover: ignored too
+  '50:application/x-org.other.app-zzqx:*.zzqx',    // another app's own type: not joined
   '60:text/x-user-thing:*.thing',
 ]);
 const sys = await db('sys', [
@@ -32,6 +34,7 @@ const cases = [
   ['c', 'text/x-csrc'],
   ['thing', 'text/x-user-thing'],    // user db, higher weight
   ['notes', null],                   // nothing claims it: the app gets its own
+  ['zzqx', null],                    // only another tinyjs app does: still its own
 ];
 let fail = 0;
 for (const [ext, want] of cases) {

@@ -13,18 +13,30 @@ like one that was never implemented.
 Bridge only. `bin/tjs run test/linux-mime/check.js` covers the globs2
 lookup on any OS.
 
+Found while verifying on Linux: the first built app joined
+`application/x-art.tarwin.kitchen-sink-md` instead of `text/markdown` — a
+leftover package from ANOTHER app built by an older tinyjs ties
+text/markdown's weight in `~/.local/share/mime/globs2`, which is read
+first. `systemMimeForExt` now ignores every app-invented
+`application/x-<reverse.dns.id>-<ext>` type; linux-mime/check.js gained
+the case (fails on the old code).
+
 - [ ] **Linux, Wayland with the GlobalShortcuts portal** (KDE, GNOME 48+) —
   `capabilities().globalHotkeys` true; `requirements(['globalHotkeys'])` ok.
-- [ ] **Linux, Wayland without it** (e.g. an older GNOME) — false, and the
-  requirement explains and names `xdg-desktop-portal`.
-- [ ] **Linux** — a built app with `"fileExtensions": ["md", "zzqx"]`:
+- [x] **Linux, Wayland without it** (e.g. an older GNOME) — false, and the
+  requirement explains and names `xdg-desktop-portal`. *(2026-10-21, Ubuntu 24.04 arm64, GNOME 46)*
+- [x] **Linux** — a built app with `"fileExtensions": ["md", "zzqx"]`:
   the .desktop `MimeType=` lists `text/markdown` and
   `application/x-<id>-zzqx`; `~/.local/share/mime/packages/<id>.xml`
   only defines the zzqx one; `xdg-mime query filetype notes.md` still says
   text/markdown; the app is in a .md file's Open With. An install made by
   an older tinyjs: after one launch its old package no longer defines md.
-- [ ] **Linux** — `setAsDefaultHandler('md')` → 'ok', and
-  `xdg-mime query default text/markdown` names the app.
+  *(Linux: all of it, after the fix above — a planted old-style package
+  defining md + zzqx was rewritten to zzqx only; `gio mime text/markdown`
+  lists the app; a .zzqx file types as the app's own. 2026-10-21, Ubuntu 24.04 arm64, GNOME 46)*
+- [x] **Linux** — `setAsDefaultHandler('md')` → 'ok', and
+  `xdg-mime query default text/markdown` names the app (mimeapps.list got
+  `text/markdown=`, not another app's type). *(2026-10-21, Ubuntu 24.04 arm64, GNOME 46)*
 
 ## Hotkey / keystroke key names: one set everywhere (2026-10-21)
 
@@ -46,7 +58,9 @@ those with real key presses.
   SendInput, which RegisterHotKey can't tell from a real press, unlike
   macOS. In an input holding `abc|def`: delete → `abdef`, forwarddelete →
   `abef`.)*
-- [ ] **Linux, X11** — `'ctrl+alt+quote'` → true and fires (was refused).
+- [x] **Linux, X11** — `'ctrl+alt+quote'` → true and fires (was refused).
+  *(2026-10-21, XWayland via GDK_BACKEND=x11, keys injected with XTest;
+  ctrl+alt+minus too)*
 
 ## hotkey.register() answers true/false (2026-10-21)
 
@@ -64,11 +78,15 @@ comes. Windows and Linux edited without compiling here.
   case, and so is a second tinyjs app registering `ctrl+alt+shift+f9` while
   the first holds it: `false`, and `ctrl+alt+shift+f10` → `true` in the
   same app.)*
-- [ ] **Linux, X11** — same test; a combo another client grabbed (e.g.
+- [x] **Linux, X11** — same test; a combo another client grabbed (e.g.
   register it in two tinyjs apps): the second gets `false` (the new
-  error trap around XGrabKey).
+  error trap around XGrabKey). *(2026-10-21, XWayland: a small XGrabKey
+  client held ctrl+alt+quote → `false`, logged "the system refused it
+  (another app may hold it)"; ctrl+alt+minus in the same run `true`)*
 - [ ] **Linux, Wayland** — `register()` → `true` and the portal dialog
-  still appears; `'hyper+j'` → `false`.
+  still appears; `'hyper+j'` → `false`. *(GNOME 46, no portal: `{"sk":
+  true, "bad": false}`, hyper+j logged — the dialog part needs KDE /
+  GNOME 48+)*
 
 ## Page events through the "api" gate (2026-10-21)
 
@@ -83,7 +101,8 @@ Bridge only, but each launcher's origin stamp (file:// especially) and its
   *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
   site `["menu","theme"]`, own all six. The same app with the `"api"`
   block removed: site and own both heard all six.)*
-- [ ] **Linux** — same two runs.
+- [x] **Linux** — same two runs. *(2026-10-21, Wayland: site
+  `["menu","theme"]`, own all six; no "api" block: both pages all six)*
 
 ## Windows: userAgent on popups and secondary windows (2026-10-21)
 
@@ -109,17 +128,21 @@ without compiling here.
 - [x] **Windows** — same test, to confirm it already asks for the link (the
   bug was a macOS-only code path). *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
   both urls twice in `asked`, both `-> deny` in `events`.)*
-- [ ] **Linux** — same test.
+- [x] **Linux** — same test. *(2026-10-21: both urls twice in `asked`,
+  both `-> deny` in `events`)*
 
 ## Linux Wayland: keystroke / paste / permissions answer honestly (2026-10-21)
 
 Bridge only (runtime/bridge.js), keyed on the same ON_X11 test as
 `capabilities()`.
 
-- [ ] **Linux, Wayland** — `app.keystroke('cmd+v')` → `{ ok: false,
+- [x] **Linux, Wayland** — `app.keystroke('cmd+v')` → `{ ok: false,
   trusted: false }`; `permissions.check('accessibility')` and
   `check('screen')` → `'unsupported'`; `check('camera')` still `'granted'`.
-- [ ] **Linux, X11** — unchanged: keystroke `ok: true`, all five `'granted'`.
+  *(2026-10-21, Ubuntu 24.04 arm64, GNOME 46)*
+- [x] **Linux, X11** — unchanged: keystroke `ok: true`, all five `'granted'`.
+  *(2026-10-21, XWayland via GDK_BACKEND=x11, WAYLAND_DISPLAY unset;
+  globalHotkeys true)*
 
 ## Windows: clipboard temp files, empty paths, interrupted say() (2026-10-21)
 
@@ -148,7 +171,10 @@ forces each failure on macOS/Linux. Owed: a real update end to end.
 
 - [ ] **macOS** — a real published update installs and relaunches;
   nothing named `.update-new` / `.update-backup` is left beside the app.
-- [ ] **Linux** — same, from a tmpfs `/tmp` (the copy path).
+- [x] **Linux** — same, from a tmpfs `/tmp` (the copy path). *(2026-10-21:
+  built 0.1.0 → localhost manifest → `install()` → relaunched as 0.2.0
+  with `TMPDIR=/dev/shm`; only `updapp/` in its folder, no
+  `tinyjs-update-*` left in /dev/shm)*
 
 ## Native 'gain' filter defaults to 1, not 0 (2026-10-21)
 
@@ -158,8 +184,10 @@ hearing it: `filters([{ type: 'gain', gainR: 0.4 }])` should pan left at
 full level instead of going silent.
 
 - [ ] **macOS** — packaged app with System Audio Recording granted.
-- [ ] **Linux** — native chain; measure with the null-sink rig in
-  CLAUDE.md (left ≈ full, right ≈ 0.4).
+- [x] **Linux** — native chain; measure with the null-sink rig in
+  CLAUDE.md (left ≈ full, right ≈ 0.4). *(2026-10-21: chain output routed
+  to a null sink, rig checked with a left-only tone first; unfiltered
+  L/R 0.2828/0.2828, with the filter 0.2828/0.1131 — R/L 0.400)*
 
 ## Page events: a throwing listener doesn't stop the rest (2026-10-21)
 
@@ -172,8 +200,9 @@ catches per listener and reports with `reportError`.
 - [x] **Windows** — `test/page-events/` (WebView2 has `reportError`).
   *(2026-10-21, Windows 11 26200 arm64 / Parallels, x64 WinLibs launcher built from 5541ea5, emulated:
   `{"got": ["first 1","second 1","first 2","second 2"], "reported": 2}`.)*
-- [ ] **Linux** — `test/page-events/`; on a WebKitGTK without `reportError` the
-  fallback rethrows on a timer, so the console still shows it.
+- [x] **Linux** — `test/page-events/`; on a WebKitGTK without `reportError` the
+  fallback rethrows on a timer, so the console still shows it. *(2026-10-21:
+  launcher compiles; four `got`, `reported: 2`)*
 
 ## Hotkey / keystroke combos: one parser, never a bare key (2026-10-21)
 
@@ -197,11 +226,14 @@ Windows and Linux were edited without being compiled here.
   exactly one known key plus modifiers", and typing k then b into the
   focused input inserted both. Win+K and a combo held by a second tinyjs
   app → false, logged "the system refused it".)*
-- [ ] **Linux, X11** — compiles; `'super+k'` fires on Super+K; `'hyper+k'`
+- [x] **Linux, X11** — compiles; `'super+k'` fires on Super+K; `'hyper+k'`
   logs "not registered" and a bare K typed in another app is NOT swallowed
-  (it used to be grabbed).
+  (it used to be grabbed). *(2026-10-21, XWayland + XTest: super+k and
+  k+ctrl+shift fire; after hyper+k was refused another client could
+  XGrabKey a bare K, so nothing holds it)*
 - [ ] **Linux, Wayland** — `'hyper+k'` is never offered to the portal (logs
   "not registered"); a valid combo still shows the portal dialog.
+  *(GNOME 46: the refusal logs; the dialog needs a portal — KDE / GNOME 48+)*
 
 ## shell.open from a wrapped site: web and mail links only (2026-10-21)
 
@@ -220,7 +252,8 @@ hostile-page run in that folder's README covers the stamp.
   so the origin the launcher stamps is the one the gate sees. The check
   scripts for shell-open-gate, event-gate, api-gate, audio-filter-rows and
   linux-mime pass here too, run from their own folders.)*
-- [ ] **Linux** — same run.
+- [x] **Linux** — same run. *(2026-10-21: all three targets read the
+  gate's message, origin `http://127.0.0.1:8766`)*
 
 ## #82 — Windows on ARM: native arm64 builds (`feat/82-windows-arm64`, 2026-10-20)
 
