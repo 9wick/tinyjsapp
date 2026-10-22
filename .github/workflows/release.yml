@@ -188,7 +188,7 @@ jobs:
           # it serves Git Bash (MSYS runs the .exe-less `bin/tjs` as tjs.exe).
           Copy-Item cli.js, tinyjs, tinyjs.cmd, VERSION, README.md, LICENSE "$stage\"
           # `tinyjs update` runs this copy rather than the website's (#30).
-          Copy-Item docs\install.ps1 "$stage\"
+          Copy-Item docs\public\install.ps1 "$stage\"
           New-Item -ItemType Directory -Force out | Out-Null
           # Zip the CONTENTS (no wrapper dir): install.ps1 extracts straight
           # into the install dir.
