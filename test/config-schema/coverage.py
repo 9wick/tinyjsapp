@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Computed by cli.js onto cfg, never written by users.
 INTERNAL = {'executablesStaged', 'helpBookAnyOS'}
 
-schema = json.loads((ROOT / 'docs/schema/tinyjs.schema.json').read_text(encoding='utf-8'))
+schema = json.loads((ROOT / 'docs/public/schema/tinyjs.schema.json').read_text(encoding='utf-8'))
 described = set(schema['$defs']['settings']['properties'])
 
 read = {}
@@ -24,6 +24,6 @@ for path in [ROOT / 'cli.js', *sorted((ROOT / 'runtime').glob('*.js'))]:
         read.setdefault(key, path.relative_to(ROOT).as_posix())
 
 missing = sorted(set(read) - described - INTERNAL)
-assert not missing, 'add to docs/schema/tinyjs.schema.json: ' + ', '.join(
+assert not missing, 'add to docs/public/schema/tinyjs.schema.json: ' + ', '.join(
     f'{key} (read in {read[key]})' for key in missing)
 print(f'PASS {len(set(read) - INTERNAL)} top-level config keys read by the code are all in the schema')

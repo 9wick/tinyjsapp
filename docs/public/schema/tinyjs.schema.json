@@ -22,16 +22,16 @@
       "type": "object",
       "properties": {
         "name": { "type": "string", "description": "Executable name. The CLI requires a truthy name after platform resolution." },
-        "title": { "$ref": "#/$defs/optionalString", "description": "Window and bundle title; defaults to name when omitted." },
-        "id": { "$ref": "#/$defs/optionalString", "description": "Application identifier; defaults to com.example.<name>." },
-        "version": { "$ref": "#/$defs/optionalString", "description": "Application version." },
+        "title": { "type": "string", "description": "What people see: window title, menu bar name, the .app folder (dist/<title>.app). Defaults to name." },
+        "id": { "type": "string", "description": "Reverse-domain app id (com.yourcompany.myapp); defaults to com.example.<name>. Also keys the app's data folder, store, secrets and saved window positions — changing it after release starts users over." },
+        "version": { "$ref": "#/$defs/optionalString", "description": "Application version, x.y.z. Shown in About and app.info(); auto-update compares it; tinyjs publish requires it." },
         "minTinyjsVersion": { "$ref": "#/$defs/optionalString", "description": "Oldest tinyjs version needed to run this project." },
         "size": { "$ref": "#/$defs/optionalString", "description": "Initial window size, for example 960x640." },
         "backend": { "$ref": "#/$defs/optionalString", "description": "Backend entry path relative to the project; omit for automatic entry discovery." },
         "frontend": { "$ref": "#/$defs/frontend" },
         "inject": { "$ref": "#/$defs/optionalString", "description": "Document-start JS or TS file, relative to the project." },
         "icon": { "$ref": "#/$defs/optionalString", "description": "App icon path; defaults to assets/icon.png, then icon.png." },
-        "attribution": { "$ref": "#/$defs/optionalString", "description": "App attribution displayed by the native launcher." },
+        "attribution": { "$ref": "#/$defs/optionalString", "description": "macOS: the credit line in the standard About panel (default \"Made with tinyjs\"). An assets/Credits.html or .rtf replaces it. Ignored on Windows and Linux." },
         "helpBook": { "type": "string", "description": "macOS help book folder inside assets/." },
         "resources": { "$ref": "#/$defs/strings", "description": "Paths inside resources/. Omit to ship the whole folder; [] ships none." },
         "executables": { "$ref": "#/$defs/strings", "description": "Paths inside executables/. Omit for automatic platform selection; [] ships none." },
@@ -49,50 +49,50 @@
           }
         },
         "chrome": { "$ref": "#/$defs/chrome" },
-        "activation": { "enum": ["regular", "accessory", "", false, null], "description": "macOS activation mode; accessory hides the Dock icon." },
+        "activation": { "enum": ["regular", "accessory", "", false, null], "description": "accessory: a menu-bar style app — no Dock icon (macOS) or taskbar button (Windows, Linux), and the window starts hidden. Default regular." },
         "mainWindow": { "type": "boolean", "description": "false starts a windowless agent. A remote url needs a main window." },
         "url": { "$ref": "#/$defs/optionalString", "description": "Remote main page for a site wrapper, instead of a local frontend." },
-        "readAccess": { "type": ["boolean", "string", "null"], "description": "macOS file access root for the page; true grants the home folder." },
+        "readAccess": { "type": ["boolean", "string", "null"], "description": "macOS: let the page load local files outside its folder — true for the home folder, or one folder path. Windows and Linux already allow it." },
         "userAgent": { "$ref": "#/$defs/optionalString", "description": "Custom webview User-Agent." },
-        "downloads": { "enum": ["auto", "ask", "deny", null], "description": "Download policy for a site wrapper; auto is the default." },
-        "popups": { "enum": ["external", "window", "deny", null], "description": "window.open policy for a site wrapper; external is the default. onWindowOpen can refine it per popup." },
+        "downloads": { "enum": ["auto", "ask", "deny", null], "description": "What a download started by the page does: auto saves to Downloads (default), ask shows a save panel, deny refuses. Applies to every app; onDownload reports progress." },
+        "popups": { "enum": ["external", "window", "deny", null], "description": "What window.open / target=_blank do: external opens the default browser (default), window an app window keeping window.opener (sign-in popups), deny blocks. onWindowOpen can decide per popup." },
         "api": { "$ref": "#/$defs/api" },
         "contextMenu": { "$ref": "#/$defs/optionalBoolean", "description": "false suppresses the webview's default context menu." },
-        "browserAccelerators": { "$ref": "#/$defs/optionalBoolean", "description": "Keep the browser engine's own keyboard shortcuts." },
-        "debug": { "type": ["boolean", "string", "null"], "description": "Enable webview debugging; open also opens developer tools." },
-        "about": { "$ref": "#/$defs/optionalString", "description": "menu routes the native About item to the app's menu handler." },
+        "browserAccelerators": { "$ref": "#/$defs/optionalBoolean", "description": "Windows: keep WebView2's own shortcuts (Ctrl+P, Ctrl+F, Ctrl+R…), off by default. Ignored elsewhere." },
+        "debug": { "type": ["boolean", "string", "null"], "description": "Developer tools in a built app: true lets F12 open them (⌥⌘I on macOS too), \"open\" opens them with every window. tinyjs dev always has F12." },
+        "about": { "$ref": "#/$defs/optionalString", "description": "macOS: \"menu\" sends the About item to onMenu('about') / the page's menu event instead of the standard panel." },
         "urlScheme": {
-          "description": "Registered URL scheme, or list of schemes.",
+          "description": "myapp:// links that open the app (onOpenUrl); a list registers several. Built apps only, never tinyjs dev.",
           "anyOf": [{ "$ref": "#/$defs/optionalString" }, { "$ref": "#/$defs/strings" }]
         },
         "fileExtensions": {
-          "description": "Registered document extensions, without leading dots.",
+          "description": "File extensions the app can open (onOpenFiles), without dots. Built apps only; on Windows it adds Open with, not the default.",
           "anyOf": [{ "$ref": "#/$defs/strings" }, { "type": "null" }]
         },
-        "openFolders": { "$ref": "#/$defs/optionalBoolean", "description": "Register the app to open folders." },
+        "openFolders": { "$ref": "#/$defs/optionalBoolean", "description": "Folders can be opened with the app too (onOpenFiles). macOS and Linux, built apps only." },
         "permissions": {
           "type": ["object", "null"],
-          "description": "macOS permission usage descriptions embedded in the bundle.",
+          "description": "Camera, microphone and speech recognition, each with the reason shown to the user. macOS: the prompt text, and what lets the app ask at all. Linux: microphone/camera decide whether getUserMedia works. Windows: unused (WebView2 prompts itself). speechRecognition is macOS only.",
           "properties": {
             "microphone": { "$ref": "#/$defs/optionalString" },
             "camera": { "$ref": "#/$defs/optionalString" },
             "speechRecognition": { "$ref": "#/$defs/optionalString" }
           }
         },
-        "audioTap": { "type": ["string", "boolean", "null"], "description": "Declare app or system scope for native audio taps; false disables them." },
-        "audioTapReason": { "$ref": "#/$defs/optionalString", "description": "macOS audio capture usage description." },
+        "audioTap": { "type": ["string", "boolean", "null"], "description": "Turns on tiny.audioTap: \"app\" (the app's own audio; true means the same) or \"system\". Without it start() fails with not-declared." },
+        "audioTapReason": { "$ref": "#/$defs/optionalString", "description": "macOS: the reason in the audio capture prompt. Default: \"<title> reads audio output for metering and visualization.\"" },
         "windowPlacement": { "$ref": "#/$defs/optionalBoolean", "description": "On Linux, prefer X11/XWayland for app-controlled window placement." },
         "offscreenRescue": { "$ref": "#/$defs/optionalBoolean", "description": "false disables automatic offscreen window recovery." },
         "rememberWindows": { "$ref": "#/$defs/optionalBoolean", "description": "Restore each window's position, size and maximized/fullscreen state per screen layout (main is shown once restored)." },
         "update": {
           "type": ["object", "null"],
           "properties": {
-            "url": { "$ref": "#/$defs/optionalString", "description": "URL of the application's update manifest." },
-            "auto": { "enum": ["launch", "daily", false, null], "description": "Automatic update checks in packaged apps: at launch, or at launch and then daily. Omit or false to check only when the app calls tiny.app.update.check()." },
+            "url": { "$ref": "#/$defs/optionalString", "description": "The manifest.json tinyjs publish wrote, where you host it. https:// only (http://localhost for testing)." },
+            "auto": { "enum": ["launch", "daily", false, null], "description": "Automatic checks in built apps: a few seconds after launch, or that and then daily; a newer version fires onUpdateAvailable. Omit to check only when you call tiny.app.update.check()." },
             "publicKey": {
               "type": ["string", "array", "null"],
               "items": { "type": "string" },
-              "description": "Base64 of a raw 32-byte Ed25519 public key, or a list of them (a signing key plus a backup), baked into the app. When set, updates require a manifest signed by one of the matching private keys (tinyjs publish reads it from TINYJS_UPDATE_PRIVATE_KEY_FILE); omit, null, \"\" or [] for unsigned updates. See docs/signed-updates.md."
+              "description": "Base64 of a raw 32-byte Ed25519 public key, or a list of them (a signing key plus a backup), baked into the app. When set, updates require a manifest signed by one of the matching private keys (tinyjs publish reads it from TINYJS_UPDATE_PRIVATE_KEY_FILE); omit, null, \"\" or [] for unsigned updates. See https://tinyjs.app/docs/signed-updates."
             }
           }
         }
@@ -101,27 +101,27 @@
     "frontend": {
       "type": ["object", "null"],
       "properties": {
-        "dir": { "$ref": "#/$defs/optionalString", "description": "Plain frontend folder; defaults to src/frontend." },
+        "dir": { "$ref": "#/$defs/optionalString", "description": "The plain page folder, served as-is; default src/frontend. A build with frontend.build ships dist instead." },
         "build": { "$ref": "#/$defs/optionalString", "description": "Shell command to build the production frontend." },
         "dist": { "$ref": "#/$defs/optionalString", "description": "Frontend build output folder; defaults to dist with a build hook." },
-        "dev": { "$ref": "#/$defs/optionalString", "description": "Shell command to start the frontend development server." },
-        "devUrl": { "$ref": "#/$defs/optionalString", "description": "Development server URL instead of a local page." },
+        "dev": { "$ref": "#/$defs/optionalString", "description": "Shell command tinyjs dev starts — the dev server. Only used together with devUrl." },
+        "devUrl": { "$ref": "#/$defs/optionalString", "description": "The dev server's address; tinyjs dev waits for it, then loads it. Dev only — builds ship dist." },
         "reload": { "$ref": "#/$defs/optionalBoolean", "description": "false disables tinyjs's own frontend file watcher." }
       }
     },
     "chrome": {
       "type": ["object", "null"],
       "properties": {
-        "frame": { "$ref": "#/$defs/optionalBoolean", "description": "Show the native window frame." },
+        "frame": { "$ref": "#/$defs/optionalBoolean", "description": "false: no title bar or border (make your own with data-tiny-drag)." },
         "windowControls": {
           "description": "Show all, none, or a list of close/minimize/maximize controls (zoom is an alias for maximize).",
           "anyOf": [{ "$ref": "#/$defs/optionalBoolean" }, { "$ref": "#/$defs/strings" }]
         },
-        "transparent": { "$ref": "#/$defs/optionalBoolean" },
-        "vibrancy": { "type": ["string", "boolean", "null"], "description": "macOS vibrancy material, for example hud; null or false disables it." },
-        "squareCorners": { "$ref": "#/$defs/optionalBoolean" },
-        "acceptsFirstMouse": { "$ref": "#/$defs/optionalBoolean" },
-        "menu": { "$ref": "#/$defs/optionalBoolean", "description": "Show the native window menu." },
+        "transparent": { "$ref": "#/$defs/optionalBoolean", "description": "See-through window background. Windows: the main window only, and only when set here." },
+        "vibrancy": { "type": ["string", "boolean", "null"], "description": "Blurred background material, such as hud, sidebar or popover; false for none. macOS; Windows 11 maps hud/popover/menu to Acrylic and others to Mica; Linux ignores it." },
+        "squareCorners": { "$ref": "#/$defs/optionalBoolean", "description": "No rounded window corners." },
+        "acceptsFirstMouse": { "$ref": "#/$defs/optionalBoolean", "description": "macOS: a click on an inactive window also acts on what it hits." },
+        "menu": { "$ref": "#/$defs/optionalBoolean", "description": "Windows and Linux: false hides this window's menu bar. macOS has one menu bar per app and ignores it." },
         "windowControlsPos": {
           "description": "macOS traffic-light coordinates; null or false restores the OS layout. Partial coordinates are allowed in platform overrides.",
           "anyOf": [
@@ -132,7 +132,7 @@
       }
     },
     "api": {
-      "description": "Capability gate: all/none/wrapper, boolean, list of allowed wire method names, or an object. Unknown presets fail closed at runtime.",
+      "description": "Which tiny calls pages may make — set it whenever the app loads a site you don't control. \"all\" / true: no limit; \"none\" / false: nothing; \"wrapper\": the site-wrapper preset; a list: only these; an object: { preset, enable, disable, origins }, where enable wins over disable and an enable list alone means only these. origins gives each site its own rules, first match wins. Anything unrecognised fails closed.",
       "anyOf": [
         { "type": ["string", "boolean", "null"] },
         { "$ref": "#/$defs/strings" },

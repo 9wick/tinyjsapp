@@ -1,0 +1,4 @@
+# esbuild's postinstall only re-checks a binary pnpm already installed via its
+# optional platform package, so the site builds without running it.
+allowBuilds:
+  esbuild: false

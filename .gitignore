@@ -22,3 +22,7 @@ native/tiny_client.h
 # the root release checklist only — anchored, since case-insensitive git
 # otherwise also ignores skill/references/release.md (which ships)
 /RELEASE.md
+
+# site (docs/): VitePress deps and caches; the build lands in dist/ above
+node_modules/
+docs/.vitepress/cache/

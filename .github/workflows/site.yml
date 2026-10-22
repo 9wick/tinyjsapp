@@ -1,0 +1,57 @@
+name: site
+
+# tinyjs.app: builds docs/ with VitePress and deploys it to GitHub Pages.
+# Repo setting: Settings → Pages → Source = "GitHub Actions" (not a branch).
+# Everything in docs/public/ (landing page, the curl/irm installers, the
+# tinyjs.json schema, api-map.html) is copied to the site root unchanged.
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'CHANGELOG.md', '.github/workflows/site.yml']
+  workflow_dispatch:
+
+# write + OIDC only where the deploy needs them, not in the build that runs
+# third-party code (VitePress and its dependencies)
+permissions:
+  contents: read
+
+# one deploy at a time; a newer push supersedes a queued one
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # pnpm version comes from docs/package.json's packageManager
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: docs/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: docs
+      - run: pnpm build
+        working-directory: docs
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

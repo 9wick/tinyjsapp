@@ -1,10 +1,10 @@
-# Renders docs/api-map.html: every backend `app` call beside its page `tiny`
+# Renders docs/docs/api-map.md: every backend `app` call beside its page `tiny`
 # twin. Inputs: the d.ts walk from extract.cjs and the live-object dump from
-# dump-app (see run.sh). Borrows docs.html's <style> so the page matches.
+# dump-app (see run.sh). The tables are raw HTML inside the markdown page,
+# styled by .api-map-page in docs/.vitepress/theme/custom.css.
 import json, re, html, sys, os
 REPO=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 d=json.load(open(sys.argv[1])); rt=json.load(open(sys.argv[2]))
-style=re.search(r'<style>.*?</style>', open(REPO+'/docs/docs.html').read(), re.S).group(0)
 esc=lambda s: html.escape(s, quote=False)
 
 def split_sig(s):
@@ -152,106 +152,57 @@ for k in sorted(deprecated):
     dep_rows.append(f'<tr class="st-dep">{cell(b)}<td class="note">{esc(b["deprecated"])}</td></tr>')
 
 THEAD='<thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead>'
+# v-pre: signatures are full of braces Vue would otherwise read as template
+def table(head, rows):
+    return f'<div class="api-map-table" v-pre><table>{head}<tbody>\n' + '\n'.join(rows) + '\n</tbody></table></div>'
+
 secs=[]; toc=[]
 for sid,title,_ in SECTIONS:
     if not rows_by[sid]: continue
-    toc.append(f'<a href="#{sid}">{esc(title.lower())}</a>')
-    secs.append(f'<section id="{sid}"><h2>{esc(title)}</h2><div class="tw"><table>{THEAD}<tbody>\n'+'\n'.join(rows_by[sid])+'\n</tbody></table></div></section>')
-toc.append('<a href="#events">events</a>'); toc.append('<a href="#deprecated">deprecated</a>')
+    toc.append(f'[{title.lower()}](#{sid})')
+    # {#sid} keeps the old page's anchors (api-map.html#win etc.)
+    secs.append(f'## {title} {{#{sid}}}\n\n' + table(THEAD, rows_by[sid]))
+toc.append('[events](#events)'); toc.append('[deprecated](#deprecated)')
 summary=' · '.join(f'{v} {k}' for k,v in sorted(counts.items(), key=lambda kv:-kv[1]))
 
-extra_css='''<style>
-  .wrap { max-width: 1240px; }
-  .lede { color: var(--muted); max-width: 72ch; }
-  .tw { overflow-x: auto; margin: 0 -4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-  th { text-align: left; font-weight: 600; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
-  th:nth-child(3), td.note { width: 26%; }
-  td { vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-  code.sig { display: block; font-family: var(--mono); font-size: 12px; line-height: 1.5; background: none; border: 0; padding: 0; white-space: normal; color: var(--muted); }
-  code.sig + code.sig { margin-top: 4px; }
-  code.sig b { color: var(--text); font-weight: 600; }
-  .ret { color: var(--muted); }
-  td.none, .none { color: var(--muted); opacity: .5; }
-  .doc { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.45; }
-  .alias, .flag { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
-  .flag { color: var(--accent); }
-  .badge { display: inline-block; font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
-  .b-diff, .b-ret { color: var(--accent); border-color: var(--accent); background: var(--wash); }
-  tr.st-same td:first-child, tr.st-same td:nth-child(2) { }
-  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; font-size: 13px; color: var(--muted); align-items: center; }
-  .filters label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
-  body.hide-same tr.st-same { display: none; }
-  .apitoc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin: 14px 0 0; }
-  .apitoc a { color: var(--accent); text-decoration: none; }
-  @media (max-width: 720px) { table { table-layout: auto; } th:nth-child(3), td.note { width: auto; } }
-</style>'''
+dep_rows += [
+  '<tr class="st-dep"><td><code class="sig"><b>app.notify</b>({ title, body, …opts })</code></td><td class="note">app.notify(title, body, opts)</td></tr>',
+  '<tr class="st-dep"><td><code class="sig"><b>app.info.version</b>, <b>app.paths.data</b>, …</code></td><td class="note">(await app.info()).version, (await app.paths()).data</td></tr>',
+  "<tr class=\"st-dep\"><td><code class=\"sig\"><b>app.presence</b>(anything but 'normal' | 'menubar')</code></td><td class=\"note\">will throw, as the page call does</td></tr>",
+]
+NL=chr(10)
+page=f'''---
+title: API map
+aside: false
+pageClass: api-map-page
+---
 
-head_meta='''<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tinyjs — API map</title>
-<link rel="icon" href="images/rakali-badge-small.webp" type="image/webp">
-<meta name="theme-color" content="#fcfcfa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101318" media="(prefers-color-scheme: dark)">
-<script>
-  try {
-    var t = localStorage.getItem('tinyjs-theme');
-    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-  } catch (e) {}
-</script>
+<!-- Generated by scripts/api-map/run.sh (render.py) — don't edit by hand. -->
+
+# API map
+
+Every call on the backend's `app` next to its page twin on `tiny`, one row per operation. A page's `tiny.app.X` is the backend's `app.X`, and `tiny.win.X` (the page's own window) pairs with `app.win.X` (the main window); `app.window(id)` handles have the same window methods as `app.win` minus `open`, `windows` and `setHideOnClose`, and their `close()` takes no id.
+
+Generated from `tiny.d.ts`, checked against the live `app` and `tiny` objects and line by line against the code — {summary}.
+
+{" · ".join(toc)}
+
+<label class="api-map-filter"><input type="checkbox" id="hide-same"> hide rows that match</label>
+<span class="api-map-hint">"returns differ" mostly means the page resolves <code>true</code> where the backend returns nothing</span>
+
+{(NL+NL).join(secs)}
+
+## Events {{#events}}
+
+The backend hooks are exports of your backend module, wired once at startup; the page subscribes at runtime and gets back an unsubscribe function.
+
+{table(THEAD, ev_rows().split(NL))}
+
+## Deprecated backend names {{#deprecated}}
+
+Still work, log a one-line warning the first time each is used, and will be removed in a future release.
+
+{table('<thead><tr><th>old backend name</th><th>use instead</th></tr></thead>', dep_rows)}
 '''
-page=f'''{head_meta}{style}
-{extra_css}
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="brand"><a class="mark" href="./index.html"><img src="images/rakali-badge.svg" alt="" width="30" height="30">tinyjs</a> <span class="links"><a href="./docs.html">docs</a><a href="./changelog.html">changelog</a></span><button class="theme" onclick="cycleTheme()" title="Theme — click to cycle auto / light / dark" aria-label="Change theme"></button></div>
-    <h1>api <em>map</em></h1>
-    <p class="sub lede">Every call on the backend's <code>app</code> next to its page twin on
-    <code>tiny</code>, one row per operation. A page's <code>tiny.app.X</code> is the backend's
-    <code>app.X</code>, and <code>tiny.win.X</code> (the page's own window) pairs with
-    <code>app.win.X</code> (the main window); <code>app.window(id)</code> handles have the same
-    window methods as <code>app.win</code> minus <code>open</code>, <code>windows</code> and
-    <code>setHideOnClose</code>, and their <code>close()</code> takes no id.
-    Generated from <code>tiny.d.ts</code>, checked against the live <code>app</code> and
-    <code>tiny</code> objects and line by line against the code — {summary}.</p>
-    <nav class="apitoc">{"".join(toc)}</nav>
-    <div class="filters"><label><input type="checkbox" onchange="document.body.classList.toggle('hide-same', this.checked)"> hide rows that match</label>
-    <span>· "returns differ" mostly means the page resolves <code>true</code> where the backend returns nothing</span></div>
-  </header>
-{chr(10).join(secs)}
-<section id="events"><h2>Events</h2>
-<p class="lede">The backend hooks are exports of your backend module, wired once at startup; the page subscribes at runtime and gets back an unsubscribe function.</p>
-<div class="tw"><table>{THEAD}<tbody>
-{ev_rows()}
-</tbody></table></div></section>
-<section id="deprecated"><h2>Deprecated backend names</h2>
-<p class="lede">Still work, log a one-line warning the first time each is used, and will be removed in a future release.</p>
-<div class="tw"><table><thead><tr><th>old backend name</th><th>use instead</th></tr></thead><tbody>
-{chr(10).join(dep_rows)}
-<tr class="st-dep"><td><code class="sig"><b>app.notify</b>({{ title, body, …opts }})</code></td><td class="note">app.notify(title, body, opts)</td></tr>
-<tr class="st-dep"><td><code class="sig"><b>app.info.version</b>, <b>app.paths.data</b>, …</code></td><td class="note">(await app.info()).version, (await app.paths()).data</td></tr>
-<tr class="st-dep"><td><code class="sig"><b>app.presence</b>(anything but 'normal' | 'menubar')</code></td><td class="note">will throw, as the page call does</td></tr>
-</tbody></table></div></section>
-</div>
-<script>
-function cycleTheme() {{
-  var el = document.documentElement;
-  var order = ['auto', 'light', 'dark'];
-  var next = order[(order.indexOf(el.dataset.theme || 'auto') + 1) % 3];
-  if (next === 'auto') delete el.dataset.theme; else el.dataset.theme = next;
-  try {{
-    if (next === 'auto') localStorage.removeItem('tinyjs-theme');
-    else localStorage.setItem('tinyjs-theme', next);
-  }} catch (e) {{}}
-}}
-</script>
-</body>
-</html>
-'''
-open(REPO+'/docs/api-map.html','w').write(page)
-print(summary, '| deprecated rows', len(dep_rows), '| aliases', len(alias))
+open(REPO+'/docs/docs/api-map.md','w').write(page)
+print(summary, '| deprecated rows', len(dep_rows) - 3, '| aliases', len(alias))

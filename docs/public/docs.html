@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- docs.html was one long page; it is now split into /docs/<page>. This stub
+     sends the old anchors (docs.html#window, /api.html, shared links) to the
+     page that section became. Keep the map in sync with
+     docs/.vitepress/theme/old-anchors.js. -->
+<title>tinyjs — docs</title>
+<link rel="canonical" href="https://tinyjs.app/docs/">
+<script>
+  var map = {"install":"install","cli":"cli","resources":"resources","executables":"executables","shared":"shared-code","assets":"assets","extras":"extras","config":"config","backend":"backend","frontend":"api","fetch":"fetch","window":"window","windows":"multiple-windows","dialogs":"dialogs","menus":"menus","tray":"tray","store":"store","clipboard":"clipboard","hotkeys":"hotkeys","audio":"audio","sampler":"sampler","audiotap":"audiotap","keystrokes":"keystrokes","permissions":"permissions","shell":"shell","services":"services","secrets":"secrets","superpowers":"macos-only","media":"media","windowfx":"window-fx","system":"system","wrapper":"site-wrappers","open":"deep-links","update":"auto-update","howitworks":"how-it-works","portability":"portability","gotchas":"gotchas"};
+  var page = map[location.hash.slice(1)];
+  // A server that resolves /docs/ to this file (vitepress preview does)
+  // would loop on '/docs/', so name the index file outright there.
+  var looped = location.pathname === '/docs/';
+  location.replace('/docs/' + (page || (looped ? 'index.html' : '')));
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=/docs/"></noscript>
+</head>
+<body>
+<p>Moved to <a href="/docs/">the docs</a>.</p>
+</body>
+</html>

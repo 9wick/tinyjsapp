@@ -369,7 +369,7 @@ jobs:
           cp -R runtime template test skill "$STAGE/"
           cp cli.js tinyjs VERSION README.md LICENSE "$STAGE/"
           # `tinyjs update` runs this copy rather than the website's (#30).
-          cp docs/install "$STAGE/install"
+          cp docs/public/install "$STAGE/install"
           tar -czf "out/tinyjs-linux-${{ matrix.arch }}.tar.gz" -C /tmp/stage tinyjs
           gzip -9 -c bin/tjs > "out/tjs-linux-${{ matrix.arch }}.gz"
 
@@ -484,7 +484,7 @@ jobs:
             cp -R runtime template test skill "$STAGE/"
             cp cli.js tinyjs VERSION README.md LICENSE "$STAGE/"
             # `tinyjs update` runs this copy rather than the website's (#30).
-            cp docs/install "$STAGE/install"
+            cp docs/public/install "$STAGE/install"
 
             tar -czf "out/tinyjs-macos-$ARCH.tar.gz" -C "/tmp/stage-$ARCH" tinyjs
           done

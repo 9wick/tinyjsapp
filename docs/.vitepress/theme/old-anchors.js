@@ -1,0 +1,43 @@
+// Section ids from the old single-page docs.html, mapped to the page each
+// section became. /docs.html#id is handled by public/docs.html; this covers
+// /docs/#id (GitHub Pages may serve /docs as the directory). Keep the two in
+// sync.
+export default {
+  "install": "install",
+  "cli": "cli",
+  "resources": "resources",
+  "executables": "executables",
+  "shared": "shared-code",
+  "assets": "assets",
+  "extras": "extras",
+  "config": "config",
+  "backend": "backend",
+  "frontend": "api",
+  "fetch": "fetch",
+  "window": "window",
+  "windows": "multiple-windows",
+  "dialogs": "dialogs",
+  "menus": "menus",
+  "tray": "tray",
+  "store": "store",
+  "clipboard": "clipboard",
+  "hotkeys": "hotkeys",
+  "audio": "audio",
+  "sampler": "sampler",
+  "audiotap": "audiotap",
+  "keystrokes": "keystrokes",
+  "permissions": "permissions",
+  "shell": "shell",
+  "services": "services",
+  "secrets": "secrets",
+  "superpowers": "macos-only",
+  "media": "media",
+  "windowfx": "window-fx",
+  "system": "system",
+  "wrapper": "site-wrappers",
+  "open": "deep-links",
+  "update": "auto-update",
+  "howitworks": "how-it-works",
+  "portability": "portability",
+  "gotchas": "gotchas"
+}

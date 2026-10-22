@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regenerates docs/api-map.html, the backend `app` vs page `tiny` table.
+# Regenerates docs/docs/api-map.md, the backend `app` vs page `tiny` table.
 #
 #   scripts/api-map/run.sh
 #
@@ -9,7 +9,7 @@
 #   2. dump-app runs under `tinyjs dev` and lists what the live `app` and
 #      `tiny` objects actually have, so anything undeclared gets flagged.
 #      It opens a small window for a couple of seconds and quits itself.
-#   3. render.py pairs the two sides and writes docs/api-map.html.
+#   3. render.py pairs the two sides and writes docs/docs/api-map.md.
 #
 # Needs node, python3 and a working `tinyjs` on PATH. Run it after changing
 # the API, and read the diff — the hand-written parts (the events table, the

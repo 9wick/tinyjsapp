@@ -1,295 +1,42 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tinyjs — API map</title>
-<link rel="icon" href="images/rakali-badge-small.webp" type="image/webp">
-<meta name="theme-color" content="#fcfcfa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101318" media="(prefers-color-scheme: dark)">
-<script>
-  try {
-    var t = localStorage.getItem('tinyjs-theme');
-    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-  } catch (e) {}
-</script>
-<style>
-  :root {
-    color-scheme: dark;
-    --bg: #101318; --panel: #191d24; --line: #363d4c;
-    --text: #e6e9f0; --muted: #99a1b3; --accent: #8ec0ff;
-    --wash: rgba(142,192,255,.10);       /* accent tint behind active chips */
-    --wash-2: rgba(142,192,255,.17);
-    --scan: rgba(255,255,255,.008);
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --serif: Charter, "Iowan Old Style", Georgia, serif;
-  }
-  /* Light: the OS preference unless dark is pinned — same var names, so every
-     rule below is written once. Duplicated for the explicit pin because a
-     media query and an attribute selector can't share one rule. */
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) {
-      color-scheme: light;
-      --bg: #fcfcfa; --panel: #f2f1ec; --line: #d3d0c7;
-      --text: #16181d; --muted: #565c69; --accent: #1a5fb4;
-      --wash: rgba(26,95,180,.07);
-      --wash-2: rgba(26,95,180,.13);
-      --scan: rgba(0,0,0,.014);
-    }
-  }
-  :root[data-theme="light"] {
-    color-scheme: light;
-    --bg: #fcfcfa; --panel: #f2f1ec; --line: #d3d0c7;
-    --text: #16181d; --muted: #565c69; --accent: #1a5fb4;
-    --wash: rgba(26,95,180,.07);
-    --wash-2: rgba(26,95,180,.13);
-    --scan: rgba(0,0,0,.014);
-  }
+---
+title: API map
+aside: false
+pageClass: api-map-page
+---
 
-  /* theme switch: auto → light → dark → auto. The label is CSS-driven so it
-     is already correct at first paint (and still right with JS off). */
-  .theme {
-    border: 1px solid var(--line); background: transparent; color: var(--muted);
-    font: 11px var(--mono); letter-spacing: .06em; padding: 4px 9px;
-    border-radius: 6px; cursor: pointer; min-width: 64px; text-align: center;
-  }
-  .theme:hover { color: var(--accent); border-color: var(--accent); background: var(--wash); }
-  .theme::before { content: "◐ "; }
-  .theme::after { content: "auto"; }
-  html[data-theme="light"] .theme::before { content: "☀ "; }
-  html[data-theme="light"] .theme::after { content: "light"; }
-  html[data-theme="dark"] .theme::before { content: "☾ "; }
-  html[data-theme="dark"] .theme::after { content: "dark"; }
-  * { margin: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    background: var(--bg); color: var(--text);
-    font: 17px/1.65 var(--serif);
-    -webkit-font-smoothing: antialiased;
-  }
-  ::selection { background: var(--accent); color: var(--bg); }
-  .wrap { max-width: 680px; margin: 0 auto; padding: 0 24px; }
-  body::before {
-    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
-    background: repeating-linear-gradient(0deg, transparent 0 2px, var(--scan) 2px 4px);
-  }
-  header { padding: 72px 0 0; position: relative; z-index: 1; }
-  /* One flex row: wordmark, links, theme switch — the same nav as the home
-     page, with the current page underlined. */
-  .brand {
-    font: 700 15px var(--mono); letter-spacing: .08em; color: var(--accent);
-    display: flex; align-items: center; gap: 18px;
-  }
-  .brand .mark { margin-right: auto; }
-  .brand .links { display: flex; align-items: center; gap: 18px; order: 1; }
-  .brand .theme { order: 2; }
-  /* github + discord as icons, after the theme switch at the far right */
-  .brand .social { display: flex; align-items: center; gap: 12px; order: 3; }
-  .brand .social a { display: flex; }
-  /* nowrap so a link never breaks across lines */
-  .brand a { color: var(--muted); text-decoration: none; font-weight: 400; white-space: nowrap; }
-  .brand a:hover { color: var(--text); }
-  .brand a.mark { color: var(--accent); font-weight: 700; display: flex; align-items: center; gap: 10px; }
-  .brand a.mark:hover { color: var(--text); }
-  .brand .mark img { height: 30px; width: auto; display: block; }
-  /* the page you're on */
-  .brand .links a.here { color: var(--text); border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
-  /* Phones: wordmark + switch on top, the page links as their own full row. */
-  @media (max-width: 620px) {
-    .brand { flex-wrap: wrap; gap: 14px 16px; font-size: 13.5px; }
-    .brand .theme, .brand .social { order: 0; }
-    .brand .links { flex: 1 0 100%; flex-wrap: wrap; gap: 8px 16px; }
-  }
-  h1 { font: 700 clamp(34px, 7vw, 52px)/1.05 var(--mono); letter-spacing: -.04em; margin: 36px 0 0; }
-  h1 em { font-style: normal; color: var(--accent); }
-  .sub { margin: 14px 0 0; }
+<!-- Generated by scripts/api-map/run.sh (render.py) — don't edit by hand. -->
 
-  nav.toc {
-    margin: 36px 0 0; padding: 16px 18px; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 10px;
-    font: 13px var(--mono); position: relative; z-index: 1;
-    display: flex; flex-wrap: wrap; gap: 8px 18px;
-  }
-  nav.toc a { color: var(--muted); text-decoration: none; }
-  nav.toc a:hover { color: var(--accent); }
-  nav.toc .toc-label, nav.toc .toc-group { display: none; }
+# API map
 
-  /* Wide screens: the same nav becomes a sticky rail in the left margin.
-     680px column + 24px wrap padding, so the rail's right edge sits 16px
-     off the column and never overlaps it. Below this it stays a chip row. */
-  @media (min-width: 1200px) {
-    nav.toc {
-      position: fixed; top: 96px; right: calc(50% + 356px);
-      width: 196px; margin: 0; padding: 14px 16px;
-      display: block; max-height: calc(100vh - 150px); overflow-y: auto;
-      scrollbar-width: thin;
-      /* hint that there's more below when the rail is taller than the screen */
-      mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
-    }
-    nav.toc .toc-label {
-      display: block; color: var(--muted); opacity: .55; font-size: 10px;
-      letter-spacing: .18em; text-transform: uppercase; margin-bottom: 10px;
-    }
-    nav.toc a {
-      display: block; padding: 3px 0 3px 10px; line-height: 1.5;
-      border-left: 1px solid transparent; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis;
-    }
-    nav.toc a:hover { border-left-color: var(--line); }
-    nav.toc .toc-group {
-      display: block; color: var(--muted); opacity: .45; font-size: 10px;
-      letter-spacing: .16em; text-transform: uppercase;
-      margin: 14px 0 4px; padding-left: 10px;
-    }
-    nav.toc .toc-group:first-of-type { margin-top: 4px; }
-    /* current section, set by the scroll spy below */
-    nav.toc a.on { color: var(--accent); border-left-color: var(--accent); }
-  }
+Every call on the backend's `app` next to its page twin on `tiny`, one row per operation. A page's `tiny.app.X` is the backend's `app.X`, and `tiny.win.X` (the page's own window) pairs with `app.win.X` (the main window); `app.window(id)` handles have the same window methods as `app.win` minus `open`, `windows` and `setHideOnClose`, and their `close()` takes no id.
 
-  /* install: the same OS-tabbed block as the home page. No entrance animation
-     here, so switching tabs is instant and needs no data-ready guard. */
-  .os-tabs { display: flex; gap: 6px; margin: 22px 0 0; }
-  .os-tab {
-    border: 1px solid var(--line); background: transparent; color: var(--muted);
-    font: 12px var(--mono); letter-spacing: .04em; padding: 7px 16px;
-    border-radius: 8px; cursor: pointer;
-  }
-  .os-tab { display: inline-flex; align-items: center; gap: 7px; }
-  .os-tab svg { width: 13px; height: 13px; fill: currentColor; flex: none; }
-  .os-tab:hover { color: var(--text); }
-  .os-tab.on { color: var(--accent); border-color: var(--accent); background: var(--wash); }
-  html[data-os="mac"] [data-os-panel="win"],
-  html[data-os="mac"] [data-os-panel="linux"] { display: none !important; }
-  html[data-os="win"] [data-os-panel="mac"],
-  html[data-os="win"] [data-os-panel="linux"] { display: none !important; }
-  html[data-os="linux"] [data-os-panel="mac"],
-  html[data-os="linux"] [data-os-panel="win"] { display: none !important; }
-  .install {
-    margin: 12px 0 0; display: flex; align-items: stretch;
-    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-    background: var(--panel);
-  }
-  .install code {
-    flex: 1; padding: 15px 18px; font: 13.5px/1.5 var(--mono); color: var(--text);
-    background: none; border: 0; border-radius: 0; overflow-x: auto; white-space: nowrap;
-  }
-  .install code b { color: var(--accent); font-weight: 400; }
-  .install button {
-    border: 0; border-left: 1px solid var(--line); background: transparent;
-    color: var(--muted); font: 12px var(--mono); padding: 0 18px; cursor: pointer;
-  }
-  .install button:hover { color: var(--accent); background: var(--wash); }
-  .platform { margin: 12px 2px 0; font: 12px var(--mono); color: var(--muted); letter-spacing: .04em; }
+Generated from `tiny.d.ts`, checked against the live `app` and `tiny` objects and line by line against the code — 128 same · 37 page only · 12 backend only · 3 args differ · 2 returns differ.
 
-  /* small tabs above a code block (tinyjs.json: commented vs plain) */
-  .vtabs { display: flex; gap: 6px; margin: 16px 0 -6px; }
-  .vtab {
-    border: 1px solid var(--line); background: transparent; color: var(--muted);
-    font: 11px var(--mono); letter-spacing: .04em; padding: 5px 12px;
-    border-radius: 7px; cursor: pointer;
-  }
-  .vtab:hover { color: var(--text); }
-  .vtab.on { color: var(--accent); border-color: var(--accent); background: var(--wash); }
+[bridge](#bridge) · [windows](#win) · [menus](#menu) · [tray](#tray) · [hotkeys](#hotkey) · [dialogs](#dialog) · [notifications](#notify) · [app](#app) · [system](#system) · [theme](#theme) · [clipboard](#clipboard) · [store](#store) · [audio](#audio) · [macos only](#macos) · [events](#events) · [deprecated](#deprecated)
 
-  section { position: relative; z-index: 1; margin-top: 52px; }
-  h2 {
-    font: 700 22px var(--mono); letter-spacing: -.02em;
-    border-top: 1px solid var(--line); padding-top: 26px;
-  }
-  h2 .tag { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 10px; }
-  h2 .tag a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
-  h2 .tag a:hover { border-color: var(--accent); }
-  section p { margin: 12px 0 0; }
-  section p.note { font-size: 15px; }
-  pre {
-    margin: 16px 0 0; padding: 15px 18px; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 10px;
-    font: 13px/1.65 var(--mono); overflow-x: auto;
-  }
-  pre b { color: var(--accent); font-weight: 400; }
-  pre i { color: var(--muted); font-style: normal; }
-  code {
-    font: 13px var(--mono); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 5px; padding: 1px 6px; white-space: nowrap;
-  }
-  /* Phones: long identifiers in prose (tiny.notify(title, body, { actions… })
-     ran up to 609px wide, and one nowrap token that big makes the browser
-     zoom the whole page out. Let them break instead. */
-  @media (max-width: 620px) {
-    code { white-space: normal; overflow-wrap: anywhere; }
-  }
-  /* the mascot signs the page off, centered above the footer rule —
-     identical on index, docs and changelog */
-  .mascot { margin-top: 96px; display: flex; justify-content: center; position: relative; z-index: 1; }
-  .mascot img { width: 128px; height: 128px; }
-  footer {
-    margin-top: 40px; padding: 28px 0 56px; border-top: 1px solid var(--line);
-    font: 12.5px var(--mono); color: var(--muted); display: flex; gap: 22px; flex-wrap: wrap;
-    position: relative; z-index: 1;
-  }
-  footer a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); }
-  footer a:hover { color: var(--accent); border-color: var(--accent); }
-  footer .by { margin-left: auto; }
-</style>
-<style>
-  .wrap { max-width: 1240px; }
-  .lede { color: var(--muted); max-width: 72ch; }
-  .tw { overflow-x: auto; margin: 0 -4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-  th { text-align: left; font-weight: 600; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
-  th:nth-child(3), td.note { width: 26%; }
-  td { vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-  code.sig { display: block; font-family: var(--mono); font-size: 12px; line-height: 1.5; background: none; border: 0; padding: 0; white-space: normal; color: var(--muted); }
-  code.sig + code.sig { margin-top: 4px; }
-  code.sig b { color: var(--text); font-weight: 600; }
-  .ret { color: var(--muted); }
-  td.none, .none { color: var(--muted); opacity: .5; }
-  .doc { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.45; }
-  .alias, .flag { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
-  .flag { color: var(--accent); }
-  .badge { display: inline-block; font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
-  .b-diff, .b-ret { color: var(--accent); border-color: var(--accent); background: var(--wash); }
-  tr.st-same td:first-child, tr.st-same td:nth-child(2) { }
-  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; font-size: 13px; color: var(--muted); align-items: center; }
-  .filters label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
-  body.hide-same tr.st-same { display: none; }
-  .apitoc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin: 14px 0 0; }
-  .apitoc a { color: var(--accent); text-decoration: none; }
-  @media (max-width: 720px) { table { table-layout: auto; } th:nth-child(3), td.note { width: auto; } }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="brand"><a class="mark" href="./index.html"><img src="images/rakali-badge.svg" alt="" width="30" height="30">tinyjs</a> <span class="links"><a href="./docs.html">docs</a><a href="./changelog.html">changelog</a></span><button class="theme" onclick="cycleTheme()" title="Theme — click to cycle auto / light / dark" aria-label="Change theme"></button></div>
-    <h1>api <em>map</em></h1>
-    <p class="sub lede">Every call on the backend's <code>app</code> next to its page twin on
-    <code>tiny</code>, one row per operation. A page's <code>tiny.app.X</code> is the backend's
-    <code>app.X</code>, and <code>tiny.win.X</code> (the page's own window) pairs with
-    <code>app.win.X</code> (the main window); <code>app.window(id)</code> handles have the same
-    window methods as <code>app.win</code> minus <code>open</code>, <code>windows</code> and
-    <code>setHideOnClose</code>, and their <code>close()</code> takes no id.
-    Generated from <code>tiny.d.ts</code>, checked against the live <code>app</code> and
-    <code>tiny</code> objects and line by line against the code — 128 same · 37 page only · 12 backend only · 3 args differ · 2 returns differ.</p>
-    <nav class="apitoc"><a href="#bridge">bridge</a><a href="#win">windows</a><a href="#menu">menus</a><a href="#tray">tray</a><a href="#hotkey">hotkeys</a><a href="#dialog">dialogs</a><a href="#notify">notifications</a><a href="#app">app</a><a href="#system">system</a><a href="#theme">theme</a><a href="#clipboard">clipboard</a><a href="#store">store</a><a href="#audio">audio</a><a href="#macos">macos only</a><a href="#events">events</a><a href="#deprecated">deprecated</a></nav>
-    <div class="filters"><label><input type="checkbox" onchange="document.body.classList.toggle('hide-same', this.checked)"> hide rows that match</label>
-    <span>· "returns differ" mostly means the page resolves <code>true</code> where the backend returns nothing</span></div>
-  </header>
-<section id="bridge"><h2>Bridge</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+<label class="api-map-filter"><input type="checkbox" id="hide-same"> hide rows that match</label>
+<span class="api-map-hint">"returns differ" mostly means the page resolves <code>true</code> where the backend returns nothing</span>
+
+## Bridge {#bridge}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.api.call</b>(method: string, params?: unknown) <span class="ret">→ Promise&lt;any&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">Call a backend api method; resolves with its return value.</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.api.off</b>(event: string, fn: (data: any) =&gt; void) <span class="ret">→ void</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">unhook a handler passed to on() by reference (the tiny.*.on sugar wraps yours, so keep the function those return instead)</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.api.on</b>(event: string, fn: (data: any) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">Subscribe to backend push events (app.push / broadcasts).</div></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.debug</b>(…)</code><div class="flag">not in tiny.d.ts</div></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.done</b>: Promise&lt;{ exit_status: number; }&gt;</code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span><div class="doc">resolves when the window process ends</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.fetch</b>(url: string, init?: TinyFetchInit) <span class="ret">→ Promise&lt;Response&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">Like window.fetch, but the request runs in the backend (a native process) — no CORS, CSP, or mixed-content limits, so the page can reach any origin.</div></td></tr>
-<tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.fileURL</b>(path: string) <span class="ret">→ string</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">A correct file:// URL for a disk path on BOTH platforms — use for &lt;audio&gt;/&lt;img&gt;/&lt;video&gt; src of backend-provided paths.</div></td></tr>
-<tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.log</b>(msg: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
+<tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.fileURL</b>(path: string) <span class="ret">→ string</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">A correct file:// URL for a disk path on every platform — use for &lt;audio&gt;/&lt;img&gt;/&lt;video&gt; src of backend-provided paths.</div></td></tr>
+<tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.log</b>(msg: unknown) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">print to the backend's console (the tinyjs dev terminal); any JSON value</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.proxyURL</b>(url: string) <span class="ret">→ string</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">A same-app URL (tiny-media://…) that streams a remote http(s) resource through the native layer with permissive CORS.</div></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.push</b>(event: string, data?: unknown) <span class="ret">→ void</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span><div class="doc">push an event to EVERY window (tiny.api.on) — app.win.push reaches main only.</div></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.reload</b>(newHtml?: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.spawnHidden</b>(args: string[], opts?: any) <span class="ret">→ any</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span><div class="doc">tjs.spawn without the console window a GUI app gets on Windows</div></td></tr>
-</tbody></table></div></section>
-<section id="win"><h2>Windows</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Windows {#win}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.win.center</b>() <span class="ret">→ void</span></code><div class="alias">also <code>app.center()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.center</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.win.close</b>(id?: string) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.win.close</b>(id?: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">close a window; no id = this window ('main' quits the app)</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.win.dragOut</b>(opts: TinyDragOutOptions) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">drag files out of the window (same as startDrag({ files }))</div></td></tr>
@@ -325,7 +72,7 @@
 <tr class="st-same"><td><code class="sig"><b>app.win.setSize</b>(width: number, height: number, opts?: TinySizeOptions) <span class="ret">→ void</span></code><div class="alias">also <code>app.setSize()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.setSize</b>(width: number, height: number, opts?: TinySizeOptions) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">resize the PAGE's box (decorations excluded), top-left anchored — the same units getState().width/height reports back</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.win.setTitle</b>(title: string) <span class="ret">→ void</span></code><div class="alias">also <code>app.setTitle()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.setTitle</b>(title: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.win.setZoom</b>(factor: number) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.win.setZoom</b>(factor: number) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Native page zoom, 0.25–5 — the WEBVIEW's own (WKWebView pageZoom, WebView2 ZoomFactor, webkit_web_view_set_zoom_level), so it renders crisp and the page keeps laying out in ordinary CSS px with fewer of them.</div></td></tr>
-<tr class="st-same"><td><code class="sig"><b>app.win.share</b>(opts?: TinyShareOptions) <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.win.share</b>(opts?: TinyShareOptions) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">native share sheet — anchor at the click's clientX/clientY</div></td></tr>
+<tr class="st-same"><td><code class="sig"><b>app.win.share</b>(opts?: TinyShareOptions) <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.win.share</b>(opts?: TinyShareOptions) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">native share sheet — anchor at the click's clientX/clientY.</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.win.show</b>(opts?: TinyShowOptions) <span class="ret">→ void</span></code><div class="alias">also <code>app.show()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.show</b>(opts?: TinyShowOptions) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">show({ activate: false }) surfaces the window without stealing focus</div></td></tr>
 <tr class="st-diff"><td><code class="sig"><b>app.win.startDrag</b>() <span class="ret">→ void</span></code><div class="alias">also <code>app.startDrag()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.startDrag</b>(opts?: TinyDragOutOptions) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-diff">args differ</span><div class="doc">No args: drag the window (frameless chrome).</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.win.startResize</b>(edge?: TinyResizeEdge) <span class="ret">→ void</span></code><div class="alias">also <code>app.startResize()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.startResize</b>(edge?: TinyResizeEdge) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">begin a resize from an edge (frameless windows' own grips)</div></td></tr>
@@ -333,28 +80,40 @@
 <tr class="st-same"><td><code class="sig"><b>app.win.windows</b>() <span class="ret">→ Promise&lt;string[]&gt;</span></code><div class="alias">also <code>app.windows()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.windows</b>() <span class="ret">→ Promise&lt;string[]&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.win.zoom</b>() <span class="ret">→ void</span></code><div class="alias">also <code>app.zoom()</code> (main window)</div></td><td><code class="sig"><b>tiny.win.zoom</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.window</b>(id: string) <span class="ret">→ TinyWindowHandle</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span></td></tr>
-</tbody></table></div></section>
-<section id="menu"><h2>Menus</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Menus {#menu}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.menu.get</b>(id: string) <span class="ret">→ Promise&lt;TinyMenuItemState&gt;</span></code></td><td><code class="sig"><b>tiny.menu.get</b>(id: string) <span class="ret">→ Promise&lt;TinyMenuItemState&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.menu.on</b>(fn: (id: string) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">With `"about": "menu"` in tinyjs.json, the macOS About menu item fires here with the reserved id 'about' instead of showing the standard panel.</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.menu.onContext</b>(fn: (id: string) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.menu.set</b>(menus: TinyMenu[]) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.menu.set</b>(menus: TinyMenu[]) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">The APP menu: every window shows it, including windows opened later.</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.menu.setContext</b>(items: TinyMenuItem[] | null) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.menu.setContext</b>(items: TinyMenuItem[] | null) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">replace the right-click menu; null restores WebKit's default</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.menu.update</b>(id: string, patch?: { label?: string; checked?: boolean; enabled?: boolean; }) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.menu.update</b>(id: string, patch?: { label?: string; checked?: boolean; enabled?: boolean; }) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">patch a live item without redeclaring the menu — every window's copy of the id moves.</div></td></tr>
-</tbody></table></div></section>
-<section id="tray"><h2>Tray</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Tray {#tray}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.tray.on</b>(fn: (id: string) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.tray.onClick</b>(fn: () =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
-<tr class="st-same"><td><code class="sig"><b>app.tray.position</b>() <span class="ret">→ Promise&lt;{ x: number; y: number; width: number; height: number; } | null&gt;</span></code></td><td><code class="sig"><b>tiny.tray.position</b>() <span class="ret">→ Promise&lt;{ x: number; y: number; width: number; height: number; } | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">the tray icon's rect { x, y, width, height } (top-left) | null</div></td></tr>
+<tr class="st-same"><td><code class="sig"><b>app.tray.position</b>() <span class="ret">→ Promise&lt;{ x: number; y: number; width: number; height: number; } | null&gt;</span></code></td><td><code class="sig"><b>tiny.tray.position</b>() <span class="ret">→ Promise&lt;{ x: number; y: number; width: number; height: number; } | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">the tray icon's rect { x, y, width, height } (top-left) | null.</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.tray.remove</b>() <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.tray.remove</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.tray.set</b>(spec: TinyTraySpec) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.tray.set</b>(spec: TinyTraySpec) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
-</tbody></table></div></section>
-<section id="hotkey"><h2>Hotkeys</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Hotkeys {#hotkey}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.hotkey.on</b>(fn: (id: string) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
-<tr class="st-same"><td><code class="sig"><b>app.hotkey.register</b>(id: string, combo: string) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.hotkey.register</b>(id: string, combo: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">combo like 'cmd+shift+k'; fires system-wide</div></td></tr>
+<tr class="st-same"><td><code class="sig"><b>app.hotkey.register</b>(id: string, combo: string) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.hotkey.register</b>(id: string, combo: string) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">true once the system has the hotkey; false if the combo isn't valid or another app holds it (the reason is logged).</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.hotkey.unregister</b>(id: string) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.hotkey.unregister</b>(id: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
-</tbody></table></div></section>
-<section id="dialog"><h2>Dialogs</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Dialogs {#dialog}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.dialog.alert</b>(message: string, opts?: string | { detail?: string; ok?: string; }) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">`alert`/`confirm`/`prompt` are native panels with the message as the headline.</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.dialog.confirm</b>(message: string, opts?: string | { detail?: string; ok?: string; cancel?: string; }) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.dialog.openFile</b>(opts?: { types?: string[]; }) <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">`types`: extensions without dots (`['md', 'txt']`) limiting what's choosable — allowedContentTypes / COMDLG_FILTERSPEC / GtkFileFilter.</div></td></tr>
@@ -362,16 +121,22 @@
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.dialog.pickFolder</b>() <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.dialog.prompt</b>(message: string, opts?: { default?: string; ok?: string; cancel?: string; }) <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.dialog.saveFile</b>(opts?: { types?: string[]; name?: string; }) <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
-</tbody></table></div></section>
-<section id="notify"><h2>Notifications</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Notifications {#notify}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.notify</b>(title: string, body?: string, opts?: TinyNotifyOptions) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.notify</b>(title: string, body?: string, opts?: TinyNotifyOptions) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Desktop notification.</div></td></tr>
-</tbody></table></div></section>
-<section id="app"><h2>App</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
-<tr class="st-same"><td><code class="sig"><b>app.attention</b>(opts?: { critical?: boolean; }) <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.app.attention</b>(opts?: { critical?: boolean; }) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">bounce / flash / urgency-hint until activated; critical: until the user acts</div></td></tr>
+</tbody></table></div>
+
+## App {#app}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+<tr class="st-same"><td><code class="sig"><b>app.attention</b>(opts?: { critical?: boolean; }) <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.app.attention</b>(opts?: { critical?: boolean; }) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">ask for the user's attention: macOS bounces the Dock icon once (critical: until the app is activated), Windows flashes the taskbar button (critical: longer), Linux sets the urgency hint (X11 only; critical makes no diffe</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.authenticate</b>(reason?: string) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.app.authenticate</b>(reason?: string) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Touch ID (or the account-password sheet); false covers cancel</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.badge</b>(text: string) <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.app.badge</b>(text: string) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">'' clears the badge</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.beep</b>() <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.app.beep</b>() <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">the system alert beep — the one portable sound</div></td></tr>
-<tr class="st-same"><td><code class="sig"><b>app.captureScreen</b>(screenId?: number) <span class="ret">→ Promise&lt;TinyCapture&gt;</span></code></td><td><code class="sig"><b>tiny.app.captureScreen</b>(screenId?: number) <span class="ret">→ Promise&lt;TinyCapture&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">screenshot a display (id from screens(); default primary) — png in the temp dir, caller owns the file; needs the 'screen' permission and macOS 14+, rejects with the reason otherwise</div></td></tr>
+<tr class="st-same"><td><code class="sig"><b>app.captureScreen</b>(screenId?: number) <span class="ret">→ Promise&lt;TinyCapture&gt;</span></code></td><td><code class="sig"><b>tiny.app.captureScreen</b>(screenId?: number) <span class="ret">→ Promise&lt;TinyCapture&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">screenshot a display (id from screens(); default: the first display the OS lists, usually the main one — Linux always captures the whole desktop and ignores the id) — png in the temp dir, caller owns the file; needs the </div></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.cookies.get</b>(filter?: { url?: string; name?: string; domain?: string; path?: string; }) <span class="ret">→ Promise&lt;TinyCookie[]&gt;</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span><div class="doc">url keeps what a request to it would carry (domain, path, secure).</div></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.cookies.remove</b>(target: { name: string; domain: string; path?: string; } | { url: string; name?: string; }) <span class="ret">→ Promise&lt;number&gt;</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span><div class="doc">one cookie by name + domain (+ path, default '/') — e.g.</div></td></tr>
 <tr class="st-back"><td><code class="sig"><b>app.cookies.set</b>(cookie: TinyCookieInit) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="none">—</td><td class="note"><span class="badge b-back">backend only</span><div class="doc">replaces any cookie with the same name/domain/path</div></td></tr>
@@ -416,14 +181,17 @@
 <tr class="st-same"><td><code class="sig"><b>app.shell.open</b>(target: string) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td><code class="sig"><b>tiny.app.shell.open</b>(target: string) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">open a URL (any scheme) or file path in the default app</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.shell.reveal</b>(path: string) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td><code class="sig"><b>tiny.app.shell.reveal</b>(path: string) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">show the file in Finder</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.shell.trash</b>(path: string) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td><code class="sig"><b>tiny.app.shell.trash</b>(path: string) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">move to the Trash (recoverable — prefer over deleting user files)</div></td></tr>
-<tr class="st-same"><td><code class="sig"><b>app.spotlight</b>(query: string) <span class="ret">→ Promise&lt;string[]&gt;</span></code></td><td><code class="sig"><b>tiny.app.spotlight</b>(query: string) <span class="ret">→ Promise&lt;string[]&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">find files by name/content (Spotlight) — up to 100 paths</div></td></tr>
+<tr class="st-same"><td><code class="sig"><b>app.spotlight</b>(query: string) <span class="ret">→ Promise&lt;string[]&gt;</span></code></td><td><code class="sig"><b>tiny.app.spotlight</b>(query: string) <span class="ret">→ Promise&lt;string[]&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">find files — up to 100 paths.</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.stopSpeaking</b>() <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.app.stopSpeaking</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.thumbnail</b>(path: string, size?: number) <span class="ret">→ Promise&lt;TinyThumbnail&gt;</span></code></td><td><code class="sig"><b>tiny.app.thumbnail</b>(path: string, size?: number) <span class="ret">→ Promise&lt;TinyThumbnail&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">thumbnail png for ANY path — a content preview where Quick Look has a renderer (images, video, PDF, source files), the document/app/folder ICON otherwise, so this never fails on file type alone (macOS and Windows; Linux </div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.update.check</b>() <span class="ret">→ Promise&lt;{ available: boolean; current: string; latest: string | null; notes: string | null; }&gt;</span></code></td><td><code class="sig"><b>tiny.app.update.check</b>() <span class="ret">→ Promise&lt;{ available: boolean; current: string; latest: string | null; notes: string | null; }&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">notes = release notes from the manifest ("tinyjs publish --notes")</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.update.install</b>() <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.app.update.install</b>() <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">downloads, verifies, swaps the bundle and relaunches</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.voices</b>() <span class="ret">→ Promise&lt;TinyVoice[]&gt;</span></code></td><td><code class="sig"><b>tiny.app.voices</b>() <span class="ret">→ Promise&lt;TinyVoice[]&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
-</tbody></table></div></section>
-<section id="system"><h2>System</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## System {#system}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.system.architecture</b>() <span class="ret">→ Promise&lt;string&gt;</span></code></td><td><code class="sig"><b>tiny.system.architecture</b>() <span class="ret">→ Promise&lt;string&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.system.battery</b>() <span class="ret">→ Promise&lt;TinyBattery | null&gt;</span></code></td><td><code class="sig"><b>tiny.system.battery</b>() <span class="ret">→ Promise&lt;TinyBattery | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">live machine state</div></td></tr>
 <tr class="st-ret"><td><code class="sig"><b>app.system.capabilities</b>() <span class="ret">→ Promise&lt;Record&lt;string, string | boolean&gt;&gt;</span></code></td><td><code class="sig"><b>tiny.system.capabilities</b>() <span class="ret">→ Promise&lt;Record&lt;string, string | boolean&gt; &amp; { api?: { gated: boolean; denied: string[]; }; }&gt;</span></code></td><td class="note"><span class="badge b-ret">returns differ</span><div class="doc">What this machine can actually do — anything ABSENT is supported.</div></td></tr>
@@ -438,26 +206,38 @@
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.system.promptMissing</b>(ids?: string[] | null, opts?: { title?: string; ok?: string; cancel?: string; }) <span class="ret">→ Promise&lt;{ missing: TinyRequirement[]; copied: boolean; }&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.system.requirements</b>(ids?: string[] | null, opts?: { refresh?: boolean; }) <span class="ret">→ Promise&lt;TinyRequirement[]&gt;</span></code></td><td><code class="sig"><b>tiny.system.requirements</b>(ids?: string[] | null, opts?: { refresh?: boolean; }) <span class="ret">→ Promise&lt;TinyRequirement[]&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.system.wifi</b>() <span class="ret">→ Promise&lt;TinyWifi | null&gt;</span></code></td><td><code class="sig"><b>tiny.system.wifi</b>() <span class="ret">→ Promise&lt;TinyWifi | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
-</tbody></table></div></section>
-<section id="theme"><h2>Theme</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Theme {#theme}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.theme.get</b>() <span class="ret">→ Promise&lt;{ dark: boolean; } | null&gt;</span></code></td><td><code class="sig"><b>tiny.theme.get</b>() <span class="ret">→ Promise&lt;{ dark: boolean; } | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.theme.on</b>(fn: (dark: boolean) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
-</tbody></table></div></section>
-<section id="clipboard"><h2>Clipboard</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Clipboard {#clipboard}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.clipboard.changeCount</b>() <span class="ret">→ Promise&lt;number&gt;</span></code></td><td><code class="sig"><b>tiny.clipboard.changeCount</b>() <span class="ret">→ Promise&lt;number&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.clipboard.onChange</b>(fn: (info: { changeCount: number; self: boolean; }) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">after watch(); self = our own write() caused the change</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.clipboard.read</b>() <span class="ret">→ Promise&lt;TinyClipboardData&gt;</span></code></td><td><code class="sig"><b>tiny.clipboard.read</b>() <span class="ret">→ Promise&lt;TinyClipboardData&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.clipboard.unwatch</b>() <span class="ret">→ true</span></code></td><td><code class="sig"><b>tiny.clipboard.unwatch</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.clipboard.watch</b>(intervalMs?: number) <span class="ret">→ true</span></code></td><td><code class="sig"><b>tiny.clipboard.watch</b>(intervalMs?: number) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">poll for changes every intervalMs (default 500)</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.clipboard.write</b>(data: TinyClipboardWrite) <span class="ret">→ boolean</span></code></td><td><code class="sig"><b>tiny.clipboard.write</b>(data: TinyClipboardWrite) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
-</tbody></table></div></section>
-<section id="store"><h2>Store</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Store {#store}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.store.all</b>() <span class="ret">→ Promise&lt;Record&lt;string, any&gt;&gt;</span></code></td><td><code class="sig"><b>tiny.store.all</b>() <span class="ret">→ Promise&lt;Record&lt;string, any&gt;&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.store.delete</b>(key: string) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.store.delete</b>(key: string) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Same result and failure rules as set().</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.store.get</b>(key: string) <span class="ret">→ Promise&lt;any&gt;</span></code></td><td><code class="sig"><b>tiny.store.get</b>(key: string) <span class="ret">→ Promise&lt;any&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.store.set</b>(key: string, value: unknown) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td><code class="sig"><b>tiny.store.set</b>(key: string, value: unknown) <span class="ret">→ Promise&lt;boolean&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Resolves true once on disk.</div></td></tr>
-</tbody></table></div></section>
-<section id="audio"><h2>Audio</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Audio {#audio}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.audio.balance</b>(v: number) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.audio.balance</b>(v: number) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Stereo balance -1 (left) ..</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.audio.clear</b>() <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.audio.clear</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">no filters, balance back to centre</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.audio.filter</b>(index: number, patch: Partial&lt;TinyAudioFilter&gt;) <span class="ret">→ void</span></code></td><td><code class="sig"><b>tiny.audio.filter</b>(index: number, patch: Partial&lt;TinyAudioFilter&gt;) <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">Retune ONE filter in place — no rebuild, no gap; what a slider drag should call</div></td></tr>
@@ -472,8 +252,11 @@
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.audioTap.on</b>(fn: (chunk: { pcm: string; sampleRate: number; channels: number; frames: number; t: number; }) =&gt; void) <span class="ret">→ () =&gt; void</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">Register a chunk handler.</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.audioTap.start</b>(opts?: { scope?: "app" | "system"; excludeSelf?: boolean; interval?: number; }) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span><div class="doc">Start tapping.</div></td></tr>
 <tr class="st-page"><td class="none">—</td><td><code class="sig"><b>tiny.audioTap.stop</b>() <span class="ret">→ Promise&lt;void&gt;</span></code></td><td class="note"><span class="badge b-page">page only</span></td></tr>
-</tbody></table></div></section>
-<section id="macos"><h2>macOS only</h2><div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## macOS only {#macos}
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig"><b>app.macos.ai.availability</b>() <span class="ret">→ Promise&lt;TinyAiAvailability&gt;</span></code></td><td><code class="sig"><b>tiny.macos.ai.availability</b>() <span class="ret">→ Promise&lt;TinyAiAvailability&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-diff"><td><code class="sig"><b>app.macos.ai.generate</b>(prompt: string, opts?: { instructions?: string; }) <span class="ret">→ Promise&lt;string&gt;</span></code><code class="sig"><b>app.macos.ai.generate</b>(prompt: string, opts: { instructions?: string; tools: TinyAiTool[]; }) <span class="ret">→ Promise&lt;{ text: string; calls: TinyAiCall[]; }&gt;</span></code></td><td><code class="sig"><b>tiny.macos.ai.generate</b>(prompt: string, opts?: { instructions?: string; }) <span class="ret">→ Promise&lt;string&gt;</span></code></td><td class="note"><span class="badge b-diff">args differ</span><div class="doc">offline, no API key.</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.macos.applescript</b>(source: string) <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td><code class="sig"><b>tiny.macos.applescript</b>(source: string) <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">run AppleScript in-process (no osascript spawn; 'automation' TCC); resolves the result as a string, null if it isn't text; rejects with the script error message</div></td></tr>
@@ -484,10 +267,13 @@
 <tr class="st-same"><td><code class="sig"><b>app.macos.recorder.start</b>(opts: { path: string; screenId?: number; }) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td><code class="sig"><b>tiny.macos.recorder.start</b>(opts: { path: string; screenId?: number; }) <span class="ret">→ Promise&lt;true&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">resolves once capture is running; needs the 'screen' permission + macOS 14, rejects with the reason otherwise</div></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.macos.recorder.stop</b>() <span class="ret">→ Promise&lt;TinyRecording&gt;</span></code></td><td><code class="sig"><b>tiny.macos.recorder.stop</b>() <span class="ret">→ Promise&lt;TinyRecording&gt;</span></code></td><td class="note"><span class="badge b-same">same</span></td></tr>
 <tr class="st-same"><td><code class="sig"><b>app.macos.selectedText</b>() <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td><code class="sig"><b>tiny.macos.selectedText</b>() <span class="ret">→ Promise&lt;string | null&gt;</span></code></td><td class="note"><span class="badge b-same">same</span><div class="doc">text selected in the frontmost app (Accessibility); null if none</div></td></tr>
-</tbody></table></div></section>
-<section id="events"><h2>Events</h2>
-<p class="lede">The backend hooks are exports of your backend module, wired once at startup; the page subscribes at runtime and gets back an unsubscribe function.</p>
-<div class="tw"><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Events {#events}
+
+The backend hooks are exports of your backend module, wired once at startup; the page subscribes at runtime and gets back an unsubscribe function.
+
+<div class="api-map-table" v-pre><table><thead><tr><th>backend <code>app</code></th><th>page <code>tiny</code></th><th>notes</th></tr></thead><tbody>
 <tr class="st-same"><td><code class="sig">export function <b>onMenu</b>(id, app)</code></td><td><code class="sig">tiny.menu.on(fn)</code></td><td class="note">menu bar click</td></tr>
 <tr class="st-same"><td><code class="sig">export function <b>onContextMenu</b>(id, app)</code></td><td><code class="sig">tiny.menu.onContext(fn)</code></td><td class="note">custom right-click menu click</td></tr>
 <tr class="st-same"><td><code class="sig">export function <b>onTray</b>(id | null, app)</code></td><td><code class="sig">tiny.tray.on(fn) / tiny.tray.onClick(fn)</code></td><td class="note">tray menu item / bare icon click (one hook on the backend, two on the page)</td></tr>
@@ -508,10 +294,13 @@
 <tr class="st-same"><td><code class="sig">export function <b>onNavigate</b>(info, app)</code></td><td><code class="sig">tiny.api.on('navigate', fn)</code></td><td class="note">pages hear the lifecycle (start/commit/finish/fail/crash); only the backend answers the policy ask</td></tr>
 <tr class="st-same"><td><code class="sig">export function <b>onDownload</b>(info, app)</code></td><td><code class="sig">tiny.api.on('download', fn)</code></td><td class="note">pages hear progress; only the backend answers the policy ask</td></tr>
 <tr class="st-same"><td><code class="sig">export function <b>onWindowOpen</b>(info, app)</code></td><td><code class="sig">tiny.api.on('popup', fn)</code></td><td class="note">backend decides; the page hears 'popup' (no kind field)</td></tr>
-</tbody></table></div></section>
-<section id="deprecated"><h2>Deprecated backend names</h2>
-<p class="lede">Still work, log a one-line warning the first time each is used, and will be removed in a future release.</p>
-<div class="tw"><table><thead><tr><th>old backend name</th><th>use instead</th></tr></thead><tbody>
+</tbody></table></div>
+
+## Deprecated backend names {#deprecated}
+
+Still work, log a one-line warning the first time each is used, and will be removed in a future release.
+
+<div class="api-map-table" v-pre><table><thead><tr><th>old backend name</th><th>use instead</th></tr></thead><tbody>
 <tr class="st-dep"><td><code class="sig"><b>app.getMenuItem</b>(id: string) <span class="ret">→ Promise&lt;TinyMenuItemState&gt;</span></code></td><td class="note">use app.menu.get()</td></tr>
 <tr class="st-dep"><td><code class="sig"><b>app.getWinState</b>() <span class="ret">→ Promise&lt;TinyWinState | null&gt;</span></code></td><td class="note">use app.win.getState()</td></tr>
 <tr class="st-dep"><td><code class="sig"><b>app.openWindow</b>(id: string, opts?: TinyOpenWindowOptions) <span class="ret">→ void</span></code></td><td class="note">use app.win.open()</td></tr>
@@ -528,19 +317,4 @@
 <tr class="st-dep"><td><code class="sig"><b>app.notify</b>({ title, body, …opts })</code></td><td class="note">app.notify(title, body, opts)</td></tr>
 <tr class="st-dep"><td><code class="sig"><b>app.info.version</b>, <b>app.paths.data</b>, …</code></td><td class="note">(await app.info()).version, (await app.paths()).data</td></tr>
 <tr class="st-dep"><td><code class="sig"><b>app.presence</b>(anything but 'normal' | 'menubar')</code></td><td class="note">will throw, as the page call does</td></tr>
-</tbody></table></div></section>
-</div>
-<script>
-function cycleTheme() {
-  var el = document.documentElement;
-  var order = ['auto', 'light', 'dark'];
-  var next = order[(order.indexOf(el.dataset.theme || 'auto') + 1) % 3];
-  if (next === 'auto') delete el.dataset.theme; else el.dataset.theme = next;
-  try {
-    if (next === 'auto') localStorage.removeItem('tinyjs-theme');
-    else localStorage.setItem('tinyjs-theme', next);
-  } catch (e) {}
-}
-</script>
-</body>
-</html>
+</tbody></table></div>
