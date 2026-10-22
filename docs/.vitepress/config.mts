@@ -47,6 +47,7 @@ export default defineConfig({
           items: [
             { text: 'introduction', link: '/docs/' },
             { text: 'install', link: '/docs/install' },
+            { text: 'your first app', link: '/docs/first-app' },
             { text: 'cli', link: '/docs/cli' },
             { text: 'doctor', link: '/docs/doctor' },
             { text: 'tinyjs.json', link: '/docs/config' },

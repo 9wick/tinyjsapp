@@ -29,4 +29,4 @@ curl -fsSL https://tinyjs.app/install | sh
 x86_64 + arm64 · same script as macOS, detects Linux · glibc 2.35+ (Ubuntu 22.04 / Debian 12 and newer) · needs libwebkit2gtk-4.1-0 (`sudo apt install libwebkit2gtk-4.1-0` · `sudo zypper install libwebkit2gtk-4_1-0`) · MIT
 :::
 
-Then `tinyjs new myapp && cd myapp && tinyjs dev` — a window opens with hot reload. The CLI updates itself with `tinyjs update`.
+Then `tinyjs new myapp && cd myapp && tinyjs dev` — a window opens with hot reload. The CLI updates itself with `tinyjs update`. Next: [your first app](./first-app).
