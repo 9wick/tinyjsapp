@@ -12,7 +12,10 @@ Releases are git tags (`vX.Y.Z` on main); a tag push builds macOS + Windows
 (the site's /changelog includes it). If the API changed (tiny.d.ts, bridge.js's
 `app`, tiny.js), update the matching page in docs/docs/ and regenerate
 docs/docs/api-map.md with
-`scripts/api-map/run.sh` — never hand-edit it. When TJS_VERSION changes
+`scripts/api-map/run.sh` — never hand-edit it. The site's /llms.txt,
+/llms-full.txt and /docs/<page>.md copies are written at build time by
+docs/.vitepress/llms.ts from the sidebar in config.mts — a new docs page
+reaches them by being in the sidebar. When TJS_VERSION changes
 (setup.sh, setup.ps1, release.yml), regenerate template/types/tjs.d.ts
 with `python3 scripts/txiki-types/update.py` — never hand-edit it either.
 Docs pages can use

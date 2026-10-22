@@ -38,3 +38,7 @@ tiny.api.call('greet', { name: 'world' }).then((message) => {
 ```
 
 Then build a real one: [your first app](./first-app) is a notebook that saves to disk, step by step. For a Vite + React, Vue or Svelte app, use [`tinyjs new myapp --template`](./cli#new).
+
+## with a coding agent {#agents}
+
+Every new project includes a tinyjs skill for coding agents, in `.claude/skills/tinyjs/` and `.agents/skills/tinyjs/`, along with the TypeScript types in `types/`. An agent working in the project picks them up on its own. To point any other AI tool at these docs, give it [`tinyjs.app/llms.txt`](/llms.txt){target="_self"} (an index linking a markdown copy of every page) or [`tinyjs.app/llms-full.txt`](/llms-full.txt){target="_self"} (all of them in one file).

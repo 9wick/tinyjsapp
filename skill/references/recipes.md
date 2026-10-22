@@ -118,12 +118,18 @@ the site's own JavaScript holds an RPC channel to a backend with full
 filesystem and process access — strictly worse than what Electron gives you.
 `"api"` is enforced in the backend (the page-side object is attacker-editable
 on a hostile origin, so page-side gating is decoration). Shapes:
-`"api": "wrapper"` (a sane preset), `{ "disable": ["*"], "enable": [...] }`
-(**enable wins over disable**), or per-origin keyholes as above — keyed off
+`"api": "wrapper"` (a sane preset), `"none"` (also what `false`/`""`
+mean), a list of allowed calls, `{ "disable": ["*"], "enable": [...] }`
+(**enable wins over disable**; `{ "enable": [...] }` alone means only
+those), or per-origin keyholes as above — keyed off
 the calling frame's origin as the ENGINE reports it, not as the page claims.
 With `origins` present, an origin matching no key gets nothing, so a redirect
 to an unlisted domain inherits no access. Denied calls reject with a readable
 reason, and `capabilities().api.denied` lets the page hide UI it can't use.
+Events are gated too: a page the app didn't ship hears tinyjs's own events
+only as their calls allow (`menu.*`, `win.*`… — the `"wrapper"` preset
+keeps menu, tray, window, theme and notification events), and an event
+your backend pushes reaches it only if the rules grant `event.<name>`.
 
 What a wrapped site gets that a local-page app never needed:
 - `alert`/`confirm`/`prompt` → native panels headlined by the page's origin.

@@ -200,7 +200,9 @@ New projects also get a tinyjs reference skill for coding agents
 in when the project is made, so after updating tinyjs, run
 `tinyjs update-project` in the project to bring them up to date
 (`tinyjs doctor` says when they're behind). It overwrites edits to those
-files, and adds the skill to a project that doesn't have one.
+files, and adds the skill to a project that doesn't have one. For any
+other AI tool, the docs are at https://tinyjs.app/llms.txt (an index of
+markdown pages) and https://tinyjs.app/llms-full.txt (all in one file).
 
 A project is just:
 

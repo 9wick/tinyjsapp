@@ -17,7 +17,7 @@ app's own pages and the origins `"api"` trusts: `tiny.proxyURL`'s
 `tiny-media://` proxy (cross-origin http(s) reads, macOS + Linux;
 `media.proxy`) and mic/camera (`media.microphone` / `media.camera`).
 
-Current release: 0.50.1. App floors: macOS 15+ — a default build opens only
+Current release: 0.63.0. App floors: macOS 15+ — a default build opens only
 on the build Mac's CPU (`build --arch arm64|x86_64` or `--universal` for the
 other); Windows 10/11 (WebView2), x64 or arm64 per the tinyjs install; Linux glibc 2.35+ (Ubuntu 22.04 / Debian 12
 / Mint 21 and up).
@@ -32,6 +32,12 @@ other); Windows 10/11 (WebView2), x64 or arm64 per the tinyjs install; Linux gli
 | shipping: build/sign/notarize, per-OS packaging, auto-update manifests | references/release.md |
 | porting from Electron (API map, what won't work) | references/electron-migration.md |
 | deciding where code runs, wire/binary payloads, throttling, memory | references/performance.md |
+
+Exact signatures are in the project's `types/tiny.d.ts` (page and `app`)
+and `types/tjs.d.ts` (txiki.js). For detail the references leave out, the
+docs are online as markdown: https://tinyjs.app/llms.txt indexes every
+page (`https://tinyjs.app/docs/<page>.md`), and
+https://tinyjs.app/llms-full.txt is all of them in one file.
 
 ## Commands
 
@@ -108,7 +114,8 @@ tinyjs.json          { name, title, size, id, version, icon?,
                        inject?: "src/shim.js",        // document-start, every page
                        downloads?: "auto" | "ask" | "deny",
                        popups?: "external" | "window" | "deny",
-                       api?: "wrapper" | { disable?, enable?, origins? },
+                       api?: "wrapper" | "none" | [...allowed] | { disable?, enable?, origins? },
+                                      // false/"" = "none"; { enable } alone = only those
                        macos?/windows?/linux?: { …merged on top per OS }
                                       // macos.helpBook: "My Help" = folder in assets/ }
 assets/              files the OS reads, by name: icon.png (1024×1024 app

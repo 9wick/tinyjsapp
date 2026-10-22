@@ -1,4 +1,4 @@
-# The tiny.* / app API — full tour (current as of tinyjs 0.44.0)
+# The tiny.* / app API — full tour (current as of tinyjs 0.63.0)
 
 The `tiny` global is injected into every page automatically (no script tag);
 TypeScript definitions ship in types/tiny.d.ts. Backend handlers receive the
@@ -439,6 +439,7 @@ await tiny.app.paths();   // { home, data, cache, logs, temp, downloads,
 // in dev, a .app's Contents/Helpers in builds), null without any — tjs.spawn
 // (await app.paths()).executables + '/<name>'.
 await tiny.app.shell.open('https://x.com');  // URL or path; resolves true/rejects
+   // from a page the app didn't ship (a wrapped site): http(s)/mailto only
 await tiny.app.shell.reveal(path); await tiny.app.shell.trash(path);
 await tiny.app.thumbnail(path, size?);  // png for ANY path (macOS/Windows:
    // preview or document/folder icon — never fails on type; Linux:
@@ -513,9 +514,17 @@ tiny.api.on('sleep', fn); tiny.api.on('wake', fn);  // backend: export onSystem
 await tiny.app.power.preventSleep('reason', { display: false });
 await tiny.app.power.allowSleep();   // auto-released on exit/crash
 
-tiny.hotkey.register('boss', 'cmd+shift+k'); tiny.hotkey.on((id) => ...);
+await tiny.hotkey.register('boss', 'cmd+shift+k'); // true once the OS has it;
+// false = invalid combo or another app holds it (reason logged) — check it.
+tiny.hotkey.on((id) => ...);
 tiny.hotkey.unregister('boss');   // system-wide; cmd = Ctrl on win/linux;
-// linux: XGrabKey on X11, GlobalShortcuts portal on Wayland (one approval)
+// linux: XGrabKey on X11, GlobalShortcuts portal on Wayland (one approval;
+// capabilities().globalHotkeys is false without the portal).
+// Combos (hotkeys AND keystroke): modifiers in any order + exactly ONE key,
+// else refused. Same key names on every OS: letters, digits, f1–f24, enter,
+// esc, tab, space, home/end/pageup/pagedown, minus/slash/quote…, or the
+// punctuation itself ('cmd+,'). `delete` = Backspace everywhere;
+// `forwarddelete` = the Delete key. win/super = ⌘ on macOS.
 
 await tiny.app.keystroke('cmd+v');   // native CGEvent -> { ok, trusted };
 await tiny.app.paste();              // = keystroke('cmd+v'); hide() first to
@@ -623,7 +632,8 @@ tiny.app.onOpenFiles((paths) => ...);  // "fileExtensions": ["md"]; also argv
 tiny.api.on('update-available', ({ current, latest, notes }) => ...);
 // backend: export onUpdateAvailable(info, app)
 const { available, latest } = await tiny.app.update.check();
-await tiny.app.update.install();   // verify sha256 + swap + relaunch
+await tiny.app.update.install();   // verify sha256 + swap + relaunch; rejects
+   // unless check() found a newer build for THIS OS + CPU
 ```
 
 Full packaging/manifests: references/release.md.
