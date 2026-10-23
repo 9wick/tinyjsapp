@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.64.0 — 2026-10-23
 
 - **macOS: apps can ask for Location, so `tiny.system.wifi()` can read the
   network name (#90).** On macOS 14+ `ssid` and `bssid` are `null` without
