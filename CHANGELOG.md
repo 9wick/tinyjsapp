@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.65.0 — 2026-10-23
 
 - **macOS: `tinyjs wrap` no longer fails with `command failed (osascript)`
   (#91).** The release didn't include `native/pad-icon.jxa`, the script that
