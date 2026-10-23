@@ -21,6 +21,17 @@ https://tinyjs.app/changelog.
   missed `focused: true` on the first show and then the `focused: false`
   when the user clicked away, so a dropdown that hides when it loses focus
   stayed open the first time.
+- **Linux X11: `show()` takes the keyboard every time, not just the first
+  (#89).** A tray or hotkey app's window shown over another app — a
+  full-screen one included — took focus on its first show only; after a
+  hide, GNOME's focus-stealing prevention left it on top but marked "needs
+  attention", with the keyboard still in the other app. `win.open` of a
+  new or hidden window did the same. Showing now carries an X server
+  timestamp, as `restore()` already did.
+- **Linux X11: `setLevel()` and `setAlwaysOnTop()` survive hide and show.**
+  A window given a level while it was on screen came back as an ordinary
+  window after `hide()` → `show()`; only a level set before the first show
+  stuck. The launcher now re-applies it each time the window is mapped.
 
 ## 0.64.0 — 2026-10-23
 

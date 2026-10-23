@@ -53,11 +53,38 @@ setAllSpaces + floating, shown from a hotkey / tray click.
   `--menubar --panel` wrapper template) waits for. `show`/`hide` now emit
   WINSTATE themselves; three show/blur/hide cycles reported correctly
   after.)*
-- [ ] **Linux X11** — same check (present_with_time; the WM's
+- [x] **Linux X11** — same check (present_with_time; the WM's
   focus-stealing prevention decides). Same `chrome.panel` ignored check.
-- [ ] **Linux Wayland** — same check; the compositor may refuse focus
+  *(2026-10-23, Ubuntu 24.04 arm64, GNOME 46, XWayland via GDK_BACKEND=x11,
+  hotkeys + typing injected with XTest; victim = a full-screen tinyjs app
+  with a focused input. Found broken first: only the FIRST hotkey show took
+  the keyboard — every show after a hide, and a fresh win.open, came up on
+  top marked DEMANDS_ATTENTION while the typing kept going to the
+  full-screen app. `show`/`win.open`/re-open/restore/MPRIS Raise now map
+  the window, then present_with_time(server time) (`present_now`). After:
+  4/4 main summons and 4/4 hide→re-open of a win.open window take the
+  keyboard, a new win.open does too, the typed text lands in the palette,
+  Esc→hide hands it back to the full-screen app, which stays full screen.
+  `chrome.panel` (main via TINYJS_PANEL, win.open's trailing field): an
+  ordinary _NET_WM_WINDOW_TYPE_NORMAL window. Also found: any window
+  leveled WHILE MAPPED (setLevel or setAlwaysOnTop, main or win.open) came
+  back ordinary after hide→show — the WM drops _NET_WM_STATE on withdraw;
+  only a pre-first-show level survived, as GTK's initial hint. Now
+  `set_stacking` re-applies it on every map-event: floating, ontop and
+  desktop all survive hide→show, 'normal' clears, and the palette's
+  win.open window stays ABOVE through 3 re-opens.)*
+- [x] **Linux Wayland** — same check; the compositor may refuse focus
   without an activation token. Record what happens rather than expect
-  it to work.
+  it to work. *(2026-10-23, Ubuntu 24.04 arm64, GNOME 46 Wayland: no
+  GlobalShortcuts portal and no XTest into Wayland clients, so shown from
+  a backend timer — the hardest case, no user input at all. Mutter GAVE
+  focus every time: show, show after hide, a new win.open (onWindowState
+  focused:true in the palette, focused:false in the victim, which stayed
+  full screen). Real keyboard, same timer path: typed text landed in the
+  palette on both shows and in the win.open window, Esc→hide returned the
+  keyboard to the full-screen app each time (victim `aaabbbccc`, palette
+  `onetwo`, sec `three`). The hotkey-triggered path wants a portal
+  (KDE / GNOME 48+).)*
 
 ## #90 — macOS: the 'location' permission, for wifi ssid (2026-10-23)
 

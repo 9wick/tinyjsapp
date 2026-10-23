@@ -1382,19 +1382,33 @@ static void repay_page_box(const std::string& winid, int w, int h, bool guard_bo
   }, new Repay{winid, w, h, guard_born, 0});
 }
 
+// keep-above/below, re-applied on every map. Set on a mapped window it lives
+// only in the WM's _NET_WM_STATE, which the WM drops when the window is
+// withdrawn — so after hide()→show() a floating window came back ordinary
+// (GNOME 46, X11; one leveled before its first show kept it, as GTK sends
+// that as an initial hint).
+static void set_stacking(GtkWindow* win, bool above, bool below) {
+  int bits = (above ? 1 : 0) | (below ? 2 : 0);
+  g_object_set_data(G_OBJECT(win), "tinyjs-stacking", GINT_TO_POINTER(bits));
+  if (!g_object_get_data(G_OBJECT(win), "tinyjs-stacking-hooked")) {
+    g_object_set_data(G_OBJECT(win), "tinyjs-stacking-hooked", GINT_TO_POINTER(1));
+    g_signal_connect(win, "map-event", G_CALLBACK(+[](GtkWidget* w, GdkEvent*, gpointer) -> gboolean {
+      int b = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(w), "tinyjs-stacking"));
+      gtk_window_set_keep_above(GTK_WINDOW(w), (b & 1) != 0);
+      gtk_window_set_keep_below(GTK_WINDOW(w), (b & 2) != 0);
+      return FALSE;
+    }), nullptr);
+  }
+  gtk_window_set_keep_above(win, above);
+  gtk_window_set_keep_below(win, below);
+}
+
 static void set_level(const std::string& winid, const std::string& level) {
   GtkWindow* win = win_for(winid);
   if (!win) return;
-  if (level == "desktop") {
-    gtk_window_set_keep_above(win, FALSE);
-    gtk_window_set_keep_below(win, TRUE);
-  } else if (level == "overlay" || level == "floating") {
-    gtk_window_set_keep_below(win, FALSE);
-    gtk_window_set_keep_above(win, TRUE);
-  } else {
-    gtk_window_set_keep_above(win, FALSE);
-    gtk_window_set_keep_below(win, FALSE);
-  }
+  if (level == "desktop") set_stacking(win, false, true);
+  else if (level == "overlay" || level == "floating") set_stacking(win, true, false);
+  else set_stacking(win, false, false);
   if (winid.empty() || winid == "main") g_level = level;
   else if (g_secwins.count(winid)) g_secwins[winid]->level = level;
 }
@@ -1467,6 +1481,26 @@ static void rescue_offscreen(GtkWindow* win) {
   if (nx != x || ny != y) gdk_window_move(gwin, nx, ny);
 }
 
+// present() with a server timestamp on X11. A bare gtk_window_present sends
+// no usable time, and Mutter's focus-stealing prevention then refuses the
+// focus whenever another window has had input since this one last did: the
+// window comes up on top marked DEMANDS_ATTENTION, keyboard still elsewhere.
+// Measured on GNOME 46 (#89): an accessory palette's FIRST hotkey show over a
+// full-screen app took the keyboard, every show after a hide did not. Map
+// first: on a hidden window present only maps it, and the WM refuses a fresh
+// map focus where it grants a timestamped _NET_ACTIVE_WINDOW request.
+static void present_now(GtkWindow* win) {
+  gtk_widget_show(GTK_WIDGET(win));
+#ifdef GDK_WINDOWING_X11
+  GdkWindow* gw = gtk_widget_get_window(GTK_WIDGET(win));
+  if (gw && GDK_IS_X11_WINDOW(gw)) {
+    gtk_window_present_with_time(win, gdk_x11_get_server_time(gw));
+    return;
+  }
+#endif
+  gtk_window_present(win);
+}
+
 // Windowless app.hide()/app.show(): there's no main window to hide, so hide
 // the app — every visible named window — and bring exactly those back on
 // show (macOS hides/unhides NSApp here). Presence has nothing to act on: a
@@ -1487,7 +1521,7 @@ static void windowless_app_op(const std::string& op) {
       if (op == "show 0") gtk_window_set_focus_on_map(sw->win, FALSE);
       gtk_widget_show(GTK_WIDGET(sw->win));
       if (op == "show 0") gtk_window_set_focus_on_map(sw->win, TRUE);
-      else gtk_window_present(sw->win);
+      else present_now(sw->win);
     }
     g_app_hidden.clear();
   }
@@ -1516,7 +1550,7 @@ static void do_winop(const std::string& winid, const std::string& op) {
   if (op == "hide" || op == "hidewin") gtk_widget_hide(GTK_WIDGET(win));
   else if (op == "show" || op == "show 1") {
     gtk_widget_show(GTK_WIDGET(win));
-    gtk_window_present(win);
+    present_now(win);
   } else if (op == "show 0") {
     // surface without stealing focus
     gtk_window_set_focus_on_map(win, FALSE);
@@ -1553,14 +1587,7 @@ static void do_winop(const std::string& winid, const std::string& op) {
     // un-minimize; present_with_time carries a server timestamp on X11 so the
     // WM has no reason to treat it as a steal.
     gtk_window_deiconify(win);
-#ifdef GDK_WINDOWING_X11
-    GdkWindow* gw = gtk_widget_get_window(GTK_WIDGET(win));
-    if (gw && GDK_IS_X11_WINDOW(gw)) {
-      gtk_window_present_with_time(win, gdk_x11_get_server_time(gw));
-      return;
-    }
-#endif
-    gtk_window_present(win);
+    present_now(win);
   }
   else if (op == "zoom") {
     GdkWindowState st = g_winstate.count(win) ? g_winstate[win] : (GdkWindowState)0;
@@ -1574,8 +1601,9 @@ static void do_winop(const std::string& winid, const std::string& op) {
   }
   else if (op == "fullscreen 1") gtk_window_fullscreen(win);
   else if (op == "fullscreen 0") gtk_window_unfullscreen(win);
-  else if (op == "ontop 1") gtk_window_set_keep_above(win, TRUE);
-  else if (op == "ontop 0") gtk_window_set_keep_above(win, FALSE);
+  else if (op == "ontop 1" || op == "ontop 0")   // above only, as before
+    set_stacking(win, op.back() == '1',
+                 GPOINTER_TO_INT(g_object_get_data(G_OBJECT(win), "tinyjs-stacking")) & 2);
   else if (op.rfind("zoomfactor ", 0) == 0) {
     // Page zoom rendered natively (crisp at any factor) — a "double size" mode
     // for hi-dpi screens costs one call and no page changes. The page keeps
@@ -3608,9 +3636,9 @@ static void mpris_method_call(GDBusConnection*, const gchar*, const gchar*,
       pipe_write_line(buf);
     }
   } else if (!strcmp(method, "Raise")) {
-    if (g_win) gtk_window_present(g_win);
+    if (g_win) present_now(g_win);
     else for (auto& kv : g_secwins)
-      if (kv.second->win) { gtk_window_present(kv.second->win); break; }
+      if (kv.second->win) { present_now(kv.second->win); break; }
   }
   g_dbus_method_invocation_return_value(inv, nullptr);
 }
@@ -6917,7 +6945,7 @@ static void do_winopen(const std::string& rest) {
   if (id.empty() || id == "main") return;
   auto existing = g_secwins.find(id);
   if (existing != g_secwins.end()) {
-    gtk_window_present(existing->second->win);
+    present_now(existing->second->win);
     return;
   }
   std::string page = tab_field(f, 1);
@@ -6985,6 +7013,8 @@ static void do_winopen(const std::string& rest) {
 
   load_target_into(sec->wv, page);
   gtk_widget_show_all(GTK_WIDGET(sec->win));
+  // a fresh map from a hotkey over another app is refused focus too
+  present_now(sec->win);
   // show_all just revealed the bar too. Fill it in from the app menu (or
   // hide it again if there is nothing to show / the window opted out).
   apply_menus(id);
