@@ -29,13 +29,30 @@ setAllSpaces + floating, shown from a hotkey / tray click.
 - [x] **`tinyjs dev`** — TINYJS_PANEL path: hotkey shows it with focus, ⌘V
   pastes. *(2026-10-23, macOS 27.0.1)*
 - [ ] **macOS 14** — oldest supported OS.
-- [ ] **Windows** — the #89 question itself, no panel involved: an
+- [x] **Windows** — the #89 question itself, no panel involved: an
   accessory/tray app with setLevel('floating'), a full-screen app in front
   (borderless full screen, e.g. a browser in F11), `show()` from the tray
   click or a hotkey → the window appears over it AND takes the keyboard.
   Expected to work already (SetForegroundWindow, foreground rights from
   the user's input); exclusive-full-screen games can't be drawn over.
   Also: `chrome.panel: true` opens an ordinary window (main and win.open).
+  *(2026-10-23, Windows 11 arm64, dev: accessory + frameless + `panel` +
+  floating + setAllSpaces, summoned by a global hotkey over (a) a
+  borderless full-screen WinForms window that held the foreground and (b)
+  Edge `--start-fullscreen`. Each time the window came up topmost AND
+  foreground, typed keys reached the page and none leaked into the
+  full-screen app, and hide handed the foreground back to it. A `win.open`
+  with `chrome: { panel: true, squareCorners: true }` opened as an ordinary
+  secondary window and took typing (the trailing WINOPEN field is
+  ignored). Tray-click path not driven — posted clicks carry no
+  foreground rights here, so the hotkey stood in. **Found and fixed on the
+  way:** an accessory main's FIRST `show()` reported no `focused: true`
+  and its blur no `focused: false` — startup leaves the hidden main its
+  thread's active window, so the show sent no WM_ACTIVATE and the dedupe
+  then swallowed the blur, which is the event a hide-on-blur palette (the
+  `--menubar --panel` wrapper template) waits for. `show`/`hide` now emit
+  WINSTATE themselves; three show/blur/hide cycles reported correctly
+  after.)*
 - [ ] **Linux X11** — same check (present_with_time; the WM's
   focus-stealing prevention decides). Same `chrome.panel` ignored check.
 - [ ] **Linux Wayland** — same check; the compositor may refuse focus

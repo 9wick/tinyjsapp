@@ -2587,6 +2587,7 @@ static void do_winop(webview_t, void *arg) {
   // has always been here (only macOS's main-window hide takes the app with it).
   if (op == "hide" || op == "hidewin") {
     ShowWindow(hwnd, SW_HIDE);
+    emit_winstate(hwnd, 0); // hidden can stay thread-active: no WM_ACTIVATE
   } else if (starts("show")) {
     bool activate = op != "show 0";
     if (main)
@@ -2596,8 +2597,15 @@ static void do_winop(webview_t, void *arg) {
     if (IsIconic(hwnd))
       ShowWindow(hwnd, activate ? SW_RESTORE : SW_SHOWNOACTIVATE);
     ShowWindow(hwnd, activate ? SW_SHOW : SW_SHOWNA);
-    if (activate)
+    if (activate) {
       SetForegroundWindow(hwnd);
+      // WM_ACTIVATE can't be trusted to report this: an accessory main is
+      // hidden at startup while still its thread's active window, so the
+      // first show re-activates nothing and sends none — focused stayed
+      // false and the dedupe then swallowed the blur that a hide-on-blur
+      // palette waits for. Report what the foreground actually is.
+      emit_winstate(hwnd);
+    }
   } else if (op == "center") {
     do_center(hwnd);
   } else if (op == "minimize") {

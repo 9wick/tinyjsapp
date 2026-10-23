@@ -16,6 +16,11 @@ https://tinyjs.app/changelog.
   without activating the app, so with `setAllSpaces(true)` it opens over
   the full-screen app. Edit shortcuts (⌘C, ⌘V, ⌘X, ⌘Z, ⌘A) work in the page,
   and `focus`/`blur` fire. Open-time only; Windows and Linux ignore it.
+- **Windows: a tray app's first `show()` now reports focus.** For an
+  `"activation": "accessory"` app, `onWindowState` / `tiny.win.onState`
+  missed `focused: true` on the first show and then the `focused: false`
+  when the user clicked away, so a dropdown that hides when it loses focus
+  stayed open the first time.
 
 ## 0.64.0 — 2026-10-23
 
