@@ -2420,14 +2420,23 @@ async function cmdWrap() {
   // icon renders oversized next to system apps. Pad to ~82% content on a
   // transparent 1024 canvas (JXA + Cocoa, macOS only — other platforms
   // keep the raw icon; their icon pipelines inset differently).
+  // Best-effort: run()/runCapture() exit the CLI on failure (fail() calls
+  // tjs.exit, so a try/catch around them never catches), and a release that
+  // didn't ship pad-icon.jxa turned a cosmetic step into "tinyjs: command
+  // failed (osascript)" with nothing wrapped after it (#91).
   if (!IS_WIN && !IS_LINUX && icon) {
-    try {
-      await runCapture(['osascript', '-l', 'JavaScript',
-        TOOL_DIR + 'native/pad-icon.jxa', iconPath]);
-      // the Cocoa pass renders at the source's scale (can be 2048) — pin to 1024
-      await run(['sips', '-z', '1024', '1024', iconPath], { stdout: 'ignore', stderr: 'ignore' });
+    const ok = async (argv) => {
+      try {
+        const st = await tjs.spawn(argv, { stdout: 'ignore', stderr: 'ignore' }).wait();
+        return st.exit_status === 0 && !st.term_signal;
+      } catch { return false; }
+    };
+    // the Cocoa pass renders at the source's scale (can be 2048) — pin to 1024
+    if (await ok(['osascript', '-l', 'JavaScript', TOOL_DIR + 'native/pad-icon.jxa', iconPath])
+        && await ok(['sips', '-z', '1024', '1024', iconPath]))
       console.log('==> icon padded to the Apple grid');
-    } catch { /* keep the raw icon */ }
+    else
+      console.log('==> note: couldn\'t pad the icon to the Apple grid — keeping it as fetched');
   }
   // The menu-bar backend loads src/tray.png: src/ ships inside the build,
   // the app icon does not.

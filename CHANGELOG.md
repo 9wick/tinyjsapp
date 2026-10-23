@@ -6,6 +6,12 @@ https://tinyjs.app/changelog.
 
 ## Unreleased
 
+- **macOS: `tinyjs wrap` no longer fails with `command failed (osascript)`
+  (#91).** The release didn't include `native/pad-icon.jxa`, the script that
+  pads a site's icon to the Apple icon grid, so with an installed tinyjs
+  every wrap of a site with an icon stopped right after fetching it. The
+  macOS download ships it again, and the padding step is now best-effort
+  as intended: if it fails, the wrap finishes with the icon as fetched.
 - **macOS: panel windows, for palettes over full-screen apps (#89).** A
   menu-bar app couldn't open a window that both appears over a full-screen
   app and takes the keyboard: `show()` activated the app, which made macOS

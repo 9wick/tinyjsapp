@@ -480,7 +480,9 @@ jobs:
             mkdir -p "$STAGE/bin" "$STAGE/native"
             cp "/tmp/tjs-$ARCH/txiki-macos-$ARCH/tjs" "$STAGE/bin/tjs"
             chmod +x "$STAGE/bin/tjs"
-            cp native/launcher-macos native/make-icon.jxa "$STAGE/native/"
+            # every .jxa cli.js runs: pad-icon.jxa was left out through v0.64.0, so
+            # an installed `tinyjs wrap` died on "command failed (osascript)" (#91)
+            cp native/launcher-macos native/*.jxa "$STAGE/native/"
             cp -R runtime template test skill "$STAGE/"
             cp cli.js tinyjs VERSION README.md LICENSE "$STAGE/"
             # `tinyjs update` runs this copy rather than the website's (#30).
