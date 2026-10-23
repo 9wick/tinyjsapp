@@ -4,6 +4,19 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **macOS: panel windows, for palettes over full-screen apps (#89).** A
+  menu-bar app couldn't open a window that both appears over a full-screen
+  app and takes the keyboard: `show()` activated the app, which made macOS
+  switch to a desktop Space, and `show({ activate: false })` stayed put but
+  never got keyboard focus. `"chrome": { "panel": true }` (tinyjs.json for
+  the main window, or `win.open`'s chrome) makes a non-activating panel,
+  the way Spotlight-style launchers do it: `show()` gives it the keyboard
+  without activating the app, so with `setAllSpaces(true)` it opens over
+  the full-screen app. Edit shortcuts (⌘C, ⌘V, ⌘X, ⌘Z, ⌘A) work in the page,
+  and `focus`/`blur` fire. Open-time only; Windows and Linux ignore it.
+
 ## 0.64.0 — 2026-10-23
 
 - **macOS: apps can ask for Location, so `tiny.system.wifi()` can read the

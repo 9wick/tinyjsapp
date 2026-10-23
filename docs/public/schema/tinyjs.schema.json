@@ -123,6 +123,7 @@
         "squareCorners": { "$ref": "#/$defs/optionalBoolean", "description": "No rounded window corners." },
         "acceptsFirstMouse": { "$ref": "#/$defs/optionalBoolean", "description": "macOS: a click on an inactive window also acts on what it hits." },
         "menu": { "$ref": "#/$defs/optionalBoolean", "description": "Windows and Linux: false hides this window's menu bar. macOS has one menu bar per app and ignores it." },
+        "panel": { "$ref": "#/$defs/optionalBoolean", "description": "macOS: a non-activating panel. show() gives it the keyboard without activating the app, so it can open over a full-screen app (with setAllSpaces). Set here or in win.open; setChrome can't change it. Ignored on Windows and Linux." },
         "windowControlsPos": {
           "description": "macOS traffic-light coordinates; null or false restores the OS layout. Partial coordinates are allowed in platform overrides.",
           "anyOf": [

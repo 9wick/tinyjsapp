@@ -83,6 +83,11 @@ tiny.win.setChrome({ frame: false, windowControls: false, transparent: false,
 // squareCorners: macOS borderless (square, no titlebar; keep data-tiny-drag).
 // acceptsFirstMouse: the click that focuses an unfocused window also reaches
 //   the page (palettes/toolbars).
+// panel (mac, OPEN-TIME only: tinyjs.json "chrome" / win.open chrome, never
+//   setChrome): non-activating NSPanel — show() gives it the keyboard WITHOUT
+//   activating the app, so with setAllSpaces(true) a palette opens over a
+//   full-screen app instead of switching Spaces. hide() just orders it out.
+//   No app menu bar while it's key; not in Window menu / cmd-` cycling.
 // Startup chrome belongs in tinyjs.json "chrome" / win.open options — applied
 // BEFORE first paint; a late setChrome flashes the default window.
 // Windows: transparent MAIN window must be declared in tinyjs.json, and

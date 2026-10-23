@@ -208,6 +208,7 @@ tiny.win.setChrome({ frame: false, windowControls: false, vibrancy: 'hud' });
 | `acceptsFirstMouse` | `true`: the click that focuses an inactive window also reaches the page, instead of macOS swallowing it. For palettes, toolbars, and drag regions on inactive windows. | ✓ | — | already the default |
 | `windowControlsPos` | `{ x, y }`: move the traffic lights, in points from the window's top-left — for a frameless window with a taller custom title bar. `null` puts them back. Set it once; it survives resizes and full screen. | ✓ | — | — |
 | `menu` | `false`: this window shows no menu bar. Its shortcuts keep working and other windows keep theirs. | — (one bar per app) | ✓ | ✓ |
+| `panel` | open-time only (tinyjs.json or `win.open`, not `setChrome`): a non-activating panel that takes the keyboard without activating the app, for palettes over full-screen apps — see [window fx](./window-fx#panel) | ✓ | — | — |
 
 Fields a platform doesn't support are ignored. `tiny.system.capabilities()` reports `vibrancy`, `transparency` and `windowControls` per platform, and `getState().chrome` reads back what's set. Windows never draws a menu bar on a frameless or transparent window.
 

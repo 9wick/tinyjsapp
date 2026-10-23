@@ -1528,6 +1528,10 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       }
     }
     if (activation === 'accessory') spawnEnv.TINYJS_ACTIVATION = 'accessory';
+    // chrome.panel (macOS, #89): the main window is created as a
+    // non-activating panel — it can't become one later, so this rides the
+    // spawn env (the TinyjsPanel plist key in a packaged app), not CHROME.
+    if (chrome?.panel) spawnEnv.TINYJS_PANEL = '1';
     spawnEnv.TINYJS_NO_MAIN_WINDOW = mainWindow ? '0' : '1';
     // rememberWindows: main is built hidden and shown once it's been put
     // back where it was (launcher shows it anyway after 3s). Accessory apps
@@ -3030,7 +3034,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
                          hasPos ? (x | 0) : '', hasPos ? (y | 0) : '',
                          bit(c.menu),
                          wcp ? `${wcp.x | 0},${wcp.y | 0}` : '',
-                         one(parent === true ? 'main' : parent || '')].join('\t'));
+                         one(parent === true ? 'main' : parent || ''),
+                         c.panel ? '1' : ''].join('\t'));
       // minSize: "WxH" — a floor under user resizes, so a layout with a
       // natural size can't be shrunk until content falls off the bottom.
       if (minSize) send('WINOP@' + one(id) + ' minsize ' + one(minSize));

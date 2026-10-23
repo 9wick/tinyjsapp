@@ -2977,6 +2977,12 @@ async function cmdBuild() {
   <key>LSUIElement</key>         <true/>
   <key>TinyjsActivation</key>    <string>accessory</string>`;
   }
+  if (cfg.chrome?.panel) {
+    // chrome.panel (#89): the launcher must create the main window as a
+    // non-activating panel, so it reads this before the window exists.
+    extraKeys += `
+  <key>TinyjsPanel</key>         <true/>`;
+  }
   if (cfg.chrome) {
     const bit = (v) => (v === undefined ? '' : v ? '1' : '0');
     const ch = cfg.chrome;

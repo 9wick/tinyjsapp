@@ -181,6 +181,7 @@ How the main window looks before the page draws anything: frameless, translucent
 | `acceptsFirstMouse` | a click on an inactive window also acts on what it hits | ✓ | — | — |
 | `windowControlsPos` | `{ "x": 12, "y": 14 }`: where the traffic lights sit | ✓ | — | — |
 | `menu` | `false`: no menu bar in this window | — (one menu bar per app) | ✓ | ✓ |
+| `panel` | a non-activating panel: takes the keyboard without activating the app, so it can open over full-screen apps — see [window fx](./window-fx#panel) | ✓ | — | — |
 
 ### `rememberWindows` {#rememberWindows}
 

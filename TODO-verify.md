@@ -8,6 +8,40 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #89 — macOS: `chrome.panel` non-activating panels (2026-10-23)
+
+TinyPanel (NSPanel + NonactivatingPanel, the bit kept through every
+styleMask rewrite); the main window gets it via the vendored webview's
+`NSWindow_class_name()` hook, set from TINYJS_PANEL / TinyjsPanel before
+`webview_create`. Test app: an accessory app, frameless panel main window,
+setAllSpaces + floating, shown from a hotkey / tray click.
+
+- [x] **macOS 27.0.1, built app, over a full-screen app** — shows on the
+  full-screen Space (no Space switch) with the keyboard; typing, ⌘V, ⌘X,
+  ⌘Z, ⌘A reach the page; blur on clicking the app behind, focus again on
+  re-show; Esc → hide leaves the full-screen app with the keyboard.
+  *(2026-10-23)*
+- [x] **secondary panel via win.open** (+ squareCorners) — focused after
+  open and after hide/show while the frontmost app stays the previous one.
+  *(2026-10-23, macOS 27.0.1)*
+- [x] **⌘C** in a panel page — `copy` fires, and the copied text pastes
+  into a second field. *(2026-10-23, macOS 27.0.1)*
+- [x] **`tinyjs dev`** — TINYJS_PANEL path: hotkey shows it with focus, ⌘V
+  pastes. *(2026-10-23, macOS 27.0.1)*
+- [ ] **macOS 14** — oldest supported OS.
+- [ ] **Windows** — the #89 question itself, no panel involved: an
+  accessory/tray app with setLevel('floating'), a full-screen app in front
+  (borderless full screen, e.g. a browser in F11), `show()` from the tray
+  click or a hotkey → the window appears over it AND takes the keyboard.
+  Expected to work already (SetForegroundWindow, foreground rights from
+  the user's input); exclusive-full-screen games can't be drawn over.
+  Also: `chrome.panel: true` opens an ordinary window (main and win.open).
+- [ ] **Linux X11** — same check (present_with_time; the WM's
+  focus-stealing prevention decides). Same `chrome.panel` ignored check.
+- [ ] **Linux Wayland** — same check; the compositor may refuse focus
+  without an activation token. Record what happens rather than expect
+  it to work.
+
 ## #90 — macOS: the 'location' permission, for wifi ssid (2026-10-23)
 
 `permissions.check/request('location')` (CoreLocation) plus

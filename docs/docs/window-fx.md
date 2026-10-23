@@ -55,6 +55,31 @@ tiny.win.setAllSpaces(true);
 
 `show({ activate: false })` puts a window on screen without taking keyboard focus from the app the user is typing in — for a HUD or a toast. Clicking the window activates it normally. See [showing and hiding](./window#visibility).
 
+## over full-screen apps, with the keyboard (macOS) {#panel}
+
+**macOS only** — Windows and Linux ignore `panel` and open an ordinary window.
+
+A Spotlight-style palette has to appear over whatever the user is doing — a full-screen app included — and take typing straight away. On macOS an ordinary window can't do both: taking the keyboard means activating the app, and activating it makes macOS leave the full-screen Space for a desktop one. Make the window a **panel** instead:
+
+```json
+{ "activation": "accessory", "chrome": { "frame": false, "panel": true } }
+```
+
+```js
+// backend
+export async function init(app) {
+  app.win.setAllSpaces(true);
+  app.win.setLevel('floating');
+  await app.hotkey.register('summon', 'ctrl+alt+space');
+}
+export function onHotkey(id, app) { app.win.show(); }
+```
+
+A panel's `show()` puts it in front and gives it the keyboard **without activating the app**, so with `setAllSpaces(true)` it opens over a full-screen app and macOS stays on that Space. Copy, paste, undo and the other edit shortcuts work in the page, and `focus` / `blur` fire as usual. `hide()` just puts the panel away; the app it floated over never lost focus. `show({ activate: false })` still shows it without taking the keyboard.
+
+- It's fixed when the window is created: set it in tinyjs.json `chrome` for the main window, or in [`win.open`](./multiple-windows)'s `chrome`. `setChrome({ panel })` can't change it.
+- Because the app stays inactive, its menu bar doesn't appear while the panel has focus, and panels aren't in the Window menu or ⌘\` cycling. That suits a palette in a menu-bar app; it's an odd fit for an app's main document window.
+
 ## building blocks elsewhere {#elsewhere}
 
 Overlays, HUDs and menu-bar monitors usually combine these with calls documented on other pages:

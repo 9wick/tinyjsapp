@@ -1734,6 +1734,56 @@ static void fullscreen_on_screen(NSWindow *win, NSScreen *s) {
   [win setFrame:f display:YES];
   [win toggleFullScreen:nil];
 }
+
+// "panel" windows (#89): a non-activating NSPanel takes the keyboard WITHOUT
+// activating the app — the Spotlight/Raycast shape. Activation is what makes
+// macOS leave a full-screen Space, so a plain window over a full-screen app
+// could either show there (show 0, no keyboard) or take the keyboard (show,
+// on another Space), never both. The style bit only works when present from
+// creation, so the main window is made as this class via the webview hook
+// (NSWindow_class_name) and secondaries alloc it directly.
+@interface TinyPanel : NSPanel
+@end
+@implementation TinyPanel
+- (instancetype)initWithContentRect:(NSRect)r
+                          styleMask:(NSWindowStyleMask)m
+                            backing:(NSBackingStoreType)b
+                              defer:(BOOL)d {
+  if ((self = [super initWithContentRect:r
+                               styleMask:m | NSWindowStyleMaskNonactivatingPanel
+                                 backing:b
+                                   defer:d])) {
+    // Panel defaults are utility-window ones: hide whenever the app isn't
+    // active (which, never activating, is always) and key only on demand.
+    self.hidesOnDeactivate = NO;
+    self.becomesKeyOnlyIfNeeded = NO;
+    self.floatingPanel = NO; // the level stays the app's (setLevel)
+  }
+  return self;
+}
+// Frameless / squareCorners / setResizable rewrite the whole mask; the
+// non-activating bit has to survive them.
+- (void)setStyleMask:(NSWindowStyleMask)m {
+  [super setStyleMask:m | NSWindowStyleMaskNonactivatingPanel];
+}
+- (BOOL)canBecomeKeyWindow {
+  return YES;
+}
+- (BOOL)canBecomeMainWindow {
+  return YES;
+}
+@end
+
+static bool is_panel(NSWindow *win) {
+  return [win isKindOfClass:[TinyPanel class]];
+}
+
+// Key without activating: orderFrontRegardless because the app isn't active
+// (plain ordering only moves it among the app's own windows).
+static void panel_front(NSWindow *win) {
+  [win orderFrontRegardless];
+  [win makeKeyWindow];
+}
 #endif
 
 static void do_winop(webview_t w, void *arg) {
@@ -1774,7 +1824,9 @@ static void do_winop(webview_t w, void *arg) {
       // the app, so macOS hands focus back to the previously active app on
       // its own (palette apps paste into it with no frontmost-pid dance).
       // Secondary windows just order out.
-      if (is_main)
+      // A panel never activated the app, so the app it floats over still
+      // has focus underneath: ordering out is the whole job.
+      if (is_main && !is_panel(win))
         [NSApp hide:nil];
       else
         [win orderOut:nil];
@@ -1783,6 +1835,11 @@ static void do_winop(webview_t w, void *arg) {
       // main window is a launcher screen wants it out of the way while its
       // document windows are up — without deactivating the app around them.
       [win orderOut:nil];
+    } else if ((*op == "show" || *op == "show 1") && is_panel(win)) {
+      if (is_main)
+        g_defer_show = false;
+      [NSApp unhideWithoutActivation];
+      panel_front(win);
     } else if (*op == "show" || *op == "show 1") {
       if (is_main)
         g_defer_show = false;
@@ -1792,8 +1849,8 @@ static void do_winop(webview_t w, void *arg) {
     } else if (*op == "show 0") {
       // Show without stealing focus (overlay/HUD panels): the window appears
       // but the active app keeps keyboard focus; clicking it activates
-      // normally. (True non-activating click-through needs an NSPanel with
-      // NSWindowStyleMaskNonactivatingPanel — not what webview creates.)
+      // normally. (A "panel" window takes the keyboard without activating
+      // the app instead — see TinyPanel and the branch above.)
       if (is_main)
         g_defer_show = false;
       [NSApp unhideWithoutActivation];
@@ -6974,6 +7031,7 @@ struct WinOpenReq {
   bool hasPos = false;
   int x = 0, y = 0;
   std::string parent; // '' | 'main' | a win id: attach above it (child window)
+  bool panel = false;  // chrome.panel: a TinyPanel, fixed at creation (#89)
 };
 
 static void enable_webgpu_prefs(id preferences); // defined in WebGPU section
@@ -6988,7 +7046,9 @@ static void do_winopen(webview_t w, void *arg) {
     if (req->id.empty() || req->id == "main" ||
         g_windows.count(req->id)) { // exists: just focus it
       NSWindow *ex = window_for_id(w, req->id);
-      if (ex)
+      if (ex && is_panel(ex))
+        panel_front(ex);
+      else if (ex)
         [ex makeKeyAndOrderFront:nil];
       delete req;
       return;
@@ -7004,7 +7064,7 @@ static void do_winopen(webview_t w, void *arg) {
     TinyWindow &tw = g_windows[req->id]; // create slot first (attach parks handler)
     attach_tiny_bridge(cfg.userContentController, req->id);
 
-    NSWindow *win = [[NSWindow alloc]
+    NSWindow *win = [[(req->panel ? [TinyPanel class] : [NSWindow class]) alloc]
         initWithContentRect:NSMakeRect(0, 0, req->width, req->height)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                             NSWindowStyleMaskMiniaturizable |
@@ -7079,7 +7139,10 @@ static void do_winopen(webview_t w, void *arg) {
       [win setFrameTopLeftPoint:NSMakePoint(req->x, screenTop - req->y)];
     }
 
-    [win makeKeyAndOrderFront:nil];
+    if (is_panel(win))
+      panel_front(win);
+    else
+      [win makeKeyAndOrderFront:nil];
 
     // parent: the native child-window relation — stays above its parent (but
     // not above other apps), hides/minimizes with it. Attached after ordering
@@ -8802,7 +8865,8 @@ static void sock_read_loop() {
         launcher_dispatch(g_w, do_size, s);
       } else if (line.rfind("WINOPEN ", 0) == 0) {
         // <id>\t<page>\t<title>\t<WxH>[\t<frame>\t<traffic>\t<transp>\t<vib>
-        //   \t<square>\t<firstMouse>\t<x>\t<y>\t<menu>\t<wcPos>\t<parent>]
+        //   \t<square>\t<firstMouse>\t<x>\t<y>\t<menu>\t<wcPos>\t<parent>
+        //   \t<panel>]
         std::vector<std::string> p = split_tabs(line.substr(8));
         WinOpenReq *wr = new WinOpenReq;
         wr->id = p.size() > 0 ? p[0] : "";
@@ -8824,6 +8888,7 @@ static void sock_read_loop() {
         // p[12] is chrome.menu (ignored on macOS), p[13] windowControlsPos.
         wr->traffic_pos = p.size() > 13 ? p[13] : "";
         wr->parent = p.size() > 14 ? p[14] : "";
+        wr->panel = p.size() > 15 && p[15] == "1";
         launcher_dispatch(g_w, do_winopen, wr);
       } else if (line.rfind("WINCLOSE ", 0) == 0) {
         launcher_dispatch(g_w, do_winclose, new std::string(line.substr(9)));
@@ -9869,6 +9934,15 @@ int main(int argc, char *argv[]) {
       g_defer_show = true;
       install_order_front_suppression();
     }
+    // chrome.panel (#89): the main window has to BE a TinyPanel from
+    // creation, and the library makes it — so name the class first.
+    const char *panel = getenv("TINYJS_PANEL");
+    bool want_panel = panel && std::strcmp(panel, "1") == 0;
+    if (!want_panel)
+      want_panel = [[[NSBundle mainBundle]
+          objectForInfoDictionaryKey:@"TinyjsPanel"] boolValue];
+    if (want_panel)
+      webview::detail::cocoa::NSWindow_class_name() = "TinyPanel";
   }
   // readAccess: widen the page's file:// read root (dev via env, packaged via
   // the Info.plist key cli.js writes). '~' expands to the home directory.

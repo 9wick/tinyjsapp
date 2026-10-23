@@ -107,6 +107,13 @@ declare interface TinyChromeOptions {
    *  to apply before first paint — no bar flashing in and out, and `size`
    *  still means the page's box either way. */
   menu?: boolean;
+  /** macOS: a non-activating panel (Spotlight-style). show() gives it the
+   *  keyboard WITHOUT activating the app, so with setAllSpaces(true) it
+   *  opens over a full-screen app instead of switching Spaces; hide() just
+   *  puts it away. Open-time only: tinyjs.json "chrome" (main) or win.open's
+   *  chrome — setChrome can't turn it on or off. Panels aren't in the
+   *  Window menu or ⌘` cycling. Ignored on Windows and Linux. */
+  panel?: boolean;
 }
 
 /** 'floating' = always-on-top; 'overlay' floats above almost everything

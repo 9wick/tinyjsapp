@@ -51,8 +51,16 @@ enum NSWindowStyleMask : NSUInteger {
   NSWindowStyleMaskResizable = 8
 };
 
+// tinyjs patch: the class the library's own window is made from. The
+// launcher sets it before webview_create for a "panel" main window (#89) —
+// a non-activating NSPanel has to be one from creation.
+inline const char *&NSWindow_class_name() {
+  static const char *name = "NSWindow";
+  return name;
+}
+
 inline id NSWindow_alloc() {
-  return objc::msg_send<id>(objc::get_class("NSWindow"),
+  return objc::msg_send<id>(objc::get_class(NSWindow_class_name()),
                             objc::selector("alloc"));
 }
 

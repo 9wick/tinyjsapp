@@ -488,6 +488,11 @@ tiny.win.setChrome({ windowControlsPos: { x: 12, y: 24 } });
 // "chrome": { "menu": false }, or win.open's chrome, to start without one.
 tiny.win.setChrome({ menu: false });
 
+// Spotlight-style palette over full-screen apps (macOS): tinyjs.json
+// "chrome": { "panel": true } (or win.open's chrome — open-time only) makes a
+// non-activating panel; show() gives it the keyboard WITHOUT activating the
+// app, so with setAllSpaces(true) macOS doesn't switch Spaces.
+
 // read the window back
 const s = await tiny.win.getState();
 // { x, y, width, height, outer: { width, height },
