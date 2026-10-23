@@ -82,7 +82,19 @@ const w = await tiny.system.wifi();
 // { ssid, bssid, rssi, noise, txRate } | null
 ```
 
-The current Wi-Fi connection: signal (`rssi`) and `noise` in dBm, and `txRate` in Mbps. It's `null` when Wi-Fi is off. macOS only for now — Windows and Linux always answer `null`, and `capabilities().wifi` is `false` there. On macOS 14 and later, `ssid` and `bssid` are `null` unless the app has the Location permission.
+The current Wi-Fi connection: signal (`rssi`) and `noise` in dBm, and `txRate` in Mbps. It's `null` when Wi-Fi is off. macOS only for now — Windows and Linux always answer `null`, and `capabilities().wifi` is `false` there. On macOS 14 and later, `ssid` and `bssid` are `null` unless the app has the Location permission. To get it, declare why in tinyjs.json and ask once — the prompt only appears in a packaged app:
+
+```json
+{ "permissions": { "location": "To show which Wi-Fi network you're on" } }
+```
+
+```js
+if (await tiny.app.permissions.request('location') === 'granted') {
+  const ssid = (await tiny.system.wifi())?.ssid;   // wifi() is null with Wi-Fi off
+}
+```
+
+See [permissions](./permissions#names).
 
 ## language and region {#locale}
 

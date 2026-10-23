@@ -4,6 +4,20 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **macOS: apps can ask for Location, so `tiny.system.wifi()` can read the
+  network name (#90).** On macOS 14+ `ssid` and `bssid` are `null` without
+  the Location permission, and there was no way to get it: the app never
+  asked, and macOS only lists an app under Location Services once it has.
+  Declare `"permissions": { "location": "why" }` in tinyjs.json (it writes
+  the Info.plist usage string, and signed builds get the
+  `personal-information.location` entitlement), then call
+  `tiny.app.permissions.request('location')` — `check` works too. The
+  prompt only appears in a packaged app; in `tinyjs dev`, or without the
+  declaration, `request` resolves `'undetermined'` without asking. Windows
+  and Linux answer `'unsupported'`.
+
 ## 0.63.0 — 2026-10-21
 
 - **Security: a wrapped site can no longer open local files or programs.**

@@ -3026,6 +3026,14 @@ async function cmdBuild() {
   // `start` + `audiostart` on an otherwise identical build.
   if (perms.speechRecognition) extraKeys += `
   <key>NSSpeechRecognitionUsageDescription</key> <string>${escXml(perms.speechRecognition)}</string>`;
+  // Location ("permissions": { "location": "why" }) — the Wi-Fi SSID/BSSID
+  // need it on macOS 14+ (#90). CoreLocation silently ignores a request from
+  // an app without the string, and an app that never asked can't be added in
+  // System Settings either. macOS reads NSLocationUsageDescription; the
+  // WhenInUse key is what requestWhenInUseAuthorization documents.
+  if (perms.location) extraKeys += `
+  <key>NSLocationUsageDescription</key> <string>${escXml(perms.location)}</string>
+  <key>NSLocationWhenInUseUsageDescription</key> <string>${escXml(perms.location)}</string>`;
   // tiny.audioTap ("audioTap": "app" | "system"): Core Audio process taps read
   // rendered output. The usage string is required for the capture TCC; a
   // custom reason via "audioTapReason" overrides the default.
@@ -3100,12 +3108,14 @@ async function cmdBuild() {
   // A real identity gets the hardened runtime + a secure timestamp — both
   // required by notarization. QuickJS interprets (no JIT/executable memory)
   // and WKWebView content runs out-of-process, so the only entitlements ever
-  // needed are the capture devices: the hardened runtime denies mic/camera
-  // outright — even with TCC granted — unless the binary carries them.
+  // needed are the capture devices and location: the hardened runtime denies
+  // mic/camera/location outright — even with TCC granted — unless the binary
+  // carries them.
   const sigFlags = identity === '-' ? [] : ['--options', 'runtime', '--timestamp'];
   const devices = [...new Set(
     [(perms.microphone || cfg.audioTap || perms.speechRecognition) && 'com.apple.security.device.audio-input',
-     perms.camera && 'com.apple.security.device.camera'].filter(Boolean))];
+     perms.camera && 'com.apple.security.device.camera',
+     perms.location && 'com.apple.security.personal-information.location'].filter(Boolean))];
   if (identity !== '-' && devices.length) {
     const ENT = '.build/entitlements.plist';
     await tjs.writeFile(ENT, enc.encode(`<?xml version="1.0" encoding="UTF-8"?>

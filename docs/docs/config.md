@@ -290,13 +290,13 @@ Folders can be opened with the app too (dropped on its icon, or "Open With"); th
 
 `object`
 
-Camera, microphone and speech recognition, each with the reason shown to the user:
+Camera, microphone, speech recognition and location, each with the reason shown to the user:
 
 ```json
 { "permissions": { "microphone": "To record voice notes", "camera": "For video calls" } }
 ```
 
-- **macOS**: the reasons appear in the system permission prompts, and declaring a key is what lets the app ask at all. `speechRecognition` is macOS only and needs `microphone` too.
+- **macOS**: the reasons appear in the system permission prompts, and declaring a key is what lets the app ask at all. `speechRecognition` is macOS only and needs `microphone` too. `location` is macOS only: it lets the app ask with [`permissions.request('location')`](./permissions#names), which [`system.wifi()`](./system#wifi) needs to read the network name. Signed builds get the matching hardened-runtime entitlement.
 - **Linux**: `microphone` and `camera` decide whether the page may use `getUserMedia` at all.
 - **Windows**: not needed — WebView2 shows its own prompt.
 

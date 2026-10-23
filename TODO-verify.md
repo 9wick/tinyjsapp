@@ -8,6 +8,33 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## #90 — macOS: the 'location' permission, for wifi ssid (2026-10-23)
+
+`permissions.check/request('location')` (CoreLocation) plus
+`"permissions": { "location" }` → NSLocationUsageDescription +
+NSLocationWhenInUseUsageDescription, and the location entitlement when
+signed. macOS only; Windows/Linux already answer `'unsupported'` for an
+unknown name.
+
+- [x] **macOS 27, built ad-hoc app** — `check` → `'undetermined'`;
+  `request` shows the "would like to use your current location" prompt
+  naming the app with the tinyjs.json reason. *(2026-10-23)*
+- [x] **macOS, after Allow** — `request` resolves `'granted'`, `wifi()`
+  has a non-null `ssid`/`bssid`; the app is listed (on) under Location
+  Services. On relaunch the first `check` already says `'granted'`.
+  *(2026-10-23, macOS 27.0.1)*
+- [x] **macOS, after Don't Allow** — `'denied'`, listed (off) under
+  Location Services; on relaunch `check` → `'denied'` and `request` answers
+  at once with no prompt. *(2026-10-23, macOS 27.0.1 — the relaunch caught
+  a fresh CLLocationManager reading NotDetermined before locationd's first
+  callback; queries now wait for it.)*
+- [x] **macOS, signed (hardened runtime)** — same as Allow; the entitlement
+  is in `codesign -d --entitlements -`. *(2026-10-23, macOS 27.0.1,
+  Developer ID)*
+- [ ] **macOS 14** — the oldest supported OS prompts and reads ssid.
+- [x] **`tinyjs dev`** — `request` resolves `'undetermined'` promptly (no
+  hang) and stderr names the tinyjs.json key. *(2026-10-23, macOS 27)*
+
 ## Linux: globalHotkeys capability, and file types join the existing type (2026-10-21)
 
 Bridge only. `bin/tjs run test/linux-mime/check.js` covers the globs2

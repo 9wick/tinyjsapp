@@ -72,11 +72,12 @@
         "openFolders": { "$ref": "#/$defs/optionalBoolean", "description": "Folders can be opened with the app too (onOpenFiles). macOS and Linux, built apps only." },
         "permissions": {
           "type": ["object", "null"],
-          "description": "Camera, microphone and speech recognition, each with the reason shown to the user. macOS: the prompt text, and what lets the app ask at all. Linux: microphone/camera decide whether getUserMedia works. Windows: unused (WebView2 prompts itself). speechRecognition is macOS only.",
+          "description": "Camera, microphone, speech recognition and location, each with the reason shown to the user. macOS: the prompt text, and what lets the app ask at all. Linux: microphone/camera decide whether getUserMedia works. Windows: unused (WebView2 prompts itself). speechRecognition and location are macOS only.",
           "properties": {
             "microphone": { "$ref": "#/$defs/optionalString" },
             "camera": { "$ref": "#/$defs/optionalString" },
-            "speechRecognition": { "$ref": "#/$defs/optionalString" }
+            "speechRecognition": { "$ref": "#/$defs/optionalString" },
+            "location": { "$ref": "#/$defs/optionalString", "description": "macOS: lets the app ask for Location (permissions.request('location')), which tiny.system.wifi() needs for ssid/bssid on macOS 14+." }
           }
         },
         "audioTap": { "type": ["string", "boolean", "null"], "description": "Turns on tiny.audioTap: \"app\" (the app's own audio; true means the same) or \"system\". Without it start() fails with not-declared." },

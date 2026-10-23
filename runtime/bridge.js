@@ -2385,9 +2385,9 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     // Paste into the frontmost app (hide your window first).
     paste: () => app.keystroke('cmd+v'),  // same Wayland answer as keystroke
     // TCC permissions: 'accessibility' | 'screen' | 'notifications' |
-    // 'automation[:<bundle-id>]'. check -> 'granted'|'denied'|'undetermined'|
-    // 'unsupported'; request also prompts (accessibility opens System
-    // Settings pointing at your app).
+    // 'microphone' | 'camera' | 'location' | 'automation[:<bundle-id>]'.
+    // check -> 'granted'|'denied'|'undetermined'|'unsupported'; request also
+    // prompts (accessibility opens System Settings pointing at your app).
     // Linux answers 'granted' for anything it has no permission store for.
     // Under Wayland that included 'accessibility' (keystroke) and 'screen'
     // (captureScreen), which can't work there at all — 'unsupported' then,
@@ -2707,7 +2707,8 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // without a battery).
       battery: () => query('battery'),
       // { ssid, bssid, rssi, noise, txRate } | null. ssid/bssid are null
-      // without the Location permission on macOS 14+.
+      // without the Location permission on macOS 14+ (permissions.request(
+      // 'location'), with "permissions": { "location" } in tinyjs.json).
       wifi: () => query('wifi'),
       // Seconds since the user's last input, session-wide — pause polling /
       // dim UI when they walk away.

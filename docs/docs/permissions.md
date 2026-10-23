@@ -8,7 +8,7 @@ title: "permissions"
 
 Some features only work once the user has allowed them in the OS: posting keystrokes needs Accessibility, screenshots need Screen Recording, and so on. `tiny.app.permissions` lets you find out where you stand and ask at a moment you choose, so the app can say "needs Accessibility to paste — Open Settings" instead of failing silently the first time.
 
-This page is about the runtime API. The [`permissions`](./config#permissions) key in tinyjs.json is a separate thing: it declares the camera and microphone reasons shown in macOS's prompts, and on Linux whether pages may use the camera and microphone at all. See [camera and microphone](#media) below.
+This page is about the runtime API. The [`permissions`](./config#permissions) key in tinyjs.json is a separate thing: it declares the camera, microphone and location reasons shown in macOS's prompts, and on Linux whether pages may use the camera and microphone at all. See [camera and microphone](#media) below.
 
 The backend has the same calls on `app.permissions`.
 
@@ -54,6 +54,7 @@ async function ensureAccessibility() {
 | `'screen'` | screenshots and screen recording (`captureScreen`, `macos.recorder`) |
 | `'notifications'` | notification banners — see [notifications](./notifications#permission) |
 | `'microphone'`, `'camera'` | the system layer under `getUserMedia` |
+| `'location'` | Location Services; [`system.wifi()`](./system#wifi) needs it for `ssid` and `bssid` on macOS 14+ |
 | `'automation'` | sending Apple Events to System Events (`macos.applescript`) |
 | `'automation:<bundle-id>'` | sending Apple Events to that app, e.g. `'automation:com.apple.Music'` |
 
@@ -65,11 +66,12 @@ async function ensureAccessibility() {
 - `'screen'` never reads `'undetermined'`: macOS only offers a yes/no check for screen recording, so it's `'denied'` until granted in System Settings.
 - `'notifications'` is `'unsupported'` unless the app is a packaged `.app`. `request()` shows the notification prompt.
 - `'microphone'` and `'camera'`: `request()` prompts only while the status is `'undetermined'`. After a denial it resolves `'denied'` without asking; the user has to change it in System Settings.
+- `'location'`: `request()` prompts only while the status is `'undetermined'`, and only in a packaged app that declares `location` in [`permissions`](./config#permissions) — without the declaration macOS ignores the request, so it resolves `'undetermined'` with no prompt (and does so in `tinyjs dev` too). An app shows up under Location Services in System Settings only after it has asked. `'denied'` also covers Location Services being switched off for the whole Mac.
 - `'automation'` and `'automation:<bundle-id>'`: `request()` shows the consent dialog. If the check itself fails — a target that can't be found, for instance — the status is `'undetermined'`.
 
-**Windows** has no equivalent permission store. The five plain names resolve `'granted'`; `'automation'` names resolve `'unsupported'`.
+**Windows** has no equivalent permission store. The five plain names resolve `'granted'`; `'location'` and `'automation'` names resolve `'unsupported'`.
 
-**Linux** has no equivalent either, and answers the same way: `'granted'` for the five plain names, `'unsupported'` for `'automation'` — except in a Wayland session, where `'accessibility'` and `'screen'` are `'unsupported'`, because keystrokes and screen capture don't work there. Otherwise `'granted'` only means there is no permission to get, not that the feature exists; check [`tiny.system.capabilities()`](./portability) for that.
+**Linux** has no equivalent either, and answers the same way: `'granted'` for the five plain names, `'unsupported'` for `'location'` and `'automation'` — except in a Wayland session, where `'accessibility'` and `'screen'` are `'unsupported'`, because keystrokes and screen capture don't work there. Otherwise `'granted'` only means there is no permission to get, not that the feature exists; check [`tiny.system.capabilities()`](./portability) for that.
 
 ## camera and microphone in pages {#media}
 

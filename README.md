@@ -210,7 +210,7 @@ A project is just:
 myapp/
   tinyjs.json            # { name, title, size, id, version, icon?, signIdentity?,
                          #   urlScheme? (string or array), fileExtensions?, chrome?, update?, notarize?,
-                         #   permissions? ({ microphone, camera, speechRecognition: "why" }),
+                         #   permissions? ({ microphone, camera, speechRecognition, location: "why" }),
                          #   audioTap? ("app" | "system"), audioTapReason? (macOS prompt text),
                          #   contextMenu? (false suppresses WebKit's default right-click menu),
                          #   debug? (true = F12 opens devtools (⌥⌘I also works on macOS),
@@ -664,6 +664,7 @@ await tiny.app.permissions.check('accessibility');
 await tiny.app.permissions.request('accessibility');  // prompt/open Settings
 // names: 'accessibility', 'screen', 'notifications' (packaged apps),
 //        'microphone', 'camera' (TCC layer under getUserMedia),
+//        'location' (wifi ssid/bssid; packaged apps that declare it),
 //        'automation' (System Events) or 'automation:<bundle-id>'
 // 'screen' never reads 'undetermined' — macOS only exposes a yes/no
 // preflight for screen recording ('denied' until granted in Settings).
@@ -897,7 +898,8 @@ tiny.app.icon(canvasPngPath);                // '' resets to the bundle icon
 const bat = await tiny.system.battery();        // { percent, charging, plugged,
                                              //   minutesRemaining } | null
 const net = await tiny.system.wifi();           // { ssid, bssid, rssi, txRate }
-                                             //   (ssid needs Location) | null
+                                             //   | null — ssid needs
+                                             //   permissions.request('location')
 
 // find files by name or content (Spotlight, no mdfind spawn) — 100 paths max
 const docs = await tiny.app.spotlight('quarterly report');

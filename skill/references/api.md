@@ -504,7 +504,8 @@ await tiny.system.locale();  // { language, languages, system, region, timeZone 
 // txiki has no Intl and LANG is wrong/absent. languages = filtered to bundle
 // localizations, system = raw user preference (differ for an English-only
 // app on a French Mac). macOS only; 'locale' page event on change.
-await tiny.system.battery(); await tiny.system.wifi();  // mac (wifi: ssid→Location perm)
+await tiny.system.battery(); await tiny.system.wifi();  // mac (wifi: ssid→'location' perm,
+                                // declared in permissions + request('location'))
 await tiny.system.idleTime();   // seconds since last input (linux: GNOME)
 
 await tiny.theme.get();         // { dark } | null
@@ -591,7 +592,7 @@ await tiny.app.permissions.check('accessibility');   // 'granted'|'denied'|
                                                      // 'undetermined'|'unsupported'
 await tiny.app.permissions.request('accessibility'); // prompts / opens Settings
 // names: accessibility | screen | notifications | microphone | camera |
-//        automation[:<bundle-id>]
+//        location | automation[:<bundle-id>]
 ```
 
 - Off macOS, `granted` usually means "not gated here", not "consent given".
@@ -610,6 +611,10 @@ await tiny.app.permissions.request('accessibility'); // prompts / opens Settings
 - speech-to-text: the page's `webkitSpeechRecognition` (WebKit AND WebView2
   have it) needs BOTH `microphone` and `speechRecognition` usage strings in
   a built app — missing the second = `service-not-allowed` with no prompt.
+- location (macOS; `system.wifi()` ssid/bssid on 14+): declare
+  `"permissions": { "location": "why" }`, then `request('location')` in a
+  BUILT app. Without the string — and always in dev — request resolves
+  `'undetermined'` with no prompt. Windows/Linux: `'unsupported'`.
 - dev-mode: TCC grants attach to the SHARED dev launcher binary — all dev
   apps share them; packaged apps get their own.
 

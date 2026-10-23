@@ -308,6 +308,7 @@
 #import <UserNotifications/UserNotifications.h>
 #import <WebKit/WebKit.h>
 #import <CoreWLAN/CoreWLAN.h> // Wi-Fi info
+#import <CoreLocation/CoreLocation.h> // the 'location' permission (wifi ssid)
 #import <CoreAudio/CoreAudio.h>              // process taps (tiny.audioTap)
 #import <CoreAudio/AudioHardwareTapping.h>   // AudioHardwareCreateProcessTap (14.2+)
 #import <CoreAudio/CATapDescription.h>       // CATapDescription (14.2+)
@@ -2679,6 +2680,84 @@ static void perm_reply(const std::string &qid, const char *status) {
   sock_write_line("GOT " + qid + " {\"status\":\"" + status + "\"}");
 }
 
+// 'location': what the Wi-Fi SSID/BSSID sit behind on macOS 14+ (#90). An app
+// only shows up in System Settings > Location Services once it has asked, so
+// without this there was no way to grant it at all. The answer arrives on the
+// delegate; the manager lives for the process (a released one dismisses its
+// own prompt), and requests made while one is pending share its answer.
+static const char *loc_status_str(CLAuthorizationStatus s) {
+  // macOS has no WhenInUse state: a grant reads AuthorizedAlways. Restricted
+  // and denied (Location Services switched off system-wide too) are denied.
+  return s == kCLAuthorizationStatusNotDetermined    ? "undetermined"
+         : s == kCLAuthorizationStatusAuthorizedAlways ? "granted"
+                                                       : "denied";
+}
+@interface TinyLocation : NSObject <CLLocationManagerDelegate>
+@property(retain) CLLocationManager *manager;
+- (void)query:(const std::string &)qid ask:(bool)ask;
+@end
+@implementation TinyLocation {
+  // A new manager reads NotDetermined until locationd answers with the real
+  // status on the first delegate callback — a check made before it said
+  // 'undetermined' for an app already denied. Queries wait for that callback
+  // (or a second, should it never come) in _early.
+  bool _ready;
+  std::vector<std::pair<std::string, bool>> _early;
+  std::vector<std::string> _pending;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _manager = [[CLLocationManager alloc] init];
+    _manager.delegate = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{ [self becomeReady]; });
+  }
+  return self;
+}
+- (void)becomeReady {
+  if (_ready) return;
+  _ready = true;
+  auto early = std::move(_early);
+  _early.clear();
+  for (auto &e : early) [self query:e.first ask:e.second];
+}
+- (void)query:(const std::string &)qid ask:(bool)ask {
+  if (!_ready) {
+    _early.emplace_back(qid, ask);
+    return;
+  }
+  CLAuthorizationStatus st = self.manager.authorizationStatus;
+  if (!ask || st != kCLAuthorizationStatusNotDetermined) {
+    perm_reply(qid, loc_status_str(st));
+    return;
+  }
+  // Without a usage string CoreLocation drops the request silently and the
+  // delegate never hears back — answer now rather than leave it pending.
+  // In tinyjs dev that's every request: the bare launcher has no Info.plist.
+  NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
+  if (!info[@"NSLocationUsageDescription"] &&
+      !info[@"NSLocationWhenInUseUsageDescription"]) {
+    std::fprintf(stderr, "launcher: permissions.request('location') needs "
+                         "\"permissions\": { \"location\": \"why\" } in "
+                         "tinyjs.json and a built app\n");
+    perm_reply(qid, "undetermined");
+    return;
+  }
+  _pending.push_back(qid);
+  if (_pending.size() == 1) [self.manager requestWhenInUseAuthorization];
+}
+- (void)locationManagerDidChangeAuthorization:(CLLocationManager *)m {
+  // Fires once at creation with the current status, then on the user's
+  // answer; only a decided status settles the pending requests.
+  [self becomeReady];
+  CLAuthorizationStatus st = m.authorizationStatus;
+  if (st == kCLAuthorizationStatusNotDetermined) return;
+  for (auto &q : _pending) perm_reply(q, loc_status_str(st));
+  _pending.clear();
+}
+@end
+static TinyLocation *g_location = nil;
+
 static void do_perm(webview_t, void *arg) {
   PermReq *req = static_cast<PermReq *>(arg);
   std::string name = req->name, qid = req->qid;
@@ -2761,6 +2840,9 @@ static void do_perm(webview_t, void *arg) {
                               ? "undetermined"
                               : "undetermined");
         });
+  } else if (name == "location") {
+    if (!g_location) g_location = [[TinyLocation alloc] init];
+    [g_location query:qid ask:ask];
   } else {
     perm_reply(qid, "unsupported");
   }
@@ -8247,8 +8329,8 @@ static std::string wifi_json() {
     CWInterface *itf = [[CWWiFiClient sharedWiFiClient] interface];
     if (!itf || !itf.powerOn)
       return "null";
-    // ssid is nil without the Location permission on macOS 14+; the rest of
-    // the fields still come through.
+    // ssid is nil without the Location permission on macOS 14+ (ask with
+    // permissions.request('location')); the rest still come through.
     NSString *ssid = itf.ssid;
     return std::string("{\"ssid\":") +
            (ssid ? json_escape([ssid UTF8String]) : "null") + ",\"bssid\":" +

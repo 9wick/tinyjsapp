@@ -187,7 +187,8 @@ declare interface TinyBattery {
 }
 
 declare interface TinyWifi {
-  /** null without the Location permission on macOS 14+ */
+  /** null without the Location permission on macOS 14+ — declare
+   *  permissions.location in tinyjs.json, then permissions.request('location') */
   ssid: string | null;
   bssid: string | null;
   /** signal strength, dBm */
@@ -471,7 +472,7 @@ declare interface TinyKeystrokeResult {
  *  user grants it in System Settings. */
 declare type TinyPermissionName =
   | 'accessibility' | 'screen' | 'notifications'
-  | 'microphone' | 'camera'
+  | 'microphone' | 'camera' | 'location'
   | 'automation' | `automation:${string}`;
 
 declare type TinyPermissionStatus =
