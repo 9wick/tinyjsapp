@@ -977,6 +977,31 @@
       on(fn) { return window.tiny.api.on('tray', ({ id }) => fn(id)); },          // menu item clicks
       onClick(fn) { return window.tiny.api.on('trayclick', () => fn()); },        // icon clicks
     },
+
+    // What THIS page can actually do, by the tiny.* path you'd call: the OS,
+    // the Linux session and tinyjs.json's "api" gate for this origin, in one
+    // answer. Every tiny function exists on every page whether or not it
+    // works, so `typeof` tells a wrapped site nothing — this does.
+    //   await tiny.capabilities.ready;          // once, then all sync
+    //   tiny.capabilities.can('clipboard.write')   // true | false
+    //   tiny.capabilities.can('tray.*')            // any tray call works
+    //   tiny.capabilities.get('app.badge')  // { ok: false, why: 'platform', feature: 'badge' }
+    //   tiny.capabilities.list()            // every path that works
+    // why: 'gate' (needs: the names to enable in "api"), 'platform', 'session'
+    // (Wayland), 'unknown' (no such path), 'pending' (before ready).
+    // Informational only: the backend gate decides every call regardless.
+    capabilities: {
+      get ready() { return capReady; },
+      can: (path) => capCan(path),
+      get: (path) => capGet(path),
+      list: () => capList(),
+      // fn({ added, removed }) when the answer changes — including when the
+      // first snapshot lands, so a page can render from this alone.
+      onChange(fn) { return window.tiny.api.on('capabilities-change', fn); },
+      // Ask again (the answer is fixed for a page's life today; this is for
+      // the day something isn't).
+      refresh: () => capFetch(),
+    },
   };
 
   window.__emit = (msg) => {
@@ -1095,6 +1120,89 @@
       },
     };
   }
+
+  // tiny.capabilities: which wire calls and events each tiny.* path makes,
+  // read from the functions' own source, so the table can't drift from the
+  // code: call('x'), api.on('e'), and other tiny functions they call. The
+  // two closures that call through a helper are named by hand.
+  const capUses = {};   // 'clipboard.onChange' -> { calls: [...], events: [...] }
+  {
+    const fns = {};
+    const walk = (o, pre) => {
+      for (const k of Object.keys(o)) {
+        const path = pre + k;
+        if (path === 'capabilities') continue;   // (its getter isn't ready yet)
+        const v = o[k];
+        if (typeof v === 'function') fns[path] = String(v);
+        else if (v && typeof v === 'object') walk(v, path + '.');
+      }
+    };
+    walk(window.tiny, '');
+    const MANUAL = { fetch: { calls: ['fetch'], events: [] },
+                     proxyURL: { calls: ['media.proxy'], events: [] } };
+    const resolve = (path, seen) => {
+      if (capUses[path]) return capUses[path];
+      if (MANUAL[path]) return (capUses[path] = MANUAL[path]);
+      const src = fns[path] || '';
+      const calls = new Set([...src.matchAll(/\bcall\('([^']+)'/g)].map((m) => m[1]));
+      const events = new Set([...src.matchAll(/api\.on\('([^']+)'/g)].map((m) => m[1]));
+      seen.add(path);
+      for (const [, ref] of src.matchAll(/window\.tiny\.([\w.]+)\(/g)) {
+        if (seen.has(ref) || !(ref in fns) || ref.startsWith('api.')) continue;
+        const u = resolve(ref, seen);
+        u.calls.forEach((c) => calls.add(c)); u.events.forEach((e) => events.add(e));
+      }
+      return (capUses[path] = { calls: [...calls], events: [...events] });
+    };
+    for (const path of Object.keys(fns)) resolve(path, new Set());
+  }
+  let capVerdicts = null;
+  const capOk = (path) => {
+    const u = capUses[path];
+    return !!(u && capVerdicts) && u.calls.every((c) => capVerdicts.calls[c] === true)
+      && u.events.every((e) => capVerdicts.events[e] === true);
+  };
+  const capPath = (path) => String(path).replace(/^tiny\./, '');
+  const capList = () => (capVerdicts ? Object.keys(capUses).filter(capOk).sort() : []);
+  // 'ns.*' is every path under ns — can() is true when ANY of them works
+  const capUnder = (p) => Object.keys(capUses).filter((k) => k.startsWith(p.slice(0, -1)));
+  const capCan = (path) => {
+    const p = capPath(path);
+    return p.endsWith('.*') ? capUnder(p).some(capOk) : capOk(p);
+  };
+  const capGet = (path) => {
+    const p = capPath(path);
+    if (p.endsWith('.*')) {   // the first working path's answer, else the first's
+      const under = capUnder(p);
+      return capGet(under.find(capOk) ?? under[0] ?? p.slice(0, -2));
+    }
+    const u = capUses[p];
+    if (!u) return { ok: false, why: 'unknown' };
+    if (!capVerdicts) return { ok: false, why: 'pending' };
+    const bad = [...u.calls.map((c) => capVerdicts.calls[c]),
+                 ...u.events.map((e) => capVerdicts.events[e])].filter((v) => v !== true);
+    if (!bad.length) return { ok: true };
+    // the gate first: it's the one the manifest author can do something about
+    const gated = bad.filter((v) => !v || v.why === 'gate');
+    if (gated.length) return { ok: false, why: 'gate', needs: [...new Set(gated.map((v) => v?.needs).filter(Boolean))] };
+    return { ok: false, why: bad[0].why, feature: bad[0].feature };
+  };
+  const capFetch = async () => {
+    const all = Object.values(capUses);
+    const before = capList();
+    try {
+      capVerdicts = await call('client.capabilities', {
+        calls: [...new Set(all.flatMap((u) => u.calls))],
+        events: [...new Set(all.flatMap((u) => u.events))],
+      });
+    } catch { return; }   // nothing claimed, which is the safe answer
+    const after = capList();
+    const added = after.filter((p) => !before.includes(p));
+    const removed = before.filter((p) => !after.includes(p));
+    if (added.length || removed.length)
+      window.__emit({ event: 'capabilities-change', data: { added, removed } });
+  };
+  const capReady = capFetch();
 
   // Announce this page to the backend once tiny is up. First boot and every
   // reload land here; the bridge uses the MAIN window's hello to re-arm the

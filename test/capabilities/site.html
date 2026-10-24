@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>wrapped site</title>
+<p>wrapped site: what can I do?</p>
+<script>
+const WHO = 'site';
+(async () => {
+  for (let i = 0; i < 100 && !window.tiny; i++) await new Promise((r) => setTimeout(r, 50));
+  const c = tiny.capabilities;
+  const before = c.can('notify');
+  let fired = null;
+  c.onChange((d) => { fired = d.added.length; });
+  await c.ready;
+  const paths = ['notify', 'clipboard.read', 'clipboard.write', 'fetch', 'proxyURL',
+                 'win.onDrop', 'app.onOpenUrl', 'menu.on', 'macos.ai.generate',
+                 'app.secrets.get', 'system.capabilities', 'win.setAllSpaces'];
+  const got = {};
+  for (const p of paths) got[p] = c.get(p);
+  await tiny.api.call('report', { who: WHO, before, fired, count: c.list().length, got });
+})();
+</script>

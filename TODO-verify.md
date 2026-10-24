@@ -8,6 +8,26 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## `tiny.capabilities` — can()/get()/list() per tiny.* path (`feat/capabilities-can`, 2026-10-24)
+
+tiny.js reads each function's wire names from its own source at boot and
+asks `client.capabilities` (always allowed, like client.hello) for a
+verdict per name: the "api" gate for the calling origin first, then the
+platform table. Same tiny.js and bridge on every OS, but the origin stamp
+and the platform table differ per launcher. Headless:
+`bin/tjs run test/capabilities/check.js`. End to end: test/capabilities/README.md.
+
+- [x] **macOS 27.0.1, dev** — wrapped site (wrapper preset) 95 paths,
+  gate reasons with `needs` (clip.read, fetch, media.proxy, event.drop,
+  event.open-url, secrets.get); own file:// page all 169.
+  *(2026-10-24)*
+- [ ] **Windows** — same run; expect `win.setAllSpaces` and `proxyURL`
+  `{ why: 'platform' }` on the own page, and the site's verdicts to match
+  macOS (the origin rides the LAST CALL element — a site passing extra
+  `__invoke` arguments must not change its answer).
+- [ ] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
+  `app.keystroke` read `why: 'session'`; on X11 they're ok.
+
 ## #89 — macOS: `chrome.panel` non-activating panels (2026-10-23)
 
 TinyPanel (NSPanel + NonactivatingPanel, the bit kept through every

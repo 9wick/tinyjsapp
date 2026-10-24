@@ -1171,8 +1171,8 @@ declare interface Tiny {
     architecture(): Promise<string>;
     /** What this machine can actually do — anything ABSENT is supported.
      *  Mostly booleans (`sampler` is 'page' | 'native'), plus `api`: what
-     *  the tinyjs.json "api" gate denies THIS origin, so a wrapped page can
-     *  hide UI for calls it would only watch fail. */
+     *  the tinyjs.json "api" gate denies THIS origin. A page usually wants
+     *  tiny.capabilities.can() instead, which answers both at once. */
     capabilities(): Promise<Record<string, boolean | string> & {
       api?: { gated: boolean; denied: string[] };
     }>;
@@ -1343,7 +1343,38 @@ declare interface Tiny {
     on(fn: (id: string) => void): () => void;
     onClick(fn: () => void): () => void;
   };
+
+  /** What THIS page can actually do, keyed by the tiny.* path you'd call
+   *  ('clipboard.write', 'app.badge'; a leading 'tiny.' is fine). One answer
+   *  for the OS, the Linux session and tinyjs.json's "api" gate for this
+   *  page's origin. Await `ready` once; everything else is synchronous.
+   *  Informational: the backend gate still decides every call. */
+  capabilities: {
+    /** resolves once the answer has arrived (until then can() is false) */
+    readonly ready: Promise<void>;
+    /** true when the call works here. 'ns.*' is true when ANY path under
+     *  ns works. */
+    can(path: string): boolean;
+    /** why not, when it doesn't */
+    get(path: string): TinyCapability;
+    /** every path that works here, sorted */
+    list(): string[];
+    /** fires when the answer changes, including when the first one lands */
+    onChange(fn: (change: { added: string[]; removed: string[] }) => void): () => void;
+    /** ask the backend again; fires onChange if anything differs */
+    refresh(): Promise<void>;
+  };
 }
+
+declare type TinyCapability =
+  | { ok: true }
+  /** 'gate': tinyjs.json "api" denies it — `needs` are the names to enable */
+  | { ok: false; why: 'gate'; needs: string[] }
+  /** 'platform': this OS can't; 'session': this Linux session can't (Wayland).
+   *  `feature` is the system.capabilities() key that says so. */
+  | { ok: false; why: 'platform' | 'session'; feature: string }
+  /** 'unknown': no such path; 'pending': asked before `ready` */
+  | { ok: false; why: 'unknown' | 'pending' };
 
 declare const tiny: Tiny;
 
