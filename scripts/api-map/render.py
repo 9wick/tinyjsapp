@@ -51,7 +51,7 @@ SECTIONS=[
  ('menu','Menus',['menu']),('tray','Tray',['tray']),('hotkey','Hotkeys',['hotkey']),
  ('dialog','Dialogs',['dialog']),('notify','Notifications',['notify']),
  ('app','App',None),
- ('system','System',['system']),('theme','Theme',['theme']),
+ ('system','System',['system','capabilities']),('theme','Theme',['theme']),
  ('clipboard','Clipboard',['clipboard']),('store','Store',['store']),
  ('audio','Audio',['audio','audioTap']),('macos','macOS only',['macos']),
 ]

@@ -200,6 +200,10 @@ audioTap / proxyURL), store/secrets, cookies, permissions, deep links, auto-upda
   fire-and-forget ones no-op — but `tiny.macos.*` off macOS REJECTS.
   `caps.sampler` is a string ('native'|'page') — informational, don't
   branch.
+- From a PAGE, prefer `tiny.capabilities.can('app.badge')` (sync after
+  `await tiny.capabilities.ready`): keyed by the tiny.* path, it folds the
+  OS, the Linux session AND the tinyjs.json "api" gate into one boolean;
+  `.get(path)` says why not (`gate` + `needs`, `platform`, `session`).
 - Use `app.paths` / `tiny.app.paths()` — never hardcode `~/Library` or
   `%APPDATA%`; join with '/' (works everywhere).
 - `tiny.system.os()/isMacOS()/isWindows()/isLinux()` are synchronous;

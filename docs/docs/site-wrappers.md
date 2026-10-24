@@ -150,13 +150,16 @@ So the `"wrapper"` preset hears menu, tray, window, theme, locale, Now Playing a
 
 ### checking from the page {#capabilities}
 
+Every `tiny` function exists on a wrapped site whether or not the gate lets it through, so `typeof` tells the site nothing. [`tiny.capabilities`](./portability#capabilities) answers for the site's own origin, and works under any gate, even `"none"`, since it can't tell a page more than calling would:
+
 ```js
-const { api } = await tiny.system.capabilities();
-// { gated: true, denied: ['clip.read', 'secrets.get', …] } — for this page's origin
-if (!api.denied.includes('notify')) showNotifyToggle();
+await tiny.capabilities.ready;
+if (tiny.capabilities.can('notify')) showNotifyToggle();
+tiny.capabilities.get('clipboard.read');
+// { ok: false, why: 'gate', needs: ['clip.read'] } — what to add to "enable"
 ```
 
-A denied call rejects with `"<name>" is disabled by tinyjs.json "api"`. Run `TINYJS_DEBUG=1 tinyjs dev` to log each denial with the origin it came from, which is the quickest way to find what a site needs. `system.capabilities` is itself a call, so the gate has to allow it.
+A denied call rejects with `"<name>" is disabled by tinyjs.json "api"`. Run `TINYJS_DEBUG=1 tinyjs dev` to log each denial with the origin it came from, which is the quickest way to find what a site needs.
 
 ### your own api functions {#own-api}
 

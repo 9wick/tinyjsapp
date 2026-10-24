@@ -4,6 +4,24 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`tiny.capabilities`: ask whether a call will work, by the call.** Every
+  `tiny` function exists on every page whether or not it works there, so a
+  page couldn't feature-detect without knowing two vocabularies:
+  `system.capabilities()`'s platform keys (`badge`) and the `"api"` gate's
+  wire names (`app.badge`, `clip.write`) in `api.denied`. Now
+  `tiny.capabilities.can('app.badge')` answers for the path you'd call,
+  folding in the OS, the Linux session and the gate for this page's origin.
+  `await tiny.capabilities.ready` once; after that `can()`, `get()` and
+  `list()` are synchronous. `get(path)` says why not: `gate` (with `needs`,
+  the names to add to `"enable"`), `platform`, or `session` (Wayland).
+  `can('tray.*')` is true if any tray call works, and `onChange` fires when
+  the answer arrives. It works under any gate, even `"none"`, and a page is
+  told only about the names its own `tiny` uses: unlike `api.denied`, it
+  never lists the app's own api methods to a site that can't call them.
+  Docs: [portability](https://tinyjs.app/docs/portability#capabilities).
+
 ## 0.65.0 — 2026-10-23
 
 - **macOS: `tinyjs wrap` no longer fails with `command failed (osascript)`

@@ -991,7 +991,7 @@ const DIALOG_OPS = {
 // The client's own bootstrap. NOT debug.get: it's a raw launcher read-back
 // (clipboard, wifi, frontmost, other windows, selected text...), so under a
 // gate it passes only when a manifest names it (#11).
-const API_ALWAYS = ['client.hello'];
+const API_ALWAYS = ['client.hello', 'client.capabilities'];
 const API_PRESETS = {
   // A site wrapper's posture: OS chrome, windows, dialogs, the app's own
   // store in; filesystem, clipboard READ, secrets, capture and automation out.
@@ -1203,6 +1203,90 @@ export function eventScript(event, data, origin) {
     ? 'location.protocol==="file:"'
     : 'location.origin===' + JSON.stringify(String(origin));
   return '(function(){if(!(' + test + '))return;' + emit + '})()';
+}
+
+// tiny.capabilities (the page's sync can()/list()/get()). tiny.js reads the
+// wire names out of its own functions at boot and asks about exactly those,
+// so this answers per wire name and never lists anything the page didn't
+// name — the app's own api methods stay unnamed to a site that can't call
+// them (capabilities().api.denied used to list them).
+// The gate is checked FIRST: a denied name says only 'gate', so an origin
+// the manifest doesn't trust learns nothing about the machine either.
+// Which capabilities() key each wire name / event rides on. A key that is
+// false makes the name unavailable; one that is absent or truthy doesn't.
+export const CAPABILITY_FEATURES = {
+  'win.setPosition': 'windowPosition', 'app.mouse': 'mousePosition',
+  'app.captureScreen': 'captureScreen',
+  'app.keystroke': 'keystroke', 'app.paste': 'keystroke',
+  'macos.otherWindows': 'otherWindows', 'macos.moveWindow': 'moveOtherWindows',
+  'macos.selectedText': 'selectedText', 'macos.ocr': 'ocr',
+  'macos.recorder.start': 'recorder', 'macos.recorder.stop': 'recorder',
+  'macos.quickLook': 'quickLook', 'macos.applescript': 'applescript',
+  'macos.ai.generate': 'ai', 'win.share': 'share',
+  'system.wifi': 'wifi', 'system.locale': 'locale',
+  'app.authenticate': 'authenticate',
+  'app.badge': 'badge', 'app.progress': 'progress', 'app.icon': 'icon',
+  'app.attention': 'attention', 'app.presence': 'presence',
+  'hotkey.register': 'globalHotkeys', 'hotkey.unregister': 'globalHotkeys',
+  'tray.set': 'tray', 'tray.remove': 'tray', 'tray.position': 'tray',
+  'notify': 'notifications',
+  'nowplaying.set': 'nowPlaying', 'nowplaying.clear': 'nowPlaying',
+  'audioTap.start': 'audioTap', 'audioTap.stop': 'audioTap',
+  'app.say': 'speech', 'app.stopSpeaking': 'speech', 'app.voices': 'speech',
+  'app.pickColor': 'pickColor', 'app.spotlight': 'spotlight',
+  'login.get': 'launchAtLogin', 'login.set': 'launchAtLogin',
+  'win.printToPDF': 'printToPDF',
+  'audio.filters': 'audioFilters', 'audio.filterSet': 'audioFilters',
+  'audio.balance': 'audioFilters',
+  'win.find': 'findInPage', 'win.stopFind': 'findInPage',
+  'win.setAllSpaces': 'setAllSpaces',
+  'secrets.get': 'secrets', 'secrets.set': 'secrets', 'secrets.delete': 'secrets',
+  'media.proxy': 'proxyURL',
+};
+export const EVENT_FEATURES = {
+  tray: 'tray', trayclick: 'tray', hotkey: 'globalHotkeys',
+  'notification-click': 'notifications', 'notification-action': 'notificationActions',
+  'media-key': 'mediaKeys', 'audio-tap': 'audioTap', locale: 'locale',
+};
+// Linux keys that are false because of the session (Wayland, or XWayland's
+// frozen pointer), not the OS — the ON_X11 rows of systemCapabilities' linux
+// table, plus the GlobalShortcuts portal.
+export const SESSION_FEATURES = ['windowPosition', 'mousePosition', 'captureScreen',
+  'keystroke', 'icon', 'attention', 'presence', 'windowControls', 'globalHotkeys'];
+// uses: { calls: [wire names], events: [event names] }, from the page.
+// callAllowed(name) / eventAllowed(event): the gate, for the calling origin.
+// platform: systemCapabilities()'s table. linux: on Linux a SESSION_FEATURES
+// key is false because of the session, so it reads 'session' there.
+// -> { calls: { name: true | { why, feature?, needs? } }, events: same }
+//    why: 'gate' (needs = the name to enable in tinyjs.json "api"),
+//         'platform' (this OS can't), 'session' (this Linux session can't)
+export function capabilityVerdicts(uses, { callAllowed, eventAllowed, platform, linux = false }) {
+  const names = (a) => (Array.isArray(a) ? a : [])
+    .filter((n) => typeof n === 'string' && n.length <= 128).slice(0, 1024);
+  const verdict = (allowed, needs, feature) => {
+    if (!allowed) return { why: 'gate', needs };
+    if (feature && platform[feature] === false)
+      return { why: linux && SESSION_FEATURES.includes(feature) ? 'session' : 'platform', feature };
+    return true;
+  };
+  const calls = {}, events = {};
+  for (const n of names(uses?.calls))
+    calls[n] = verdict(callAllowed(n), n, CAPABILITY_FEATURES[n]);
+  for (const e of names(uses?.events))
+    events[e] = verdict(eventAllowed(e), eventGateName(e), EVENT_FEATURES[e]);
+  return { calls, events };
+}
+// Does a TINYJS_MEDIA_ORIGINS line set (mediaTrustLines) trust this origin
+// for `kind`? Same '*' globbing as the launchers, whole origin anchored.
+export function mediaTrusted(lines, kind, origin) {
+  if (typeof origin !== 'string') return false;
+  return String(lines).split('\n').some((l) => {
+    const sp = l.indexOf(' ');
+    if (sp < 0 || l.slice(0, sp) !== kind) return false;
+    const re = '^' + l.slice(sp + 1).split('*')
+      .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$';
+    return new RegExp(re).test(origin);
+  });
 }
 
 // Linux, Wayland session: these permissions guard features that don't exist
@@ -3713,6 +3797,21 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     'system.locale': async () => app.system.locale(),
     'app.info': async () => app.info(),
     'system.info': async () => app.system.info(),
+    // tiny.capabilities' snapshot: a verdict for each name the page's tiny.js
+    // uses (capabilityVerdicts). Always allowed, like client.hello — it can't
+    // tell a page more than calling would, and a gated page needs it most.
+    'client.capabilities': async (uses, _a, m) => {
+      const origin = m?.origin;
+      const own = origin === undefined || String(origin).startsWith('file://') || ownPageOrigins.has(origin);
+      const allows = (name) => !apiGate || apiGate(name, origin);
+      return capabilityVerdicts(uses, {
+        callAllowed: (n) => n === 'media.proxy'
+          ? own || mediaTrusted(mediaLines, 'proxy', origin) : allows(n),
+        eventAllowed: (e) => eventAllowed(origin, e),
+        platform: await systemCapabilities(query, () => app.macos.ai.availability()),
+        linux: IS_LINUX,
+      });
+    },
     'system.capabilities': async (_p, _a, m) => ({
       ...(await systemCapabilities(query, () => app.macos.ai.availability())),
       // what the "api" gate denies the CALLING origin (empty when ungated)
@@ -3768,6 +3867,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   const methods = { ...api, ...builtins };
   const apiGate = compileApiGate(apiAccess);
   const subframeGate = compileSubframeGate(apiAccess);
+  const mediaLines = mediaTrustLines(apiAccess, [...ownPageOrigins]);
   // capabilities() reports what the gate denies THE CALLING ORIGIN, so a
   // page can hide UI for features it would only watch fail.
   const gateInfo = (origin) => {

@@ -254,8 +254,9 @@ await tiny.win.stopFind();
 tiny.api.on('navigate', (e) => {});   // { window, kind, url, error? }
 tiny.api.on('download', (d) => {});   // { id, url, filename, path, state, bytes?, total? }
 tiny.api.on('popup', (p) => {});      // { window, url, action }
-const caps = await tiny.system.capabilities();
-caps.api;                             // { gated, denied: [...] } for THIS origin
+await tiny.capabilities.ready;         // then sync, for THIS origin:
+tiny.capabilities.can('clipboard.read');   // false under "wrapper"
+tiny.capabilities.get('clipboard.read');   // { ok:false, why:'gate', needs:['clip.read'] }
 ```
 
 ```js
@@ -492,6 +493,15 @@ const caps = await tiny.system.capabilities();
 // exception rule: caps.sampler is a STRING present everywhere ('native' |
 // 'page' — informational, don't branch); caps.ai reflects the BUILD (needs
 // a launcher compiled against FoundationModels) plus macOS 26 at runtime.
+
+// Per CALL instead (page only): OS + Linux session + the "api" gate at once.
+await tiny.capabilities.ready;              // once; can/get/list are sync
+tiny.capabilities.can('app.badge');         // 'tray.*' = any tray call works
+tiny.capabilities.get('win.setPosition');   // { ok:false, why:'session', feature:'windowPosition' }
+tiny.capabilities.list();                   // every working path, sorted
+tiny.capabilities.onChange(({ added, removed }) => {});  // fires on first answer too
+// why: 'gate' (needs: names to enable) | 'platform' | 'session' | 'unknown' | 'pending'
+// Informational — the backend gate still decides. Doesn't cover the app's own api methods.
 
 // requirements — turn "missing system pieces" into an actionable prompt
 await tiny.system.requirements(ids?, { refresh: true });

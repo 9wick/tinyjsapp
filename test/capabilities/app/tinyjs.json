@@ -1,0 +1,5 @@
+{ "name": "capstest", "id": "test.tinyjs.capabilities",
+  "url": "http://127.0.0.1:8768/site.html",
+  "api": { "disable": ["*"],
+           "origins": { "http://127.0.0.1:8768": { "preset": "wrapper", "enable": ["report"] },
+                        "file://*": "all" } } }
