@@ -25,8 +25,12 @@ and the platform table differ per launcher. Headless:
   `{ why: 'platform' }` on the own page, and the site's verdicts to match
   macOS (the origin rides the LAST CALL element — a site passing extra
   `__invoke` arguments must not change its answer).
-- [ ] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
-  `app.keystroke` read `why: 'session'`; on X11 they're ok.
+- [x] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
+  `app.keystroke` read `why: 'session'`; on X11 they're ok. Ubuntu arm64,
+  GNOME Wayland, 2026-10-25, test/capabilities/app: the own page reads all
+  three `session`; under XWayland (`GDK_BACKEND=x11`) all three ok — a real
+  X11 login not tried. The wrapped site reads `gate` for captureScreen and
+  keystroke on both (the gate is checked before the platform).
 - [x] **Windows, window-mode popup** (the WebView2 popup whose calls never
   return, TODO-site-wrapper.md) — `await tiny.capabilities.ready` resolves
   after ~3s with `can()` false everywhere, instead of hanging.
@@ -58,8 +62,11 @@ and the platform table differ per launcher. Headless:
   window. Now reapplied after GTK's and committed via a relayout: the log
   shows an empty `set_input_region` + commit right after
   `setClickThrough(true)`, and the full region back after `(false)`.
-- [ ] **Linux, Wayland: click-through, by hand** — the protocol is right
-  (above); nobody has yet clicked through the window to what's behind it.
+- [x] **Linux, Wayland: click-through, by hand** — Ubuntu arm64, GNOME
+  Wayland, 2026-10-25, a self-timed page over another window: 20 clicks
+  landed before, 0 with click-through on (the window blurred once, and the
+  window behind took the click — seen by hand), 30 after turning it off;
+  `getState().clickThrough` read true / false.
 
 ## #89 — macOS: `chrome.panel` non-activating panels (2026-10-23)
 
