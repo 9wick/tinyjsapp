@@ -1413,19 +1413,38 @@ static void set_level(const std::string& winid, const std::string& level) {
   else if (g_secwins.count(winid)) g_secwins[winid]->level = level;
 }
 
+static void apply_empty_input_shape(GtkWidget* w) {
+  GdkWindow* gdkwin = gtk_widget_get_window(w);
+  if (!gdkwin) return;
+  cairo_region_t* empty = cairo_region_create();
+  gdk_window_input_shape_combine_region(gdkwin, empty, 0, 0);
+  cairo_region_destroy(empty);
+}
+
 static void set_click_through(const std::string& winid, bool on) {
   GtkWindow* win = win_for(winid);
   if (!win) return;
-  GdkWindow* gdkwin = gtk_widget_get_window(GTK_WIDGET(win));
-  if (gdkwin) {
-    if (on) {
-      cairo_region_t* empty = cairo_region_create();
-      gdk_window_input_shape_combine_region(gdkwin, empty, 0, 0);
-      cairo_region_destroy(empty);
-    } else {
-      gdk_window_input_shape_combine_region(gdkwin, nullptr, 0, 0);
-    }
+  // A client-decorated window (every Wayland toplevel) gets its input shape
+  // rewritten by GTK on each size-allocate — the CSD shadow cut-out — so a
+  // one-shot empty region never reached the compositor (WAYLAND_DEBUG showed
+  // only the full region going out). Reapply it after GTK's, for as long as
+  // click-through is on.
+  if (!g_object_get_data(G_OBJECT(win), "tinyjs-ct-hooked")) {
+    g_object_set_data(G_OBJECT(win), "tinyjs-ct-hooked", GINT_TO_POINTER(1));
+    g_signal_connect_after(win, "size-allocate", G_CALLBACK(+[](GtkWidget* w, GdkRectangle*, gpointer) {
+      if (g_object_get_data(G_OBJECT(w), "tinyjs-ct")) apply_empty_input_shape(w);
+    }), nullptr);
   }
+  g_object_set_data(G_OBJECT(win), "tinyjs-ct", GINT_TO_POINTER(on ? 1 : 0));
+  if (on) {
+    apply_empty_input_shape(GTK_WIDGET(win));
+  } else if (GdkWindow* gdkwin = gtk_widget_get_window(GTK_WIDGET(win))) {
+    gdk_window_input_shape_combine_region(gdkwin, nullptr, 0, 0);
+  }
+  // On Wayland the region is only sent with the next commit, which may never
+  // come on an idle window; a relayout forces one (and, turning it off, lets
+  // GTK put its own CSD shape back).
+  gtk_widget_queue_resize(GTK_WIDGET(win));
   if (winid.empty() || winid == "main") g_click_through = on;
   else if (g_secwins.count(winid)) g_secwins[winid]->click_through = on;
 }

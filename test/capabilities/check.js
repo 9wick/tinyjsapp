@@ -143,8 +143,12 @@ const hung = {
 };
 new Function('window', src)(hung);
 const t0 = Date.now();
-await hung.tiny.capabilities.ready;
+// A ready that never settles would just end the run (exit 0, no output), so
+// race it against a deadline that fails loudly instead.
+const settled = await Promise.race([hung.tiny.capabilities.ready.then(() => true),
+  new Promise((r) => setTimeout(() => r(false), 6000))]);
 const waited = Date.now() - t0;
+check('ready settles', settled, `${waited}ms`);
 check('ready caps out', waited >= 2500 && waited < 4500, `${waited}ms`);
 check('nothing claimed after the cap', !hung.tiny.capabilities.can('system.os') && hung.tiny.capabilities.get('notify').why === 'pending');
 let late = null;

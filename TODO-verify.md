@@ -30,16 +30,28 @@ and the platform table differ per launcher. Headless:
 - [ ] **Windows, window-mode popup** (the WebView2 popup whose calls never
   return, TODO-site-wrapper.md) — `await tiny.capabilities.ready` resolves
   after ~3s with `can()` false everywhere, instead of hanging.
-- [ ] **Linux, first page** — `ready` arrives quickly with the probes warmed
+- [x] **Linux, first page** — `ready` arrives quickly with the probes warmed
   at startup; two windows opening together spawn ONE portal probe (watch
-  `ps` / strace for gdbus).
-- [ ] **Linux, Wayland: levels + all spaces are stubs** — from the GTK3
-  source (gdkwindow-wayland.c: keep_above/below, stick/unstick are empty),
-  not measured. With `WAYLAND_DEBUG=1`, `setLevel('floating')`,
-  `setAlwaysOnTop(true)` and `setAllSpaces(true)` should emit no protocol
-  traffic and change nothing on screen, while `setClickThrough(true)` DOES
-  send `wl_surface.set_input_region` and clicks pass through. If a
-  compositor honours any of the three, flip its key back.
+  `ps` / strace for gdbus). Ubuntu arm64, GNOME Wayland, 2026-10-25: a PATH
+  shim logging gdbus saw 2 spawns (one portal, one Unity) for the two
+  windows of test/capabilities/app, against 4 with main's bridge.js; `ready`
+  in 4–7 ms on both pages.
+- [x] **Linux, Wayland: levels + all spaces are stubs** — from the GTK3
+  source (gdkwindow-wayland.c: keep_above/below, stick/unstick are empty).
+  Ubuntu arm64, GNOME Wayland, 2026-10-25, `WAYLAND_DEBUG=1` with a title
+  change as a marker between calls: `setLevel('floating')`,
+  `setAlwaysOnTop(true)` and `setAllSpaces(true)` send nothing beyond the
+  marker's own repaint. If a compositor honours any of the three, flip its
+  key back.
+- [x] **Linux, Wayland: `setClickThrough` reaches the compositor** — it did
+  NOT before 2026-10-25: GTK rewrites a client-decorated window's input
+  shape (the CSD shadow cut-out) on every size-allocate, so the launcher's
+  empty region never went out — every `set_input_region` carried the full
+  window. Now reapplied after GTK's and committed via a relayout: the log
+  shows an empty `set_input_region` + commit right after
+  `setClickThrough(true)`, and the full region back after `(false)`.
+- [ ] **Linux, Wayland: click-through, by hand** — the protocol is right
+  (above); nobody has yet clicked through the window to what's behind it.
 
 ## #89 — macOS: `chrome.panel` non-activating panels (2026-10-23)
 

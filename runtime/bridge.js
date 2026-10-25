@@ -678,8 +678,8 @@ async function systemCapabilities(query, aiStatus) {
     // and stick, and GTK3's Wayland backend implements all four as empty
     // stubs (xdg-shell has no stacking or sticky state) — so they are X11
     // only, like icon above. (setClickThrough is NOT: the input region is a
-    // real wl_surface request.) From the GTK source; WAYLAND_DEBUG check
-    // owed in TODO-verify.md.
+    // real wl_surface request.) From the GTK source, and confirmed with
+    // WAYLAND_DEBUG (TODO-verify.md): the three send nothing.
     windowLevel: ON_X11, setAllSpaces: ON_X11,
     // chrome.windowControls: GTK can only hide the CLOSE button portably
     // (gtk_window_set_deletable); minimize/maximize go out as _MOTIF_WM_HINTS,

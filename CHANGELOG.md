@@ -18,6 +18,9 @@ https://tinyjs.app/changelog.
   `tiny.capabilities.can()`) claimed them. New key `windowLevel`;
   `setAllSpaces` is now `false` on Wayland too. X11 and XWayland
   (`windowPlacement`) are unchanged.
+- **Linux Wayland: `setClickThrough(true)` works.** GTK rewrote the
+  window's input region on every relayout, so the empty one the launcher
+  set never reached the compositor and the window kept taking clicks.
 
 ## 0.66.0 — 2026-10-24
 
