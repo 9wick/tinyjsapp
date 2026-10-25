@@ -5,6 +5,8 @@
 # GUI session); pass TINYJS_LAUNCHER=/path/to/launcher to pick the binary
 # under test.
 set -u
+P=; DEV=
+trap 'kill ${P:-} ${DEV:-} 2>/dev/null || true' EXIT INT TERM
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ID=$(python3 -c "import json;print(json.load(open('$DIR/app/tinyjs.json'))['id'])")
 STORE="$HOME/Library/Application Support/$ID/store.json"
