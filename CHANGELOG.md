@@ -4,6 +4,23 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **macOS: `data-tiny-drag` drags engage late or never on a real trackpad
+  (#92).** `win.startDrag()` lands on the main thread via an async
+  dispatch, and a trackpad press is followed by a dense stream of
+  pressure/touch/gesture events — so `[NSApp currentEvent]` was often no
+  longer the mouse-down when `do_dragwin` checked it, and the drag silently
+  no-oped (up to 15% of gestures never moved; another ~45% engaged
+  110–165 ms late). Scripted `CGEvent` gestures never show it — they carry
+  no interleaved events. The launcher now caches the last left mouse-down
+  from a `sendEvent:` hook (as tao does on the same WKWebView) and hands
+  that to `performWindowDragWithEvent:` whenever the button is still held
+  (`[NSEvent pressedMouseButtons]` — the guard `do_resizewin` already
+  uses). Retries landing while a drag is already engaged stay harmless.
+  Regression harness: `test/drag92/` reproduces the race synthetically
+  (scrollwheel burst between press and dispatch).
+
 ## 0.66.0 — 2026-10-24
 
 - **`tiny.capabilities`: ask whether a call will work, by the call.** Every

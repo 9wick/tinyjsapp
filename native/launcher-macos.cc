@@ -6497,18 +6497,43 @@ static void reapply_window_overrides(webview_t w) {
   apply_traffic_pos(win, "main");
 }
 
+// A real trackpad keeps AppKit busy with pressure/touch/gesture events
+// between the page's mousedown and do_dragwin's async dispatch, so
+// [NSApp currentEvent] is by then often not the press and the drag was a
+// silent no-op (#92 — scripted CGEvent gestures never show it; they carry
+// no interleaved events). Cache the real press from sendEvent instead, the
+// way tao does on the same WKWebView, and gate on the button being held.
+static NSEvent *g_last_mouse_down = nil;
+typedef void (*SendEventIMP)(id, SEL, NSEvent *);
+static SendEventIMP g_orig_sendEvent = nullptr;
+static void tiny_sendEvent(id self, SEL cmd, NSEvent *ev) {
+  if (ev.type == NSEventTypeLeftMouseDown) {
+    [g_last_mouse_down release];
+    g_last_mouse_down = [ev retain];
+  }
+  g_orig_sendEvent(self, cmd, ev);
+}
+static void install_mouse_down_cache() {
+  // Only take sendEvent: over when there is a real IMP to forward to;
+  // a hook that swallowed events would freeze the app, and without the
+  // hook do_dragwin simply no-ops (pre-#92 behaviour).
+  if (class_getInstanceMethod([NSApplication class], @selector(sendEvent:)))
+    g_orig_sendEvent = (SendEventIMP)swizzle(
+        [NSApplication class], @selector(sendEvent:), (IMP)tiny_sendEvent,
+        "v@:@");
+}
+
 static void do_dragwin(webview_t w, void *arg) {
   std::string *wid = static_cast<std::string *>(arg);
   NSWindow *win = window_for_id(w, *wid);
-  NSEvent *ev = [NSApp currentEvent];
-  // performWindowDragWithEvent: wants a live mouse-down. A startDrag() that
-  // reaches here from anything else (a click handler, a stray call) would
-  // raise rather than no-op, so check before handing it over.
-  bool mouse_ok = ev && (ev.type == NSEventTypeLeftMouseDown ||
-                         ev.type == NSEventTypeLeftMouseDragged);
-  if (win && mouse_ok) {
+  // performWindowDragWithEvent: wants a live mouse-down — the cached one is
+  // it. The button-held check keeps a startDrag() that reaches here from
+  // anything else (a click handler, a stray call) from starting a drag
+  // that would raise rather than no-op. Retries landing while a drag is
+  // already engaged are harmless (#92 measured that too).
+  if (win && ([NSEvent pressedMouseButtons] & 1) && g_last_mouse_down) {
     @try {
-      [win performWindowDragWithEvent:ev];
+      [win performWindowDragWithEvent:g_last_mouse_down];
     } @catch (NSException *) {
     }
   }
@@ -9899,6 +9924,9 @@ int main(int argc, char *argv[]) {
   // banner click that started the app.
   install_early_open_handlers();
   install_notif_delegate();
+  // Must also precede any window: DRAGWIN reads the cached press at
+  // dispatch time, so the hook has to be live before a user can click.
+  install_mouse_down_cache();
 
   // No automatic window tabbing. With "Prefer tabs when opening documents"
   // set to "always" — a system-wide setting, not the default one — AppKit
