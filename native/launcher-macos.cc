@@ -2628,7 +2628,7 @@ struct DragOutReq {
 #ifdef __APPLE__
 static WKWebView *webview_for_id(webview_t w, const std::string &id); // below
 static bool get_accepts_first_mouse(WKWebView *wv);                   // below
-static NSEvent *live_press();                                         // below
+static NSEvent *live_press(NSWindow *win);                            // below
 
 @interface TinyDragSource : NSObject <NSDraggingSource>
 @end
@@ -2645,7 +2645,7 @@ static void do_dragout(webview_t w, void *arg) {
   DragOutReq *req = static_cast<DragOutReq *>(arg);
   @autoreleasepool {
     WKWebView *wv = webview_for_id(w, req->win);
-    NSEvent *ev = live_press();
+    NSEvent *ev = wv ? live_press(wv.window) : nil;
     if (wv && ev && !req->paths.empty()) {
       NSPoint at = [wv convertPoint:ev.locationInWindow fromView:nil];
       NSImage *custom = nil;
@@ -6504,9 +6504,15 @@ static NSEvent *g_last_mouse_down = nil;
 typedef void (*SendEventIMP)(id, SEL, NSEvent *);
 static SendEventIMP g_orig_sendEvent = nullptr;
 static void tiny_sendEvent(id self, SEL cmd, NSEvent *ev) {
-  if (ev.type == NSEventTypeLeftMouseDown) {
+  // The press is only live until its mouse-up: the button mask below is
+  // system-wide, so a press left cached past its release would let a later
+  // startDrag() hand it over while the button is held in ANOTHER app — the
+  // window then follows that drag across the screen.
+  if (ev.type == NSEventTypeLeftMouseDown ||
+      ev.type == NSEventTypeLeftMouseUp) {
     [g_last_mouse_down release];
-    g_last_mouse_down = [ev retain];
+    g_last_mouse_down =
+        ev.type == NSEventTypeLeftMouseDown ? [ev retain] : nil;
   }
   if (g_orig_sendEvent)
     g_orig_sendEvent(self, cmd, ev);
@@ -6528,20 +6534,22 @@ static bool left_button_held() {
 // stray call still no-ops instead of raising. Prefers the event AppKit is
 // dispatching while it is still the press or a drag (usual case, and the one
 // whose coordinates are live), else the cached press (#92).
-static NSEvent *live_press() {
-  if (!left_button_held())
+static NSEvent *live_press(NSWindow *win) {
+  if (!win || !left_button_held())
     return nil;
   NSEvent *ev = [NSApp currentEvent];
-  if (ev && (ev.type == NSEventTypeLeftMouseDown ||
-             ev.type == NSEventTypeLeftMouseDragged))
+  if (ev && ev.window == win &&
+      (ev.type == NSEventTypeLeftMouseDown ||
+       ev.type == NSEventTypeLeftMouseDragged))
     return ev;
-  return g_last_mouse_down;
+  // Only a press that landed in THIS window starts its drag.
+  return g_last_mouse_down.window == win ? g_last_mouse_down : nil;
 }
 
 static void do_dragwin(webview_t w, void *arg) {
   std::string *wid = static_cast<std::string *>(arg);
   NSWindow *win = window_for_id(w, *wid);
-  NSEvent *ev = live_press();
+  NSEvent *ev = live_press(win);
   // Retries landing while a drag is already engaged are harmless (#92
   // measured that too).
   if (win && ev) {

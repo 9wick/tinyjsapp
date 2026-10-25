@@ -19,7 +19,10 @@ https://tinyjs.app/changelog.
   `do_resizewin` already uses), which is what AppKit asks for: "the
   original mouseDown event". `tiny.win.dragOut()` (`startDrag({ files })`)
   had the same race with the same symptom and now shares the cache. Retries
-  landing while a drag is already engaged stay harmless. Regression
+  landing while a drag is already engaged stay harmless. The cached press
+  is dropped on its mouse-up and only drags the window it landed in, so a
+  `startDrag()` can't glue the window to a drag in another app (the button
+  mask is system-wide). Regression
   harness: `test/drag-race/` reproduces the race synthetically (scrollwheel
   burst between press and dispatch).
 

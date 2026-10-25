@@ -1963,7 +1963,7 @@ impression. Rig: `scratchpad/dragkit`.
       Can't be observed headlessly at all: the session finishes in *another
       application*.
 
-- [ ] **2026-10-25, #92 fix**: `do_dragwin` and `do_dragout` now hand the
+- [x] **2026-10-25, #92 fix**: `do_dragwin` and `do_dragout` now hand the
       cached mouse-down (from a `sendEvent:` hook) to
       `performWindowDragWithEvent:` / `beginDraggingSessionWithItems:` while
       the button is held, via one `live_press()` helper. Verified with
@@ -1977,6 +1977,14 @@ impression. Rig: `scratchpad/dragkit`.
       target application — so drag a file out of a tinyjs window into
       Finder/Slack with a trackpad too: it went from "no-ops when the race
       hits" to "uses the cached press", which no harness here exercises.
+      **Verified 2026-10-25 on macOS (arm64) by hand with a trackpad**:
+      window drag by a `data-tiny-drag` bar engages at once and feels native,
+      and `startDrag({ files })` drops a file into Finder. Also: the
+      first cut never cleared the cached press, and the button mask is
+      system-wide, so after one click a page calling `startDrag()` dragged
+      the window along with a drag in ANOTHER app (probe: 590 px). The press
+      is now cleared on mouse-up and must belong to the target window;
+      synthetic probe 0 px, confirmed by hand too.
 
 Still open on the other two: the Windows section above, and Linux has no drag
 source whatsoever — `DRAGOUT` is unhandled in `launcher-linux.cc` (tracked in
