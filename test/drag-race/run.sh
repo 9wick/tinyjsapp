@@ -4,7 +4,7 @@
 # Fails by design on launchers without the #92 fix. Run by hand (needs a
 # GUI session); pass TINYJS_LAUNCHER=/path/to/launcher to pick the binary
 # under test.
-set -u
+set -u -o pipefail
 P=; DEV=
 trap 'kill ${P:-} ${DEV:-} 2>/dev/null || true' EXIT INT TERM
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,13 +15,17 @@ rm -f "$STORE"   # fresh store: asserted below
 cd "$DIR/app" || exit 9
 tinyjs dev > "$DIR/dev.log" 2>&1 &
 DEV=$!
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   sleep 1
   P=$(pgrep -x dragrace | head -1) && [ -n "$P" ] && break
 done
 [ -n "${P:-}" ] || { echo "FAIL: window never appeared"; tail -5 "$DIR/dev.log"; kill $DEV 2>/dev/null; exit 1; }
 sleep 3
-swift "$DIR/driver.swift" "$P" | tee "$DIR/result.json"
+# pipefail + explicit check: a driver abort (prints {"error":...}, exit 1)
+# must fail loudly, not surface as a misdirecting pixel-assert failure.
+swift "$DIR/driver.swift" "$P" | tee "$DIR/result.json" || {
+  echo "FAIL: driver aborted"; cat "$DIR/result.json"; exit 1;
+}
 kill "$P" $DEV 2>/dev/null
 
 sleep 1   # let the backend flush the store before it dies
