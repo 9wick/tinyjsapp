@@ -953,6 +953,8 @@ const doc = await tiny.dialog.saveFile({ types: ['docx'], name: 'report' });  //
 await tiny.dialog.alert('Heads up', 'optional detail');
 const ok   = await tiny.dialog.confirm('Delete everything?', { detail: '…', ok: 'Delete', cancel: 'Keep' });
 const name = await tiny.dialog.prompt('Your name?', { default: 'world' });  // string | null
+// Backend: app.dialog has all seven methods with the same arguments and
+// results, including in mainWindow:false tray apps without a WebView.
 // The page's bare confirm() is the browser's own: one argument, no custom
 // title or buttons.
 ```
@@ -1971,7 +1973,7 @@ only remaining step.
 | backend → launcher | `RET <id> <status> <json>` | resolve (0) / reject (≠0) a call |
 | backend → launcher | `EVAL <js>`                | run JS in the page               |
 | backend → launcher | `TITLE <text>` / `SIZE <w> <h>` | window control              |
-| backend → launcher | `DLG <id> <op>[\t<arg>…]`  | native dialog (file panels, alert/confirm/prompt); launcher answers the call itself via `webview_return` |
+| backend → launcher | `DLG <id> <op>[\t<arg>…]`  | native dialog (file panels, alert/confirm/prompt); page ids resolve in the page, `q<id>` replies to the backend via `GOT <id> <json>` |
 | backend → launcher | `MENUBEGIN` … `MENU <t>` / `ITEM id\tlabel\tkey` / `SEP` … `MENUEND` | declare custom menu bar menus |
 | launcher → backend | `MENU <id>`                | a custom menu item was clicked   |
 | backend → launcher | `TRAYBEGIN <t>\t<icon>\t<tmpl>\t<tip>\t<primary>` … `ITEM`/`SEP` … `TRAYEND` / `TRAYREMOVE` | declare/remove the menu bar status item (icon: png path or `sf:<symbol>`; primary=1: menu on right-click only) |

@@ -4,6 +4,14 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Backend native dialogs: `app.dialog`.** All seven `tiny.dialog` methods
+  are now available from the backend with the same arguments and results,
+  including tray/menu hooks and `"mainWindow": false` apps. The existing
+  launcher panels and reply protocol are reused; no WebView is needed.
+  Page calls retain their existing origin and capability gates.
+
 ## 0.66.0 — 2026-10-24
 
 - **`tiny.capabilities`: ask whether a call will work, by the call.** Every

@@ -973,6 +973,20 @@ const DIALOG_OPS = {
   'dialog.prompt': { op: 'prompt', args: (p) => [one(p.message), one(p.default), one(p.ok), one(p.cancel)] },
 };
 
+const dialogWire = (method, params = {}) => {
+  const dlg = DIALOG_OPS[method];
+  return [dlg.op, ...dlg.args(params)].join('\t');
+};
+
+// Same options contract as tiny.dialog; only the public API name differs.
+const dialogOpts = (fn, opts, strField) => {
+  if (opts == null) return {};
+  if (typeof opts === 'string' && strField) return { [strField]: opts };
+  if (typeof opts === 'object' && !Array.isArray(opts)) return opts;
+  throw new TypeError(`app.dialog.${fn}(message, opts): opts must be an object`
+    + (strField ? ` or a ${strField} string` : '') + `, got ${Array.isArray(opts) ? 'an array' : typeof opts}`);
+};
+
 // Capability gating (tinyjs.json "api"). `tiny` is injected into EVERY
 // origin, so a wrapped third-party site's own JavaScript holds an RPC channel
 // to this backend — the gate is what makes that shippable. Enforced HERE, the
@@ -1829,14 +1843,15 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     });
   }
   const query = (what) => ask('GET', what);
-  // A save panel whose answer comes back HERE, not to a page (#36): the DLG
-  // id is q<qid>, which every launcher answers as GOT <qid> <path|null>.
+  // A dialog whose answer comes back HERE, not to a page: the DLG id is
+  // q<qid>, which every launcher answers as GOT <qid> <json>.
   // Page call ids can't take that shape (they carry ':' or are hex).
-  function askSavePath(name) {
+  function askDialog(method, params, saveFolder = '') {
     return new Promise((resolve) => {
       const qid = String(qidSeq++);
+      const body = dialogWire(method, params);
       pendingGets.set(qid, resolve);
-      send(`DLG q${qid} save\tpdf\t${one(name)}`);
+      send(`DLG q${qid} ${body}${saveFolder ? '\t' + saveFolder : ''}`);
     });
   }
 
@@ -1865,7 +1880,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       if (inside) return IS_WIN ? abs.replace(/\//g, '\\') : abs;
     }
     const name = p.replace(/^.*[\\/]/, '') || 'page.pdf';
-    const picked = await askSavePath(name);
+    const picked = await askDialog('dialog.saveFile', { types: ['pdf'], name }, 'downloads');
     if (!picked) throw new Error('printToPDF: cancelled');
     return picked;
   }
@@ -2285,6 +2300,16 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
     restore() { send('WINOP restore'); },
     setFullscreen(v, opts) { app.window('main').setFullscreen(v, opts); },
     notify,
+    // Application-modal panels also work without a main window or WebView.
+    dialog: {
+      openFile: (opts = {}) => askDialog('dialog.openFile', { types: opts.types }),
+      openFiles: (opts = {}) => askDialog('dialog.openFiles', { types: opts.types }),
+      pickFolder: () => askDialog('dialog.pickFolder'),
+      saveFile: (opts = {}) => askDialog('dialog.saveFile', { types: opts.types, name: opts.name }),
+      alert: async (message, opts) => askDialog('dialog.alert', { message, ...dialogOpts('alert', opts, 'detail') }),
+      confirm: async (message, opts) => askDialog('dialog.confirm', { message, ...dialogOpts('confirm', opts, 'detail') }),
+      prompt: async (message, opts) => askDialog('dialog.prompt', { message, ...dialogOpts('prompt', opts) }),
+    },
     // Window visibility & app presence. hide() hides the APP (NSApp hide):
     // macOS returns focus to the previously active app on its own, so
     // hide-then-paste palettes need no frontmost-tracking. show() re-activates;
@@ -3937,7 +3962,7 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
       // on the UI thread and resolves the page's promise itself.
       const dlg = DIALOG_OPS[method];
       if (dlg) {
-        send(`DLG ${id} ${[dlg.op, ...dlg.args(params ?? {})].join('\t')}`);
+        send(`DLG ${id} ${dialogWire(method, params ?? {})}`);
         return;
       }
 

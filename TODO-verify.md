@@ -8,6 +8,31 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Backend `app.dialog` (2026-10-25)
+
+All seven `tiny.dialog` methods are available from the backend, using the
+same `DIALOG_OPS` encoding and the existing `DLG q<id>` / `GOT` replies.
+Linux's PDF consent panel now carries an explicit Downloads hint rather
+than choosing a folder from the reply id. `test/dialogs/README.md` has the
+headless contract checks and the cross-platform native fixture.
+
+- [x] **Linux x86_64, X11/Xvfb, dev and built executable** — real GTK3
+  panels driven with XTest. `mainWindow: false`: alert → true; confirm
+  accepted/cancelled → true/false; prompt accepted empty string/cancelled
+  → ''/null; all four pickers cancel → null; openFile/openFiles/pickFolder
+  and saveFile return the selected absolute paths (openFiles an array).
+  saveFile does not create the chosen file. No app windows or WebKit
+  processes while the backend panel is open. The named page opened after
+  the panels is denied `dialog.confirm` while the backend has used it
+  under the same manifest. *(2026-10-25, GTK 3.24.49, WebKitGTK 2.50.4)*
+- [ ] **Linux desktop, X11/Wayland** — focus/activation from a real tray
+  action with a compositor, including accessory mode. Xvfb focus was set
+  by the test driver and does not verify desktop focus-stealing rules.
+- [ ] **macOS, dev and built .app** — same fixture; also verify a real tray
+  callback and accessory mode focus without a main window.
+- [ ] **Windows, dev and built executable** — same fixture and tray/focus
+  check; native reply routing is unchanged, but has not been run here.
+
 ## `tiny.capabilities` — can()/get()/list() per tiny.* path (`feat/capabilities-can`, 2026-10-24)
 
 tiny.js reads each function's wire names from its own source at boot and

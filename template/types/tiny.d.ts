@@ -1481,6 +1481,9 @@ declare interface TinyApp {
   /** Same shape as tiny.notify, and the same result: true once handed to
    *  the OS, false only when the macOS dev fallback couldn't show it. */
   notify(title: string, body?: string, opts?: TinyNotifyOptions): Promise<boolean>;
+  /** Same dialogs and cancellation results as tiny.dialog, also with
+   *  mainWindow: false. Runs in the launcher, without a WebView. */
+  dialog: Tiny['dialog'];
   /** hides the APP (NSApp hide): focus returns to the previous app;
    *  hide({ app: false }) puts away the main window alone */
   hide(opts?: TinyHideOptions): void;
