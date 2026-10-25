@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.66.1 — 2026-10-25
 
 - **`tiny.capabilities.ready` can't hang a page.** It resolves within 3
   seconds even if the answer hasn't arrived — on Windows a window-mode
