@@ -27,9 +27,17 @@ and the platform table differ per launcher. Headless:
   `__invoke` arguments must not change its answer).
 - [ ] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
   `app.keystroke` read `why: 'session'`; on X11 they're ok.
-- [ ] **Windows, window-mode popup** (the WebView2 popup whose calls never
+- [x] **Windows, window-mode popup** (the WebView2 popup whose calls never
   return, TODO-site-wrapper.md) — `await tiny.capabilities.ready` resolves
   after ~3s with `can()` false everywhere, instead of hanging.
+  Verified 2026-10-25 with a CROSS-origin popup (opener :8769, popup :8770):
+  ready at 3008ms, `list()` empty, `get('notify')` → pending, while
+  setTitle / system.capabilities / refresh all stayed hung (4s races).
+  Control on main's tiny.js: the same popup never got past `await ready`
+  (25s). Caveat: a SAME-origin popup reuses the initial about:blank's
+  Window, so it keeps that bootstrap's `tiny` and its answer (9 paths,
+  gated as origin "null") — ready is instant and can() claims those 9
+  although every call still hangs.
 - [x] **Linux, first page** — `ready` arrives quickly with the probes warmed
   at startup; two windows opening together spawn ONE portal probe (watch
   `ps` / strace for gdbus). Ubuntu arm64, GNOME Wayland, 2026-10-25: a PATH
