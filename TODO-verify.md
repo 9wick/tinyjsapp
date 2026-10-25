@@ -25,8 +25,48 @@ and the platform table differ per launcher. Headless:
   `{ why: 'platform' }` on the own page, and the site's verdicts to match
   macOS (the origin rides the LAST CALL element — a site passing extra
   `__invoke` arguments must not change its answer).
-- [ ] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
-  `app.keystroke` read `why: 'session'`; on X11 they're ok.
+- [x] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
+  `app.keystroke` read `why: 'session'`; on X11 they're ok. Ubuntu arm64,
+  GNOME Wayland, 2026-10-25, test/capabilities/app: the own page reads all
+  three `session`; under XWayland (`GDK_BACKEND=x11`) all three ok — a real
+  X11 login not tried. The wrapped site reads `gate` for captureScreen and
+  keystroke on both (the gate is checked before the platform).
+- [x] **Windows, window-mode popup** (the WebView2 popup whose calls never
+  return, TODO-site-wrapper.md) — `await tiny.capabilities.ready` resolves
+  after ~3s with `can()` false everywhere, instead of hanging.
+  Verified 2026-10-25 with a CROSS-origin popup (opener :8769, popup :8770):
+  ready at 3008ms, `list()` empty, `get('notify')` → pending, while
+  setTitle / system.capabilities / refresh all stayed hung (4s races).
+  Control on main's tiny.js: the same popup never got past `await ready`
+  (25s). Caveat: a SAME-origin popup reuses the initial about:blank's
+  Window, so it keeps that bootstrap's `tiny` and its answer (9 paths,
+  gated as origin "null") — ready is instant and can() claims those 9
+  although every call still hangs.
+- [x] **Linux, first page** — `ready` arrives quickly with the probes warmed
+  at startup; two windows opening together spawn ONE portal probe (watch
+  `ps` / strace for gdbus). Ubuntu arm64, GNOME Wayland, 2026-10-25: a PATH
+  shim logging gdbus saw 2 spawns (one portal, one Unity) for the two
+  windows of test/capabilities/app, against 4 with main's bridge.js; `ready`
+  in 4–7 ms on both pages.
+- [x] **Linux, Wayland: levels + all spaces are stubs** — from the GTK3
+  source (gdkwindow-wayland.c: keep_above/below, stick/unstick are empty).
+  Ubuntu arm64, GNOME Wayland, 2026-10-25, `WAYLAND_DEBUG=1` with a title
+  change as a marker between calls: `setLevel('floating')`,
+  `setAlwaysOnTop(true)` and `setAllSpaces(true)` send nothing beyond the
+  marker's own repaint. If a compositor honours any of the three, flip its
+  key back.
+- [x] **Linux, Wayland: `setClickThrough` reaches the compositor** — it did
+  NOT before 2026-10-25: GTK rewrites a client-decorated window's input
+  shape (the CSD shadow cut-out) on every size-allocate, so the launcher's
+  empty region never went out — every `set_input_region` carried the full
+  window. Now reapplied after GTK's and committed via a relayout: the log
+  shows an empty `set_input_region` + commit right after
+  `setClickThrough(true)`, and the full region back after `(false)`.
+- [x] **Linux, Wayland: click-through, by hand** — Ubuntu arm64, GNOME
+  Wayland, 2026-10-25, a self-timed page over another window: 20 clicks
+  landed before, 0 with click-through on (the window blurred once, and the
+  window behind took the click — seen by hand), 30 after turning it off;
+  `getState().clickThrough` read true / false.
 
 ## #89 — macOS: `chrome.panel` non-activating panels (2026-10-23)
 
