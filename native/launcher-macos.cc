@@ -2628,6 +2628,7 @@ struct DragOutReq {
 #ifdef __APPLE__
 static WKWebView *webview_for_id(webview_t w, const std::string &id); // below
 static bool get_accepts_first_mouse(WKWebView *wv);                   // below
+static NSEvent *live_press();                                         // below
 
 @interface TinyDragSource : NSObject <NSDraggingSource>
 @end
@@ -2644,12 +2645,8 @@ static void do_dragout(webview_t w, void *arg) {
   DragOutReq *req = static_cast<DragOutReq *>(arg);
   @autoreleasepool {
     WKWebView *wv = webview_for_id(w, req->win);
-    NSEvent *ev = [NSApp currentEvent];
-    // beginDraggingSession needs a live mouse-down; by the time the page's
-    // call crosses the bridge the latest event is usually LeftMouseDragged.
-    bool mouse_ok = ev && (ev.type == NSEventTypeLeftMouseDown ||
-                           ev.type == NSEventTypeLeftMouseDragged);
-    if (wv && mouse_ok && !req->paths.empty()) {
+    NSEvent *ev = live_press();
+    if (wv && ev && !req->paths.empty()) {
       NSPoint at = [wv convertPoint:ev.locationInWindow fromView:nil];
       NSImage *custom = nil;
       if (!req->image.empty())
@@ -6498,11 +6495,11 @@ static void reapply_window_overrides(webview_t w) {
 }
 
 // A real trackpad keeps AppKit busy with pressure/touch/gesture events
-// between the page's mousedown and do_dragwin's async dispatch, so
-// [NSApp currentEvent] is by then often not the press and the drag was a
-// silent no-op (#92 — scripted CGEvent gestures never show it; they carry
-// no interleaved events). Cache the real press from sendEvent instead, the
-// way tao does on the same WKWebView, and gate on the button being held.
+// between the page's mousedown and the async dispatch of a page-driven drag,
+// so [NSApp currentEvent] is by then often not the press and the drag was a
+// silent no-op (#92 — scripted CGEvent gestures never show it; they carry no
+// interleaved events). Cache the real press from sendEvent instead:
+// -performWindowDragWithEvent: asks for "the original mouseDown event".
 static NSEvent *g_last_mouse_down = nil;
 typedef void (*SendEventIMP)(id, SEL, NSEvent *);
 static SendEventIMP g_orig_sendEvent = nullptr;
@@ -6511,29 +6508,45 @@ static void tiny_sendEvent(id self, SEL cmd, NSEvent *ev) {
     [g_last_mouse_down release];
     g_last_mouse_down = [ev retain];
   }
-  g_orig_sendEvent(self, cmd, ev);
+  if (g_orig_sendEvent)
+    g_orig_sendEvent(self, cmd, ev);
 }
 static void install_mouse_down_cache() {
-  // Only take sendEvent: over when there is a real IMP to forward to;
-  // a hook that swallowed events would freeze the app, and without the
-  // hook do_dragwin simply no-ops (pre-#92 behaviour).
-  if (class_getInstanceMethod([NSApplication class], @selector(sendEvent:)))
-    g_orig_sendEvent = (SendEventIMP)swizzle(
-        [NSApplication class], @selector(sendEvent:), (IMP)tiny_sendEvent,
-        "v@:@");
+  g_orig_sendEvent = (SendEventIMP)swizzle(
+      [NSApplication class], @selector(sendEvent:), (IMP)tiny_sendEvent,
+      "v@:@");
+}
+
+// The left button is down right now — the file's liveness gate for drags
+// and resizes (NSEvent's button mask is system-wide, not per-window).
+static bool left_button_held() {
+  return ([NSEvent pressedMouseButtons] & 1) != 0;
+}
+
+// The mouse-down a page-driven drag starts from, or nil while no button is
+// held, so a startDrag()/dragOut() that arrives from a click handler or a
+// stray call still no-ops instead of raising. Prefers the event AppKit is
+// dispatching while it is still the press or a drag (usual case, and the one
+// whose coordinates are live), else the cached press (#92).
+static NSEvent *live_press() {
+  if (!left_button_held())
+    return nil;
+  NSEvent *ev = [NSApp currentEvent];
+  if (ev && (ev.type == NSEventTypeLeftMouseDown ||
+             ev.type == NSEventTypeLeftMouseDragged))
+    return ev;
+  return g_last_mouse_down;
 }
 
 static void do_dragwin(webview_t w, void *arg) {
   std::string *wid = static_cast<std::string *>(arg);
   NSWindow *win = window_for_id(w, *wid);
-  // performWindowDragWithEvent: wants a live mouse-down — the cached one is
-  // it. The button-held check keeps a startDrag() that reaches here from
-  // anything else (a click handler, a stray call) from starting a drag
-  // that would raise rather than no-op. Retries landing while a drag is
-  // already engaged are harmless (#92 measured that too).
-  if (win && ([NSEvent pressedMouseButtons] & 1) && g_last_mouse_down) {
+  NSEvent *ev = live_press();
+  // Retries landing while a drag is already engaged are harmless (#92
+  // measured that too).
+  if (win && ev) {
     @try {
-      [win performWindowDragWithEvent:g_last_mouse_down];
+      [win performWindowDragWithEvent:ev];
     } @catch (NSException *) {
     }
   }
@@ -6561,7 +6574,7 @@ static void do_resizewin(webview_t w, void *arg) {
     // Windows does NOT — DefWindowProc's SC_SIZE loop entered with the button
     // up glues the window to the cursor until the next click — so launcher-
     // win.cc checks GetAsyncKeyState explicitly, same as this.)
-    bool held = ([NSEvent pressedMouseButtons] & 1) != 0;
+    bool held = left_button_held();
     // setResizable(false) means the USER can't resize; the app's own setSize
     // still can. A page-drawn grip is a user resize, so honour the lock.
     if (held && win && (win.styleMask & NSWindowStyleMaskResizable)) {
@@ -6589,7 +6602,7 @@ static void do_resizewin(webview_t w, void *arg) {
                                           inMode:NSEventTrackingRunLoopMode
                                          dequeue:YES];
         if (!ev) {
-          if (([NSEvent pressedMouseButtons] & 1) == 0)
+          if (!left_button_held())
             break;
           continue;
         }
@@ -9924,8 +9937,8 @@ int main(int argc, char *argv[]) {
   // banner click that started the app.
   install_early_open_handlers();
   install_notif_delegate();
-  // Must also precede any window: DRAGWIN reads the cached press at
-  // dispatch time, so the hook has to be live before a user can click.
+  // Also before webview_create: the press cache behind do_dragwin/do_dragout
+  // must be live before any window can take a click.
   install_mouse_down_cache();
 
   // No automatic window tabbing. With "Prefer tabs when opening documents"

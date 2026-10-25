@@ -19,8 +19,8 @@ demo/
 .DS_Store
 native/tiny_client.h
 
-# drag92 harness run artifacts (dev.log is covered by *.log above)
-test/drag92/result.json
+# drag-race harness run artifacts (dev.log is covered by *.log above)
+test/drag-race/result.json
 
 # the root release checklist only — anchored, since case-insensitive git
 # otherwise also ignores skill/references/release.md (which ships)

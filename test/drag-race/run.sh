@@ -1,20 +1,21 @@
 #!/bin/bash
-# drag92 regression: A/B-able startDrag race test. Self-judging: exits 0
+# drag-race regression: A/B-able startDrag race test. Self-judging: exits 0
 # only if every case both fired (store asserts) and moved as expected.
-# Fails by design on launchers without the #92 fix — pass
-# TINYJS_LAUNCHER=/path/to/launcher to pick the binary under test.
+# Fails by design on launchers without the #92 fix. Run by hand (needs a
+# GUI session); pass TINYJS_LAUNCHER=/path/to/launcher to pick the binary
+# under test.
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ID=$(python3 -c "import json;print(json.load(open('$DIR/app/tinyjs.json'))['id'])")
 STORE="$HOME/Library/Application Support/$ID/store.json"
-pgrep -x drag92test >/dev/null && { echo "drag92test already running"; exit 1; }
+pgrep -x dragrace >/dev/null && { echo "dragrace already running"; exit 1; }
 rm -f "$STORE"   # fresh store: asserted below
 cd "$DIR/app" || exit 9
 tinyjs dev > "$DIR/dev.log" 2>&1 &
 DEV=$!
 for i in $(seq 1 20); do
   sleep 1
-  P=$(pgrep -x drag92test | head -1) && [ -n "$P" ] && break
+  P=$(pgrep -x dragrace | head -1) && [ -n "$P" ] && break
 done
 [ -n "${P:-}" ] || { echo "FAIL: window never appeared"; tail -5 "$DIR/dev.log"; kill $DEV 2>/dev/null; exit 1; }
 sleep 3
@@ -42,7 +43,7 @@ for k, v in r.items(): print(f"{k}: {v}")
 assert r.get('plain_dx', 0) >= 100, "plain data-tiny-drag no longer engages"
 assert r.get('poison_dx', 0) >= 100, "poisoned-currentEvent drag did not engage (the #92 race)"
 assert abs(r.get('nobtn_dx', 0)) < 10, "startDrag with no button held moved the window"
-assert abs(r.get('alive_dx', 0)) >= 50, "app not responsive after the cases"
+assert r.get('alive_dx', 0) <= -50, "app not responsive after the cases (or moved the wrong way)"
 EOF
 [ $FAIL -eq 0 ] && echo "PASS" || echo "FAIL"
 exit $FAIL

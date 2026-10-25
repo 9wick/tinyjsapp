@@ -1,8 +1,0 @@
-{
-  "name": "drag92test",
-  "title": "drag92test",
-  "size": "480x360",
-  "id": "dev.tinyjs.drag92test",
-  "version": "0.1.0",
-  "chrome": { "frame": false }
-}

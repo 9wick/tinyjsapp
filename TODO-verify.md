@@ -1963,17 +1963,20 @@ impression. Rig: `scratchpad/dragkit`.
       Can't be observed headlessly at all: the session finishes in *another
       application*.
 
-- [ ] **2026-10-25, #92 fix**: `do_dragwin` now hands the cached mouse-down
-      (from a `sendEvent:` hook) to `performWindowDragWithEvent:` while the
-      button is held. Verified with synthetic gestures (`test/drag92/`:
-      scrollwheel-poisoned `currentEvent`, old launcher 0 px / new 240 px;
-      guards and aliveness re-checked) — but the original symptom was
-      REAL-TRACKPAD-only (pressure/touch/gesture interleave, which CGEvent
-      cannot inject), so it stays open until someone drags a frameless
-      app by a `data-tiny-drag` strip with a finger and it feels native.
-      `do_dragout` keeps the old `currentEvent` check — same race class,
-      but it needs the event's live coordinates, so it is NOT fixed by the
-      cache; watch for it when a trackpad dragOut ever misbehaves.
+- [ ] **2026-10-25, #92 fix**: `do_dragwin` and `do_dragout` now hand the
+      cached mouse-down (from a `sendEvent:` hook) to
+      `performWindowDragWithEvent:` / `beginDraggingSessionWithItems:` while
+      the button is held, via one `live_press()` helper. Verified with
+      synthetic gestures (`test/drag-race/`: scrollwheel-poisoned
+      `currentEvent`, old launcher 0 px / new 240 px; guards and aliveness
+      re-checked) — but the original symptom was REAL-TRACKPAD-only
+      (pressure/touch/gesture interleave, which CGEvent cannot inject), so
+      it stays open until someone drags a frameless app by a
+      `data-tiny-drag` strip with a finger and it feels native.
+      `do_dragout` has no synthetic case — dropping real files needs a
+      target application — so drag a file out of a tinyjs window into
+      Finder/Slack with a trackpad too: it went from "no-ops when the race
+      hits" to "uses the cached press", which no harness here exercises.
 
 Still open on the other two: the Windows section above, and Linux has no drag
 source whatsoever — `DRAGOUT` is unhandled in `launcher-linux.cc` (tracked in

@@ -1,5 +1,5 @@
-// drag92 driver: CGEvent mouse gestures + CGWindowList measurement.
-// Usage: swift drag92-driver.swift <launcher-pid>
+// drag-race driver: CGEvent mouse gestures + CGWindowList measurement.
+// Usage: swift test/drag-race/driver.swift <app-pid>
 import CoreGraphics
 import AppKit
 import Foundation
@@ -20,9 +20,9 @@ func win() -> CGRect? {
   return nil
 }
 
-var deadlined = 0.0
-while win() == nil && deadlined < 15 {
-  Thread.sleep(forTimeInterval: 0.5); deadlined += 0.5
+var waited = 0.0
+while win() == nil && waited < 15 {
+  Thread.sleep(forTimeInterval: 0.5); waited += 0.5
 }
 guard var b = win() else { print(#"{"error":"window not found"}"#); exit(1) }
 Thread.sleep(forTimeInterval: 1.5)

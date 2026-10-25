@@ -14,12 +14,14 @@ https://tinyjs.app/changelog.
   no-oped (up to 15% of gestures never moved; another ~45% engaged
   110–165 ms late). Scripted `CGEvent` gestures never show it — they carry
   no interleaved events. The launcher now caches the last left mouse-down
-  from a `sendEvent:` hook (as tao does on the same WKWebView) and hands
-  that to `performWindowDragWithEvent:` whenever the button is still held
-  (`[NSEvent pressedMouseButtons]` — the guard `do_resizewin` already
-  uses). Retries landing while a drag is already engaged stay harmless.
-  Regression harness: `test/drag92/` reproduces the race synthetically
-  (scrollwheel burst between press and dispatch).
+  from a `sendEvent:` hook and hands it to the drag APIs whenever the
+  button is still held (`[NSEvent pressedMouseButtons]` — the guard
+  `do_resizewin` already uses), which is what AppKit asks for: "the
+  original mouseDown event". `tiny.win.dragOut()` (`startDrag({ files })`)
+  had the same race with the same symptom and now shares the cache. Retries
+  landing while a drag is already engaged stay harmless. Regression
+  harness: `test/drag-race/` reproduces the race synthetically (scrollwheel
+  burst between press and dispatch).
 
 ## 0.66.0 — 2026-10-24
 
