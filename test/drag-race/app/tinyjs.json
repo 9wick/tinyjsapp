@@ -1,0 +1,8 @@
+{
+  "name": "dragrace",
+  "title": "dragrace",
+  "size": "480x360",
+  "id": "dev.tinyjs.dragrace",
+  "version": "0.1.0",
+  "chrome": { "frame": false }
+}
