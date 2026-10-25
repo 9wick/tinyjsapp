@@ -4,6 +4,21 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **`tiny.capabilities.ready` can't hang a page.** It resolves within 3
+  seconds even if the answer hasn't arrived — on Windows a window-mode
+  popup's calls never return (a known WebView2 issue), and on Linux the
+  first answer waits on D-Bus probes. A late answer still lands and fires
+  `onChange`. The Linux probes now start when the app does, and windows
+  opening together share one probe instead of each starting their own.
+- **Linux Wayland: `setLevel`, `setAlwaysOnTop` and `setAllSpaces` are
+  reported as unsupported.** GTK has no way to do them on Wayland, so they
+  did nothing while `system.capabilities()` (and so
+  `tiny.capabilities.can()`) claimed them. New key `windowLevel`;
+  `setAllSpaces` is now `false` on Wayland too. X11 and XWayland
+  (`windowPlacement`) are unchanged.
+
 ## 0.66.0 — 2026-10-24
 
 - **`tiny.capabilities`: ask whether a call will work, by the call.** Every

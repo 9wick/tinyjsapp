@@ -60,7 +60,7 @@ tiny.capabilities.list();                    // every path that works here, sort
 tiny.capabilities.onChange(({ added, removed }) => render());
 ```
 
-Paths are the ones you'd call, `tiny.` optional. `why` can also be `'unknown'` (no such path) or `'pending'` (asked before `ready`, when `can()` is always false). `onChange` fires when the first answer arrives too, so a page can render from it alone. `feature` is the `system.capabilities()` key that says no.
+Paths are the ones you'd call, `tiny.` optional. `why` can also be `'unknown'` (no such path) or `'pending'` (no answer yet, when `can()` is always false). `ready` resolves within 3 seconds even if the answer hasn't arrived, so awaiting it can't hang a page; a late answer still arrives, and `onChange` fires when it does, as it does for the first answer, so a page can render from `onChange` alone. `feature` is the `system.capabilities()` key that says no.
 
 It works on every page, gated or not. A page is only told about the names its own `tiny` uses, and the app's own `api` functions aren't covered. It's informational: the backend still checks every call. `system.capabilities()` stays the raw platform table, and the one the backend uses.
 

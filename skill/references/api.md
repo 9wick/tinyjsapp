@@ -501,6 +501,7 @@ tiny.capabilities.get('win.setPosition');   // { ok:false, why:'session', featur
 tiny.capabilities.list();                   // every working path, sorted
 tiny.capabilities.onChange(({ added, removed }) => {});  // fires on first answer too
 // why: 'gate' (needs: names to enable) | 'platform' | 'session' | 'unknown' | 'pending'
+// ready resolves within 3s even with no answer (never hangs); a late one fires onChange.
 // Informational — the backend gate still decides. Doesn't cover the app's own api methods.
 
 // requirements — turn "missing system pieces" into an actionable prompt

@@ -587,7 +587,7 @@ const UNITY_LAUNCHER_GUESS = IS_LINUX &&
 let macFilters = null;
 async function hasMacAudioFilters(query) {
   if (OS !== 'macos' || !query) return false;
-  if (macFilters === null) macFilters = (await query('audiofilters'))?.available === true;
+  macFilters ??= query('audiofilters').then((r) => r?.available === true, () => false);
   return macFilters;
 }
 
@@ -595,16 +595,17 @@ async function hasMacAudioFilters(query) {
 // GlobalShortcuts portal. A property read (like the ScreenCast probe), so it
 // both activates the portal and proves the interface is really there.
 // Probed once. capabilities().globalHotkeys used to say true regardless.
+// The PROMISE is what's cached, here and in the two probes below: every page
+// asks as it boots (tiny.capabilities), so two windows opening together used
+// to start two probes, each seeing the cache still empty.
 let globalShortcuts = null;
 async function hasGlobalShortcuts() {
   if (!IS_LINUX) return false;
   if (ON_X11 && !tjs.env.WAYLAND_DISPLAY) return true;
-  if (globalShortcuts === null) {
-    globalShortcuts = ON_X11 || await probeOk(['gdbus', 'call', '--session',
-      '-d', 'org.freedesktop.portal.Desktop', '-o', '/org/freedesktop/portal/desktop',
-      '-m', 'org.freedesktop.DBus.Properties.Get',
-      'org.freedesktop.portal.GlobalShortcuts', 'version']);
-  }
+  globalShortcuts ??= ON_X11 ? Promise.resolve(true) : probeOk(['gdbus', 'call', '--session',
+    '-d', 'org.freedesktop.portal.Desktop', '-o', '/org/freedesktop/portal/desktop',
+    '-m', 'org.freedesktop.DBus.Properties.Get',
+    'org.freedesktop.portal.GlobalShortcuts', 'version']);
   return globalShortcuts;
 }
 
@@ -613,10 +614,8 @@ async function hasUnityLauncher() {
   // The table below is built on every OS, so answer without spawning anything
   // off Linux. Probed once — a dock does not come and go mid-run.
   if (!IS_LINUX) return false;
-  if (unityLauncher === null) {
-    unityLauncher = (await busNameOwned('com.canonical.Unity'))
-      || (!(await probeOk(['sh', '-c', 'command -v gdbus'])) && UNITY_LAUNCHER_GUESS);
-  }
+  unityLauncher ??= (async () => (await busNameOwned('com.canonical.Unity'))
+    || (!(await probeOk(['sh', '-c', 'command -v gdbus'])) && UNITY_LAUNCHER_GUESS))();
   return unityLauncher;
 }
 
@@ -675,6 +674,13 @@ async function systemCapabilities(query, aiStatus) {
     icon: ON_X11,
     attention: ON_X11,
     presence: ON_X11,
+    // setAlwaysOnTop / setLevel and setAllSpaces go out as keep-above/below
+    // and stick, and GTK3's Wayland backend implements all four as empty
+    // stubs (xdg-shell has no stacking or sticky state) — so they are X11
+    // only, like icon above. (setClickThrough is NOT: the input region is a
+    // real wl_surface request.) From the GTK source; WAYLAND_DEBUG check
+    // owed in TODO-verify.md.
+    windowLevel: ON_X11, setAllSpaces: ON_X11,
     // chrome.windowControls: GTK can only hide the CLOSE button portably
     // (gtk_window_set_deletable); minimize/maximize go out as _MOTIF_WM_HINTS,
     // which the WM is free to ignore. So: partial, not false.
@@ -1240,6 +1246,7 @@ export const CAPABILITY_FEATURES = {
   'audio.balance': 'audioFilters',
   'win.find': 'findInPage', 'win.stopFind': 'findInPage',
   'win.setAllSpaces': 'setAllSpaces',
+  'win.setAlwaysOnTop': 'windowLevel', 'win.setLevel': 'windowLevel',
   'secrets.get': 'secrets', 'secrets.set': 'secrets', 'secrets.delete': 'secrets',
   'media.proxy': 'proxyURL',
 };
@@ -1252,7 +1259,8 @@ export const EVENT_FEATURES = {
 // frozen pointer), not the OS — the ON_X11 rows of systemCapabilities' linux
 // table, plus the GlobalShortcuts portal.
 export const SESSION_FEATURES = ['windowPosition', 'mousePosition', 'captureScreen',
-  'keystroke', 'icon', 'attention', 'presence', 'windowControls', 'globalHotkeys'];
+  'keystroke', 'icon', 'attention', 'presence', 'windowControls', 'globalHotkeys',
+  'windowLevel', 'setAllSpaces'];
 // uses: { calls: [wire names], events: [event names] }, from the page.
 // callAllowed(name) / eventAllowed(event): the gate, for the calling origin.
 // platform: systemCapabilities()'s table. linux: on Linux a SESSION_FEATURES
@@ -3868,6 +3876,11 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   const apiGate = compileApiGate(apiAccess);
   const subframeGate = compileSubframeGate(apiAccess);
   const mediaLines = mediaTrustLines(apiAccess, [...ownPageOrigins]);
+  // Every page asks tiny.capabilities as it boots, and on Linux the answer
+  // spawns D-Bus probes (portal, dock) that can be slow — start them now, so
+  // the first page finds them done or in flight. (macOS's one probe asks the
+  // launcher, which isn't connected yet; it's a fast round trip anyway.)
+  if (IS_LINUX) systemCapabilities(null, null).catch(() => {});
   // capabilities() reports what the gate denies THE CALLING ORIGIN, so a
   // page can hide UI for features it would only watch fail.
   const gateInfo = (origin) => {

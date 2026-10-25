@@ -27,6 +27,19 @@ and the platform table differ per launcher. Headless:
   `__invoke` arguments must not change its answer).
 - [ ] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
   `app.keystroke` read `why: 'session'`; on X11 they're ok.
+- [ ] **Windows, window-mode popup** (the WebView2 popup whose calls never
+  return, TODO-site-wrapper.md) — `await tiny.capabilities.ready` resolves
+  after ~3s with `can()` false everywhere, instead of hanging.
+- [ ] **Linux, first page** — `ready` arrives quickly with the probes warmed
+  at startup; two windows opening together spawn ONE portal probe (watch
+  `ps` / strace for gdbus).
+- [ ] **Linux, Wayland: levels + all spaces are stubs** — from the GTK3
+  source (gdkwindow-wayland.c: keep_above/below, stick/unstick are empty),
+  not measured. With `WAYLAND_DEBUG=1`, `setLevel('floating')`,
+  `setAlwaysOnTop(true)` and `setAllSpaces(true)` should emit no protocol
+  traffic and change nothing on screen, while `setClickThrough(true)` DOES
+  send `wl_surface.set_input_region` and clicks pass through. If a
+  compositor honours any of the three, flip its key back.
 
 ## #89 — macOS: `chrome.panel` non-activating panels (2026-10-23)
 
