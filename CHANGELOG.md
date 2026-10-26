@@ -13,11 +13,11 @@ https://tinyjs.app/changelog.
   spawns the launcher through a title-named symlink, so WebKit sees no
   Info.plist at all (wrapping the launcher in a real `.app` can't help for
   the same reason). The launcher now flips the private-but-stable
-  `_setMediaDevicesEnabled:` preference (the same SPI wry/Tauri ships) right
-  after webview creation, before the first navigation — dev/spawn mode only,
-  main and secondary windows; packaged apps keep WebKit's
-  declare-usage-strings-or-die check. Actual capture is unchanged: the
-  per-origin media gate and TCC still decide everything.
+  `_setMediaDevicesEnabled:` preference (the same SPI wry/Tauri ships) with
+  the launcher's other private WKPreferences, before the first navigation —
+  dev/spawn mode only, main and secondary windows; packaged apps keep
+  WebKit's declare-usage-strings-or-die check. Actual capture is unchanged:
+  the per-origin media gate and TCC still decide everything.
 
 ## 0.66.2 — 2026-10-25
 

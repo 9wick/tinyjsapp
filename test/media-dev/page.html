@@ -15,7 +15,7 @@
     document.title = 'NO-TINY';
     return;
   }
-  const win = window.__TINY_WIN; // 'main' or the win.open id (launcher shim)
+  const win = tiny.win.id; // 'main' or the win.open id
   const r = {
     win,
     mediaDevices: typeof navigator.mediaDevices,

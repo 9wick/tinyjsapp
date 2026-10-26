@@ -5202,11 +5202,11 @@ is on; its macOS default demands a TCC grant or a bundle usage string, and
 dev has neither because the bridge spawns the launcher through a
 title-named symlink (`bridge.js`), so `mainBundle` is the temp workDir —
 no Info.plist is ever seen. Wrapping the launcher in a real `.app` cannot
-help for the same reason. The launcher now flips the private
-`_setMediaDevicesEnabled:` WKPreferences SPI in dev/spawn mode only, main
-window (after `webview_create`, pre-navigation) and `win.open` secondaries
-(config-time). Probe matrix and WebKit source pointers: issue #96.
-Self-driving page: `test/media-dev/`.
+help for the same reason. The launcher flips the private
+`_setMediaDevicesEnabled:` WKPreferences SPI in dev/spawn mode only, inside
+`apply_webview_prefs` (the one seam both window paths build their config
+with, so it lands before the webview exists). Probe matrix and WebKit
+source pointers: issue #96. Self-driving page: `test/media-dev/`.
 
 - [x] **macOS dev, main window** — `mediaDevices: "object"`, `secure: true`;
   pre-fix binary same flow: `"undefined"`. *(2026-10-26, macOS 27.0.1
@@ -5223,7 +5223,10 @@ Self-driving page: `test/media-dev/`.
   same page: `mediaDevices: "object"` (the `do_winopen` config path;
   `TINYJS_HTML` runs can't cover it — a materialized page has no sibling
   for the default `index.html`, so the page must be the app's frontend).
-  *(2026-10-26.)*
+  *(2026-10-26.)* Both windows re-measured after the prefs-seam refactor
+  (`apply_webview_prefs`, config-time for both paths): main `object` +
+  `gum: granted`, second `object`. *(2026-10-27, macOS 27.0.1 arm64, temp
+  app dir + page as frontend, no TCC prompt — standing grant.)*
 - [ ] **macOS packaged `.app` on the fixed launcher** — no code path
   changes (`g_bundle_mode` gates the SPI out), but per house rules an
   eyeball of a built app declaring `permissions.microphone` belongs here:
