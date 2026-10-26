@@ -982,7 +982,7 @@
     // the Linux session and tinyjs.json's "api" gate for this origin, in one
     // answer. Every tiny function exists on every page whether or not it
     // works, so `typeof` tells a wrapped site nothing — this does.
-    //   await tiny.capabilities.ready;          // once, then all sync
+    //   await tiny.capabilities.ready;          // once (≤3s), then all sync
     //   tiny.capabilities.can('clipboard.write')   // true | false
     //   tiny.capabilities.can('tray.*')            // any tray call works
     //   tiny.capabilities.get('app.badge')  // { ok: false, why: 'platform', feature: 'badge' }
@@ -1202,7 +1202,14 @@
     if (added.length || removed.length)
       window.__emit({ event: 'capabilities-change', data: { added, removed } });
   };
-  const capReady = capFetch();
+  // ready never hangs: a page that awaits it first thing would hang with it,
+  // and there IS a path whose calls never return (Windows window-mode popups,
+  // TODO-site-wrapper.md), plus Linux D-Bus probes that can take a while.
+  // Past the cap it resolves with nothing claimed; a late answer still lands
+  // and fires onChange.
+  const CAP_READY_MS = 3000;
+  const capReady = Promise.race([capFetch(),
+    new Promise((r) => setTimeout(r, CAP_READY_MS))]).then(() => {});
 
   // Announce this page to the backend once tiny is up. First boot and every
   // reload land here; the bridge uses the MAIN window's hello to re-arm the

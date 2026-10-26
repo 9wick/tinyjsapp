@@ -12,6 +12,49 @@ https://tinyjs.app/changelog.
   launcher panels and reply protocol are reused; no WebView is needed.
   Page calls retain their existing origin and capability gates.
 
+## 0.66.2 — 2026-10-25
+
+- **macOS: `data-tiny-drag` drags engage late or never on a real trackpad
+  (#92).** `win.startDrag()` lands on the main thread via an async
+  dispatch, and a trackpad press is followed by a dense stream of
+  pressure/touch/gesture events — so `[NSApp currentEvent]` was often no
+  longer the mouse-down when `do_dragwin` checked it, and the drag silently
+  no-oped (up to 15% of gestures never moved; another ~45% engaged
+  110–165 ms late). Scripted `CGEvent` gestures never show it — they carry
+  no interleaved events. The launcher now caches the last left mouse-down
+  from a `sendEvent:` hook and hands it to the drag APIs whenever the
+  button is still held (`[NSEvent pressedMouseButtons]` — the guard
+  `do_resizewin` already uses), which is what AppKit asks for: "the
+  original mouseDown event". `tiny.win.dragOut()` (`startDrag({ files })`)
+  had the same race with the same symptom and now shares the cache. Retries
+  landing while a drag is already engaged stay harmless. The cached press
+  is dropped on its mouse-up and only drags the window it landed in, so a
+  `startDrag()` can't glue the window to a drag in another app (the button
+  mask is system-wide). Regression harness: `test/drag-race/` reproduces
+  the race synthetically (scrollwheel burst between press and dispatch).
+  ([#92](https://github.com/tarwin/tinyjsapp/issues/92),
+  [#93](https://github.com/tarwin/tinyjsapp/pull/93), thanks to
+  [@skuridin](https://github.com/skuridin) for the diagnosis, the fix and
+  the regression harness.)
+
+## 0.66.1 — 2026-10-25
+
+- **`tiny.capabilities.ready` can't hang a page.** It resolves within 3
+  seconds even if the answer hasn't arrived — on Windows a window-mode
+  popup's calls never return (a known WebView2 issue), and on Linux the
+  first answer waits on D-Bus probes. A late answer still lands and fires
+  `onChange`. The Linux probes now start when the app does, and windows
+  opening together share one probe instead of each starting their own.
+- **Linux Wayland: `setLevel`, `setAlwaysOnTop` and `setAllSpaces` are
+  reported as unsupported.** GTK has no way to do them on Wayland, so they
+  did nothing while `system.capabilities()` (and so
+  `tiny.capabilities.can()`) claimed them. New key `windowLevel`;
+  `setAllSpaces` is now `false` on Wayland too. X11 and XWayland
+  (`windowPlacement`) are unchanged.
+- **Linux Wayland: `setClickThrough(true)` works.** GTK rewrote the
+  window's input region on every relayout, so the empty one the launcher
+  set never reached the compositor and the window kept taking clicks.
+
 ## 0.66.0 — 2026-10-24
 
 - **`tiny.capabilities`: ask whether a call will work, by the call.** Every

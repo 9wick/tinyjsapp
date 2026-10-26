@@ -36,6 +36,14 @@ v = capabilityVerdicts({ calls: ['win.setPosition', 'system.wifi'] },
   { ...open, platform: { windowPosition: false, wifi: false }, linux: true });
 check('wayland → session', v.calls['win.setPosition'].why === 'session');
 check('linux non-session → platform', v.calls['system.wifi'].why === 'platform');
+v = capabilityVerdicts({ calls: ['win.setLevel', 'win.setAlwaysOnTop', 'win.setAllSpaces', 'win.setClickThrough'] },
+  { ...open, platform: { windowLevel: false, setAllSpaces: false }, linux: true });
+check('wayland: level + always-on-top', v.calls['win.setLevel'].why === 'session'
+  && same(v.calls['win.setAlwaysOnTop'], { why: 'session', feature: 'windowLevel' }));
+check('wayland: all spaces', v.calls['win.setAllSpaces'].why === 'session');
+check('click-through has no key', v.calls['win.setClickThrough'] === true);
+v = capabilityVerdicts({ calls: ['win.setAllSpaces'] }, { ...open, platform: { setAllSpaces: false } });
+check('windows: all spaces → platform', v.calls['win.setAllSpaces'].why === 'platform');
 v = capabilityVerdicts({ calls: ['win.setPosition'] }, { ...open, platform: { windowPosition: false } });
 check('off Linux → platform', v.calls['win.setPosition'].why === 'platform');
 v = capabilityVerdicts({ calls: ['win.setPosition'], events: ['hotkey'] },
@@ -123,6 +131,31 @@ check('refresh: diff', changed && same(changed.removed, ['notify']) && changed.a
 changed = null;
 await caps.refresh();
 check('refresh: no change, no event', changed === null);
+
+// A call that never returns (Windows window-mode popups) must not hang
+// ready; the answer that lands late still fires onChange.
+let release;
+const hung = {
+  __invoke: (j) => (JSON.parse(j).method === 'client.capabilities'
+    ? new Promise((r) => { release = () => r(structuredClone(next)); })
+    : Promise.resolve(null)),
+  addEventListener() {},
+};
+new Function('window', src)(hung);
+const t0 = Date.now();
+// A ready that never settles would just end the run (exit 0, no output), so
+// race it against a deadline that fails loudly instead.
+const settled = await Promise.race([hung.tiny.capabilities.ready.then(() => true),
+  new Promise((r) => setTimeout(() => r(false), 6000))]);
+const waited = Date.now() - t0;
+check('ready settles', settled, `${waited}ms`);
+check('ready caps out', waited >= 2500 && waited < 4500, `${waited}ms`);
+check('nothing claimed after the cap', !hung.tiny.capabilities.can('system.os') && hung.tiny.capabilities.get('notify').why === 'pending');
+let late = null;
+hung.tiny.capabilities.onChange((d) => { late = d; });
+release();
+await new Promise((r) => setTimeout(r, 0));
+check('late answer fires onChange', late && late.added.includes('clipboard.write') && hung.tiny.capabilities.can('clipboard.write'));
 
 if (fail) { console.log(`${fail} failed`); tjs.exit(1); }
 console.log('capabilities: all ok');

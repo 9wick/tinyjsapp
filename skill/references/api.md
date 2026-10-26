@@ -1,4 +1,4 @@
-# The tiny.* / app API — full tour (current as of tinyjs 0.66.0)
+# The tiny.* / app API — full tour (current as of tinyjs 0.66.2)
 
 The `tiny` global is injected into every page automatically (no script tag);
 TypeScript definitions ship in types/tiny.d.ts. Backend handlers receive the
@@ -506,6 +506,7 @@ tiny.capabilities.get('win.setPosition');   // { ok:false, why:'session', featur
 tiny.capabilities.list();                   // every working path, sorted
 tiny.capabilities.onChange(({ added, removed }) => {});  // fires on first answer too
 // why: 'gate' (needs: names to enable) | 'platform' | 'session' | 'unknown' | 'pending'
+// ready resolves within 3s even with no answer (never hangs); a late one fires onChange.
 // Informational — the backend gate still decides. Doesn't cover the app's own api methods.
 
 // requirements — turn "missing system pieces" into an actionable prompt

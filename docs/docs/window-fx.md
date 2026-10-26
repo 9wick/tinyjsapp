@@ -39,6 +39,8 @@ tiny.win.setLevel('floating');
 | `'overlay'` | on macOS, above nearly everything, including full-screen apps and Mission Control. Windows and Linux have only one band above normal, so there it's the same as `'floating'`. |
 | `'desktop'` | below ordinary windows, on the wallpaper |
 
+On a Linux Wayland session levels do nothing: Wayland has no way for an app to stack its own windows, so `setLevel` and `setAlwaysOnTop` are X11 only, and `tiny.capabilities.can('win.setLevel')` says so (`windowLevel` in `system.capabilities()`). [`windowPlacement`](./config#windowPlacement) runs the app through XWayland, where they work.
+
 To keep a window above just your own main window, not other apps, open it with [`parent`](./multiple-windows#parent) instead.
 
 On macOS, Mission Control follows from these: `'normal'` and `'floating'` windows show up in it like any document, while `'desktop'`, `'overlay'` and click-through windows stay out of it and out of the window cycle.
@@ -49,7 +51,7 @@ On macOS, Mission Control follows from these: `'normal'` and `'floating'` window
 tiny.win.setAllSpaces(true);
 ```
 
-`setAllSpaces(true)` keeps the window on every Space (virtual desktop) as the user switches, and on macOS lets it appear over full-screen apps. It works on macOS and X11. Windows has no equivalent and ignores it (`tiny.system.capabilities().setAllSpaces` is `false`), and Wayland has none either.
+`setAllSpaces(true)` keeps the window on every Space (virtual desktop) as the user switches, and on macOS lets it appear over full-screen apps. It works on macOS and X11. Windows has no equivalent and ignores it (`tiny.system.capabilities().setAllSpaces` is `false`), and Wayland has none either (`setAllSpaces` is `false` there too).
 
 ## showing without focus {#activate}
 

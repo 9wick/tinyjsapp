@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>dragrace</title>
+<style>
+  body { margin: 0; font: 13px system-ui; }
+  #plain { height: 48px; background: #345; color: #fff; }
+  #poison { height: 48px; background: #953; color: #fff; }
+  #nobtn { margin: 20px; width: 320px; height: 44px; }
+</style>
+</head>
+<body>
+  <!-- case A: normal data-tiny-drag (built-in handler in tiny.js) -->
+  <div id="plain" data-tiny-drag>plain drag</div>
+  <!-- case B: NO data-tiny-drag. Own handler delays startDrag past a burst of
+       scroll events, so [NSApp currentEvent] is a scrollWheel when DRAGWIN
+       lands — the #92 race, amplified. -->
+  <div id="poison">poison drag (delayed startDrag)</div>
+  <button id="nobtn">startDrag with no button (must no-op)</button>
+<script>
+  // Each target records itself in the store so run.sh can prove the
+  // synthetic clicks landed on the RIGHT element — with only the driver's
+  // pixel offsets, a click that misses would pass vacuously.
+  document.getElementById('plain').addEventListener('mousedown', (e) => {
+    if (e.button === 0) tiny.store.set('plain', 'pressed');
+  });
+  document.getElementById('poison').addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    tiny.store.set('poison', 'fired');
+    setTimeout(() => { try { tiny.win.startDrag(); } catch (err) {
+      tiny.store.set('poison', 'ERR ' + err.message);
+    } }, 350);
+  });
+  document.getElementById('nobtn').addEventListener('click', () => {
+    try { tiny.store.set('nobtn', 'called'); tiny.win.startDrag(); }
+    catch (err) { tiny.store.set('nobtn', 'ERR ' + err.message); }
+  });
+</script>
+</body>
+</html>

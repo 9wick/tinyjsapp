@@ -1350,7 +1350,8 @@ declare interface Tiny {
    *  page's origin. Await `ready` once; everything else is synchronous.
    *  Informational: the backend gate still decides every call. */
   capabilities: {
-    /** resolves once the answer has arrived (until then can() is false) */
+    /** resolves once the answer has arrived, or after 3s without one — it
+     *  never hangs; a late answer fires onChange. Until then can() is false. */
     readonly ready: Promise<void>;
     /** true when the call works here. 'ns.*' is true when ANY path under
      *  ns works. */
@@ -1373,7 +1374,7 @@ declare type TinyCapability =
   /** 'platform': this OS can't; 'session': this Linux session can't (Wayland).
    *  `feature` is the system.capabilities() key that says so. */
   | { ok: false; why: 'platform' | 'session'; feature: string }
-  /** 'unknown': no such path; 'pending': asked before `ready` */
+  /** 'unknown': no such path; 'pending': no answer yet */
   | { ok: false; why: 'unknown' | 'pending' };
 
 declare const tiny: Tiny;
