@@ -1,0 +1,7 @@
+{
+  "name": "backend-dialog-tray-test",
+  "title": "Backend Dialog Tray Test",
+  "id": "com.tinyjs.backend-dialog-tray-test",
+  "mainWindow": false,
+  "activation": "accessory"
+}

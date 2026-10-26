@@ -45,3 +45,46 @@ the dialogs take focus when invoked from a tray/menu action, including
 accessory mode, and that a second call works after cancelling the first.
 Record per-OS results in `TODO-verify.md`; a successful build alone is not
 a native behavior check.
+
+## Real tray actions and focus
+
+Contract: a real tray action opens a backend confirm/save panel with
+`mainWindow: false` and accessory activation. Each completed action must
+leave the app window list empty. Cancelling must allow another action.
+Panel visibility and focus require a human check on a logged-in desktop;
+the fixture's `PASS` lines only check completion and the empty window list.
+The save action selects a path and never writes a file.
+
+The dedicated fixture needs no source edits or environment variables:
+
+```sh
+cd test/dialogs/tray
+../../../tinyjs dev
+```
+
+1. Wait for `READY`, then bring another app to the foreground.
+2. Open the **Dialog Test** tray menu and choose **Confirm**. The panel
+   must be visible and accept keyboard/mouse input without finding it
+   behind another window. Choose **Cancel**; expect
+   `PASS tray confirm: false; no app windows`.
+3. Repeat **Confirm** and choose **Continue**; expect
+   `PASS tray confirm: true; no app windows`. This checks a second call
+   after cancellation.
+4. Bring another app forward, choose **Save**, and cancel; expect
+   `PASS tray save: null; no app windows`.
+5. Repeat **Save**. Check the suggested name is `report.json`, choose a
+   directory and a name that does not already exist, and accept. Expect
+   `PASS tray save: "/absolute/path/report.json"; no app windows` with
+   your selected path. Verify no file was created at that path.
+6. Choose **Quit**. No regular app window should appear during this run.
+
+Repeat the same steps with the built app. From the fixture directory:
+
+```sh
+../../../tinyjs build
+./dist/*.app/Contents/MacOS/backend-dialog-tray-test
+```
+
+On Linux run `./dist/backend-dialog-tray-test`; on Windows run
+`dist\backend-dialog-tray-test.exe`. Record dev and packaged results
+separately, including OS version and any focus/activation failures.

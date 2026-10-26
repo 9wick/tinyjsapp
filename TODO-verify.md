@@ -28,8 +28,14 @@ headless contract checks and the cross-platform native fixture.
 - [ ] **Linux desktop, X11/Wayland** — focus/activation from a real tray
   action with a compositor, including accessory mode. Xvfb focus was set
   by the test driver and does not verify desktop focus-stealing rules.
-- [ ] **macOS, dev and built .app** — same fixture; also verify a real tray
-  callback and accessory mode focus without a main window.
+- [x] **macOS Apple Silicon, dev and built .app, native fixture** — user
+  reported `PASS windowless native dialogs` and `PASS page gate` in both
+  runs, including the optional file/folder selections. Dev also confirmed
+  saveFile did not create the selected file. macOS version not recorded.
+- [ ] **macOS, dev and built .app, real tray** — run `test/dialogs/tray`
+  for real tray callbacks, accessory mode focus without a main window,
+  and repeated calls after cancellation. Check the accepted save path
+  does not create a file in the packaged run too.
 - [ ] **Windows, dev and built executable** — same fixture and tray/focus
   check; native reply routing is unchanged, but has not been run here.
 
