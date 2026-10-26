@@ -37,10 +37,11 @@ headless contract checks and the cross-platform native fixture.
   then accept (false/true), save cancel then accept (null/absolute path),
   and another save cancellation. Each completed action reported no app
   windows. macOS version not recorded.
-- [ ] **macOS, dev, real tray** — run `test/dialogs/tray` for the same
-  tray/focus checks; a dev tray result has not yet been reported.
-- [ ] **macOS, built .app, save side effect** — verify no file exists at
-  the accepted save path; the tray log alone only confirms the path result.
+- [x] **macOS Apple Silicon, dev, real tray** — user confirmed the same
+  tray/focus checks also worked in dev.
+- [x] **macOS, built .app, save side effect** — user checked the accepted
+  save path with `ls`; it reported no such file. The save panel returned
+  the selected path without creating the file.
 - [ ] **Windows, dev and built executable** — same fixture and tray/focus
   check; native reply routing is unchanged, but has not been run here.
 
