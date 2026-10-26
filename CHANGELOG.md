@@ -4,6 +4,21 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **macOS: `navigator.mediaDevices` is no longer `undefined` under `tinyjs
+  dev` on macOS 26+ (#96).** WebKit hides the whole API unless its
+  `MediaDevicesEnabled` preference is on, and that default demands a TCC
+  grant or a bundle usage string — dev mode has neither, because the bridge
+  spawns the launcher through a title-named symlink, so WebKit sees no
+  Info.plist at all (wrapping the launcher in a real `.app` can't help for
+  the same reason). The launcher now flips the private-but-stable
+  `_setMediaDevicesEnabled:` preference (the same SPI wry/Tauri ships) right
+  after webview creation, before the first navigation — dev/spawn mode only,
+  main and secondary windows; packaged apps keep WebKit's
+  declare-usage-strings-or-die check. Actual capture is unchanged: the
+  per-origin media gate and TCC still decide everything.
+
 ## 0.66.2 — 2026-10-25
 
 - **macOS: `data-tiny-drag` drags engage late or never on a real trackpad

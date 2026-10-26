@@ -7082,6 +7082,7 @@ struct WinOpenReq {
 
 static void enable_webgpu_prefs(id preferences); // defined in WebGPU section
 static void enable_file_access(WKWebViewConfiguration *cfg); // ditto
+static void enable_media_devices(id preferences); // ditto (#96)
 // Navigation + download delegate and (for non-main windows) a UI delegate —
 // defined in the browser-affordances section below.
 static void tiny_apply_web_delegates(WKWebView *wv);
@@ -7125,6 +7126,11 @@ static void do_winopen(webview_t w, void *arg) {
         [[WKWebView alloc] initWithFrame:win.contentView.bounds
                            configuration:cfg];
     wv.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    // Dev has neither a TCC grant nor a bundle usage string, so WebKit hides
+    // navigator.mediaDevices outright (#96). Packaged apps keep WebKit's
+    // declare-usage-strings default.
+    if (!g_bundle_mode)
+      enable_media_devices(cfg.preferences);
     if (!g_user_agent.empty())
       wv.customUserAgent = ns(g_user_agent);
     if (g_debug) {
@@ -8802,6 +8808,20 @@ static void enable_file_access(WKWebViewConfiguration *cfg) {
   }
 }
 
+// WebKit hides navigator.mediaDevices entirely unless MediaDevicesEnabled is
+// on, and on macOS that default demands a TCC grant or a bundle usage string
+// (the bridge spawns a title-named symlink, so dev's mainBundle is the temp
+// workDir — #96). Flip the private-but-stable WKPreferences SPI (macOS
+// 10.13+, the same one wry ships). KVC throws for this key — the setter is
+// named _setMediaDevicesEnabled: — so message the selector; an OS without it
+// silently keeps today's behaviour. Must run before the first navigation,
+// like the WebGPU prefs above.
+static void enable_media_devices(id preferences) {
+  SEL sel = sel_registerName("_setMediaDevicesEnabled:");
+  if ([(id)preferences respondsToSelector:sel])
+    ((void (*)(id, SEL, BOOL))objc_msgSend)((id)preferences, sel, YES);
+}
+
 static void enable_webgpu(webview_t w) {
   WKWebView *wv = (WKWebView *)webview_get_native_handle(
       w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
@@ -9776,6 +9796,14 @@ static bool initialize_main_window(const std::string &title, int width, int heig
 
   apply_dev_icon();   // dev only: TINYJS_ICON -> the Dock tile
   enable_webgpu(g_w);
+  // Dev-only, like the launcher-wide !g_bundle_mode sites: un-hide
+  // navigator.mediaDevices in spawn mode (#96).
+  if (!bundle_mode) {
+    WKWebView *wv = (WKWebView *)webview_get_native_handle(
+        g_w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
+    if (wv)
+      enable_media_devices(wv.configuration.preferences);
+  }
   install_close_hook(g_w);
   install_drop_hook();
   install_media_capture_hook();
