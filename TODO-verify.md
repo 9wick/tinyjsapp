@@ -32,10 +32,15 @@ headless contract checks and the cross-platform native fixture.
   reported `PASS windowless native dialogs` and `PASS page gate` in both
   runs, including the optional file/folder selections. Dev also confirmed
   saveFile did not create the selected file. macOS version not recorded.
-- [ ] **macOS, dev and built .app, real tray** — run `test/dialogs/tray`
-  for real tray callbacks, accessory mode focus without a main window,
-  and repeated calls after cancellation. Check the accepted save path
-  does not create a file in the packaged run too.
+- [x] **macOS Apple Silicon, built .app, real tray** — user reported
+  working display/focus and `test/dialogs/tray` logs for confirm cancel
+  then accept (false/true), save cancel then accept (null/absolute path),
+  and another save cancellation. Each completed action reported no app
+  windows. macOS version not recorded.
+- [ ] **macOS, dev, real tray** — run `test/dialogs/tray` for the same
+  tray/focus checks; a dev tray result has not yet been reported.
+- [ ] **macOS, built .app, save side effect** — verify no file exists at
+  the accepted save path; the tray log alone only confirms the path result.
 - [ ] **Windows, dev and built executable** — same fixture and tray/focus
   check; native reply routing is unchanged, but has not been run here.
 
