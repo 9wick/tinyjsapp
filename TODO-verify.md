@@ -5194,3 +5194,43 @@ import `../shared/settings.js`; the page stores both values via
   `src/backend/lib/util.js` restarts once; `src/frontend/css/app.css`
   reloads only; `src/shared/lib/deep.js` restarts; the backend comes back
   with both new values.)*
+
+## #96/#97 — dev-mode `navigator.mediaDevices` on macOS 26+ (`fix/macos-dev-mediadevices-96`, 2026-10-26)
+
+WebKit hides `navigator.mediaDevices` entirely unless `MediaDevicesEnabled`
+is on; its macOS default demands a TCC grant or a bundle usage string, and
+dev has neither because the bridge spawns the launcher through a
+title-named symlink (`bridge.js`), so `mainBundle` is the temp workDir —
+no Info.plist is ever seen. Wrapping the launcher in a real `.app` cannot
+help for the same reason. The launcher now flips the private
+`_setMediaDevicesEnabled:` WKPreferences SPI in dev/spawn mode only, main
+window (after `webview_create`, pre-navigation) and `win.open` secondaries
+(config-time). Probe matrix and WebKit source pointers: issue #96.
+Self-driving page: `test/media-dev/`.
+
+- [x] **macOS dev, main window** — `mediaDevices: "object"`, `secure: true`;
+  pre-fix binary same flow: `"undefined"`. *(2026-10-26, macOS 27.0.1
+  arm64, repo launcher + TINYJS_LAUNCHER A/B, results via tiny.store.)*
+- [x] **macOS dev, getUserMedia end to end** — the TCC mic prompt appeared
+  once on first run, and after Allow the stream opened
+  (`granted: MacBook Air Microphone`, track stopped after). Later runs of
+  the same launcher binary get no prompt — the grant persists, the
+  documented attaches-to-the-shared-launcher behaviour. Note this also
+  explains why the bug looked new: with a standing grant even a pre-fix
+  launcher exposes the API, so macOS 26/27 TCC tightening was what pulled
+  the mask off. *(2026-10-26.)*
+- [x] **macOS dev, secondary window** — `tiny.win.open('second')` on the
+  same page: `mediaDevices: "object"` (the `do_winopen` config path;
+  `TINYJS_HTML` runs can't cover it — a materialized page has no sibling
+  for the default `index.html`, so the page must be the app's frontend).
+  *(2026-10-26.)*
+- [ ] **macOS packaged `.app` on the fixed launcher** — no code path
+  changes (`g_bundle_mode` gates the SPI out), but per house rules an
+  eyeball of a built app declaring `permissions.microphone` belongs here:
+  prompt once, record, `mediaDevices` still exposed. Needs the fixed
+  launcher installed in the tool dir (builds always take the bundled
+  one).
+- [ ] **Clean-TCC A/B** — `tccutil reset Microphone` (or a fresh user),
+  then pre-fix vs fixed launcher through `test/media-dev/`, confirming
+  the FAIL side of the README's expectation table from a truly clean
+  state rather than the post-grant state everything above ran in.
