@@ -34,6 +34,9 @@ A main-window-only quick check works without touching the app:
 TINYJS_HTML=<repo>/test/media-dev/page.html tinyjs dev
 ```
 
+A `TINYJS_HTML` run still opens a `second` window on the app's real
+frontend; it runs no script of ours, so it reports nothing — ignore it.
+
 Read the results from the app's store (`~/Library/Application
 Support/<app-id>/store.json` on macOS), keys `md_main` / `md_second`:
 

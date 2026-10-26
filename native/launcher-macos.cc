@@ -8806,8 +8806,9 @@ static void enable_file_access(WKWebViewConfiguration *cfg) {
 // on, and on macOS that default demands a TCC grant or a bundle usage string
 // (the bridge spawns a title-named symlink, so dev's mainBundle is the temp
 // workDir — #96). Flip the private-but-stable WKPreferences SPI (macOS
-// 10.13+, the same one wry ships). KVC throws for this key — the setter is
-// named _setMediaDevicesEnabled: — so message the selector. This EXPOSES the
+// 10.13+, the same one wry ships). Message the selector directly instead of
+// KVC: respondsToSelector keeps behaviour on an OS without the SPI, and the
+// absence is debug-visible instead of a silent no-op. This EXPOSES the
 // API and grants nothing: capture is still decided by install_media_capture_hook
 // and TCC.
 static void expose_media_devices(id preferences) {
