@@ -5239,7 +5239,9 @@ source pointers: issue #96. Self-driving page: `test/media-dev/`.
   the first attempt reused the same executable the dev run (below) had
   just gotten a mic grant for, and the packaged `getUserMedia` came back
   `granted` with NO dialog. Rebuilt as a fresh id, the prompt appeared
-  (naming the app + the declared usage string), blocked `getUserMedia`
+  (naming the app, showing the declared usage string — confirmed by
+  hand; the dev-mode dialog shows no reason text, the no-Info.plist
+  difference #96 documents), blocked `getUserMedia`
   until Allow, then `md_main` = `object` + `granted`, `md_second` =
   `object`. *(2026-10-27, macOS 27.0.1 arm64, `test/media-dev/page.html`
   as the app's frontend, results via tiny.store.)*
