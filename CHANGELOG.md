@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.66.3 — 2026-10-28
 
 - **macOS: `navigator.mediaDevices` is no longer `undefined` under `tinyjs
   dev` on macOS 26+ (#96).** WebKit hides the whole API unless its
