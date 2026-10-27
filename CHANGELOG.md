@@ -13,7 +13,7 @@ https://tinyjs.app/changelog.
   spawns the launcher through a title-named symlink, so WebKit sees no
   Info.plist at all (wrapping the launcher in a real `.app` can't help for
   the same reason). The launcher now flips the private-but-stable
-  `_setMediaDevicesEnabled:` preference (the same SPI wry/Tauri ships) with
+  `_setMediaDevicesEnabled:` preference (WebKit SPI since macOS 10.13) with
   the launcher's other private WKPreferences, before the first navigation —
   dev/spawn mode only, main and secondary windows; packaged apps keep
   WebKit's declare-usage-strings-or-die check. Actual capture is unchanged:

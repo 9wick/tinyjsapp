@@ -8806,11 +8806,11 @@ static void enable_file_access(WKWebViewConfiguration *cfg) {
 // on, and on macOS that default demands a TCC grant or a bundle usage string
 // (the bridge spawns a title-named symlink, so dev's mainBundle is the temp
 // workDir — #96). Flip the private-but-stable WKPreferences SPI (macOS
-// 10.13+, the same one wry ships). Message the selector directly instead of
-// KVC: respondsToSelector keeps behaviour on an OS without the SPI, and the
-// absence is visible on stderr instead of a silent no-op. This EXPOSES the
-// API and grants nothing: capture is still decided by install_media_capture_hook
-// and TCC.
+// 10.13+, declared in WebKit's WKPreferencesPrivate.h). Message the selector
+// directly instead of KVC: respondsToSelector keeps behaviour on an OS
+// without the SPI, and the absence is visible on stderr instead of a silent
+// no-op. This EXPOSES the API and grants nothing: capture is still decided by
+// install_media_capture_hook and TCC.
 static void expose_media_devices(id preferences) {
   SEL sel = sel_registerName("_setMediaDevicesEnabled:");
   if ([(id)preferences respondsToSelector:sel])
