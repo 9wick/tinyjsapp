@@ -95,6 +95,8 @@ Export any of these and tinyjs calls it. Each also reaches the page as an event,
 
 The `app` passed to `init`, hooks and `api` functions has the same calls the page has on `tiny`, under the same names: a page's `tiny.win.setTitle()` is `app.win.setTitle()` for the main window, `tiny.store.get()` is `app.store.get()`, `tiny.app.paths()` is `app.paths()`, and so on. The [API map](./api-map) lists every call on both sides. Other windows are `app.window(id)`.
 
+[`app.dialog`](./dialogs) has the same file pickers and message boxes as `tiny.dialog`. Use it from `init` or async hooks such as `onTray`; it also works with `"mainWindow": false`, without creating a WebView.
+
 The backend has one call of its own, `app.spawnHidden(args, opts)`: `tjs.spawn` that never flashes a console window on Windows. A console program spawned from a built Windows app otherwise opens a terminal window each time; on macOS and Linux it's the same as `tjs.spawn`.
 
 ## what the backend can use {#runtime}

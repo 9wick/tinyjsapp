@@ -219,6 +219,11 @@ tiny.menu.onContext((id) => ...);       // backend: export onContextMenu
 
 ## Dialogs (native, application-modal, all three OSes)
 
+The backend has the same seven calls on `app.dialog`, with the same
+arguments and results. They work in async `init`/`onTray`/`onMenu` handlers
+and with `"mainWindow": false`, without creating a WebView. Page calls keep
+their `dialog.*` origin gate; backend calls are trusted app code.
+
 ```js
 await tiny.dialog.openFile();     // path | null       openFiles() -> paths[] | null
 await tiny.dialog.pickFolder();   // path | null       saveFile() -> path|null

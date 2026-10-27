@@ -1,0 +1,8 @@
+{
+  "name": "backend-dialog-test",
+  "title": "Backend Dialog Test",
+  "id": "com.tinyjs.backend-dialog-test",
+  "mainWindow": false,
+  "activation": "accessory",
+  "api": { "enable": ["report"] }
+}

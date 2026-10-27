@@ -1,0 +1,10 @@
+<!doctype html>
+<title>Dialog gate</title>
+<script>
+(async () => {
+  let denied = false;
+  try { await tiny.dialog.confirm('This must not open'); }
+  catch (error) { denied = String(error).includes('disabled by tinyjs.json'); }
+  await tiny.api.call('report', denied);
+})();
+</script>

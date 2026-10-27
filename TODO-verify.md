@@ -8,6 +8,43 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Backend `app.dialog` (2026-10-25)
+
+All seven `tiny.dialog` methods are available from the backend, using the
+same `DIALOG_OPS` encoding and the existing `DLG q<id>` / `GOT` replies.
+Linux's PDF consent panel now carries an explicit Downloads hint rather
+than choosing a folder from the reply id. `test/dialogs/README.md` has the
+headless contract checks and the cross-platform native fixture.
+
+- [x] **Linux x86_64, X11/Xvfb, dev and built executable** — real GTK3
+  panels driven with XTest. `mainWindow: false`: alert → true; confirm
+  accepted/cancelled → true/false; prompt accepted empty string/cancelled
+  → ''/null; all four pickers cancel → null; openFile/openFiles/pickFolder
+  and saveFile return the selected absolute paths (openFiles an array).
+  saveFile does not create the chosen file. No app windows or WebKit
+  processes while the backend panel is open. The named page opened after
+  the panels is denied `dialog.confirm` while the backend has used it
+  under the same manifest. *(2026-10-25, GTK 3.24.49, WebKitGTK 2.50.4)*
+- [ ] **Linux desktop, X11/Wayland** — focus/activation from a real tray
+  action with a compositor, including accessory mode. Xvfb focus was set
+  by the test driver and does not verify desktop focus-stealing rules.
+- [x] **macOS Apple Silicon, dev and built .app, native fixture** — user
+  reported `PASS windowless native dialogs` and `PASS page gate` in both
+  runs, including the optional file/folder selections. Dev also confirmed
+  saveFile did not create the selected file. macOS version not recorded.
+- [x] **macOS Apple Silicon, built .app, real tray** — user reported
+  working display/focus and `test/dialogs/tray` logs for confirm cancel
+  then accept (false/true), save cancel then accept (null/absolute path),
+  and another save cancellation. Each completed action reported no app
+  windows. macOS version not recorded.
+- [x] **macOS Apple Silicon, dev, real tray** — user confirmed the same
+  tray/focus checks also worked in dev.
+- [x] **macOS, built .app, save side effect** — user checked the accepted
+  save path with `ls`; it reported no such file. The save panel returned
+  the selected path without creating the file.
+- [ ] **Windows, dev and built executable** — same fixture and tray/focus
+  check; native reply routing is unchanged, but has not been run here.
+
 ## `tiny.capabilities` — can()/get()/list() per tiny.* path (`feat/capabilities-can`, 2026-10-24)
 
 tiny.js reads each function's wire names from its own source at boot and

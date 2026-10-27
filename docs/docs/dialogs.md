@@ -16,7 +16,19 @@ if (path === null) return;          // cancelled
 const text = await tiny.api.call('readText', { path });
 ```
 
-There is no backend twin: dialogs are page-only (see the [API map](./api-map#dialog)). The page gets back a real filesystem path, and reading or writing the file is the [backend](./backend)'s job.
+The backend has the same calls on `app.dialog`, with the same arguments and results (see the [API map](./api-map#dialog)). They work without a page or main window, including `"mainWindow": false` tray apps. The launcher displays the panel; no WebView is created for it.
+
+```js
+// backend: a tray menu item exports a report
+export async function onTray(id, app) {
+  if (id !== 'export') return;
+  const path = await app.dialog.saveFile({ types: ['json'], name: 'report.json' });
+  if (path === null) return;
+  await tjs.writeFile(path, new TextEncoder().encode(JSON.stringify({ status: 'ok' })));
+}
+```
+
+In a page, the picker returns a real filesystem path; reading or writing the file is the [backend](./backend)'s job. `saveFile` itself never writes the file on either side.
 
 ## opening files {#open}
 
@@ -116,3 +128,5 @@ The page's bare `alert()`, `confirm()` and `prompt()` are the browser's built-in
 ## in a site wrapper {#site-wrappers}
 
 Under a tinyjs.json [`api`](./config#api) gate, dialogs are the `dialog.*` methods — `dialog.openFile`, `dialog.confirm` and so on. The `"wrapper"` preset allows them, so a wrapped site can open the user's file pickers. Disable `dialog.*` if it shouldn't.
+
+The gate applies to calls from pages. Backend `app.dialog` calls are trusted app code, like other `app` methods, and are not restricted by the page's origin rules.
