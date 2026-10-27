@@ -5235,10 +5235,14 @@ source pointers: issue #96. Self-driving page: `test/media-dev/`.
   install needed): `tinyjs build` a temp app, replace
   `<app>.app/Contents/MacOS/<name>` with the freshly built fixed
   launcher, re-sign ad-hoc — the same embed the build would have done.
-  Result: TCC mic prompt once (naming the app + our usage string), after
-  Allow `md_main` = `object` + `granted`, `md_second` = `object`.
-  *(2026-10-27, macOS 27.0.1 arm64, `test/media-dev/page.html` as the
-  app's frontend, results via tiny.store.)*
+  One trap: the verification needs a bundle id TCC has never granted —
+  the first attempt reused the same executable the dev run (below) had
+  just gotten a mic grant for, and the packaged `getUserMedia` came back
+  `granted` with NO dialog. Rebuilt as a fresh id, the prompt appeared
+  (naming the app + the declared usage string), blocked `getUserMedia`
+  until Allow, then `md_main` = `object` + `granted`, `md_second` =
+  `object`. *(2026-10-27, macOS 27.0.1 arm64, `test/media-dev/page.html`
+  as the app's frontend, results via tiny.store.)*
 - [x] **Clean-TCC evidence, no reset run** — a system-wide
   `tccutil reset Microphone` was judged out of scope on this machine
   (it clears every app's mic grant, not just ours). Evidence instead:
@@ -5246,6 +5250,6 @@ source pointers: issue #96. Self-driving page: `test/media-dev/`.
   `undefined` under `tinyjs dev` on macOS 26+, from a reporter with no
   standing grant on this launcher; the fixed side was observed from an
   un-granted identity — the 2026-10-27 dev run above used a freshly
-  built ad-hoc launcher (new code identity, no prior TCC grant for it)
-  and reached `granted: MacBook Air Microphone` on its first
-  `getUserMedia`.
+  built ad-hoc launcher (new code identity, no prior TCC grant for it):
+  its first `getUserMedia` popped the TCC mic dialog (answered by hand),
+  then reached `granted: MacBook Air Microphone`.
