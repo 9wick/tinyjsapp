@@ -56,7 +56,11 @@ try {
   await exchange(() => app.dialog.openFiles({ types: ['json'] }), 'openmulti\tjson', ['/one.json', '/two.json']);
   await exchange(() => app.dialog.pickFolder(), 'dir', '/folder');
   await exchange(() => app.dialog.saveFile({ types: ['json'], name: '../folder/report.json' }), 'save\tjson\treport.json', '/report.json');
-  await exchange(() => app.dialog.alert('Done', 'First\nSecond'), 'alert\tDone\tFirst\\nSecond\t', true);
+  // Only the Linux launcher unescapes a detail's line breaks; elsewhere the
+  // bridge flattens them (lines() in bridge.js).
+  const linux = tjs.env.OS !== 'Windows_NT' && /linux/i.test(globalThis.navigator?.platform ?? '');
+  await exchange(() => app.dialog.alert('Done', 'First\nSecond'),
+    'alert\tDone\t' + (linux ? 'First\\nSecond' : 'First Second') + '\t', true);
   for (const answer of [true, false])
     await exchange(() => app.dialog.confirm('Continue?', { detail: 'Details', ok: 'Go', cancel: 'Stop' }), 'confirm\tContinue?\tDetails\tGo\tStop', answer);
   await exchange(() => app.dialog.confirm('Continue?', 'Details'), 'confirm\tContinue?\tDetails\t\t', true);
