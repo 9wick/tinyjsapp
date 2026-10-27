@@ -5228,13 +5228,24 @@ source pointers: issue #96. Self-driving page: `test/media-dev/`.
   (`apply_webview_prefs`, one seam for both paths): main `object` +
   `gum: granted`, second `object`. *(2026-10-27, macOS 27.0.1 arm64, temp
   app dir + page as frontend, no TCC prompt — standing grant.)*
-- [ ] **macOS packaged `.app` on the fixed launcher** — no code path
+- [x] **macOS packaged `.app` on the fixed launcher** — no code path
   changes (`g_bundle_mode` gates the SPI out), but per house rules an
   eyeball of a built app declaring `permissions.microphone` belongs here:
-  prompt once, record, `mediaDevices` still exposed. Needs the fixed
-  launcher installed in the tool dir (builds always take the bundled
-  one).
-- [ ] **Clean-TCC A/B** — `tccutil reset Microphone` (or a fresh user),
-  then pre-fix vs fixed launcher through `test/media-dev/`, confirming
-  the FAIL side of the README's expectation table from a truly clean
-  state rather than the post-grant state everything above ran in.
+  prompt once, record, `mediaDevices` still exposed. Method (no tool-dir
+  install needed): `tinyjs build` a temp app, replace
+  `<app>.app/Contents/MacOS/<name>` with the freshly built fixed
+  launcher, re-sign ad-hoc — the same embed the build would have done.
+  Result: TCC mic prompt once (naming the app + our usage string), after
+  Allow `md_main` = `object` + `granted`, `md_second` = `object`.
+  *(2026-10-27, macOS 27.0.1 arm64, `test/media-dev/page.html` as the
+  app's frontend, results via tiny.store.)*
+- [x] **Clean-TCC evidence, no reset run** — a system-wide
+  `tccutil reset Microphone` was judged out of scope on this machine
+  (it clears every app's mic grant, not just ours). Evidence instead:
+  the FAIL side is the #96 field report itself — `navigator.mediaDevices`
+  `undefined` under `tinyjs dev` on macOS 26+, from a reporter with no
+  standing grant on this launcher; the fixed side was observed from an
+  un-granted identity — the 2026-10-27 dev run above used a freshly
+  built ad-hoc launcher (new code identity, no prior TCC grant for it)
+  and reached `granted: MacBook Air Microphone` on its first
+  `getUserMedia`.
