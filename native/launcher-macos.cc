@@ -8808,14 +8808,14 @@ static void enable_file_access(WKWebViewConfiguration *cfg) {
 // workDir — #96). Flip the private-but-stable WKPreferences SPI (macOS
 // 10.13+, the same one wry ships). Message the selector directly instead of
 // KVC: respondsToSelector keeps behaviour on an OS without the SPI, and the
-// absence is debug-visible instead of a silent no-op. This EXPOSES the
+// absence is visible on stderr instead of a silent no-op. This EXPOSES the
 // API and grants nothing: capture is still decided by install_media_capture_hook
 // and TCC.
 static void expose_media_devices(id preferences) {
   SEL sel = sel_registerName("_setMediaDevicesEnabled:");
   if ([(id)preferences respondsToSelector:sel])
     ((void (*)(id, SEL, BOOL))objc_msgSend)((id)preferences, sel, YES);
-  else if (g_debug)
+  else // bundle mode never reaches here, so print unconditionally
     std::fprintf(stderr, "launcher: _setMediaDevicesEnabled: absent — "
                          "navigator.mediaDevices stays hidden\n");
 }
@@ -9793,8 +9793,7 @@ static bool initialize_main_window(const std::string &title, int width, int heig
   }
 
   apply_dev_icon();   // dev only: TINYJS_ICON -> the Dock tile
-  if (WKWebView *wv = (WKWebView *)webview_get_native_handle(
-          g_w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER))
+  if (WKWebView *wv = webview_for_id(g_w, "main"))
     apply_webview_prefs(wv.configuration);
   install_close_hook(g_w);
   install_drop_hook();

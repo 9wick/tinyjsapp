@@ -5204,8 +5204,9 @@ title-named symlink (`bridge.js`), so `mainBundle` is the temp workDir —
 no Info.plist is ever seen. Wrapping the launcher in a real `.app` cannot
 help for the same reason. The launcher flips the private
 `_setMediaDevicesEnabled:` WKPreferences SPI in dev/spawn mode only, inside
-`apply_webview_prefs` (the one seam both window paths build their config
-with, so it lands before the webview exists). Probe matrix and WebKit
+`apply_webview_prefs` (the one seam both window paths use: secondaries
+build their config with it, main applies it to the created webview's
+configuration before the first navigation). Probe matrix and WebKit
 source pointers: issue #96. Self-driving page: `test/media-dev/`.
 
 - [x] **macOS dev, main window** — `mediaDevices: "object"`, `secure: true`;
@@ -5224,7 +5225,7 @@ source pointers: issue #96. Self-driving page: `test/media-dev/`.
   `TINYJS_HTML` runs can't cover it — a materialized page has no sibling
   for the default `index.html`, so the page must be the app's frontend).
   *(2026-10-26.)* Both windows re-measured after the prefs-seam refactor
-  (`apply_webview_prefs`, config-time for both paths): main `object` +
+  (`apply_webview_prefs`, one seam for both paths): main `object` +
   `gum: granted`, second `object`. *(2026-10-27, macOS 27.0.1 arm64, temp
   app dir + page as frontend, no TCC prompt — standing grant.)*
 - [ ] **macOS packaged `.app` on the fixed launcher** — no code path
