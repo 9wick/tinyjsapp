@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.67.0 — 2026-10-28
 
 - **Backend native dialogs: `app.dialog` (#95).** All seven `tiny.dialog` methods
   are now available from the backend with the same arguments and results,
