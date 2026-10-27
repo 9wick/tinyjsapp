@@ -5194,3 +5194,64 @@ import `../shared/settings.js`; the page stores both values via
   `src/backend/lib/util.js` restarts once; `src/frontend/css/app.css`
   reloads only; `src/shared/lib/deep.js` restarts; the backend comes back
   with both new values.)*
+
+## #96/#97 — dev-mode `navigator.mediaDevices` on macOS 26+ (`fix/macos-dev-mediadevices-96`, 2026-10-26)
+
+WebKit hides `navigator.mediaDevices` entirely unless `MediaDevicesEnabled`
+is on; its macOS default demands a TCC grant or a bundle usage string, and
+dev has neither because the bridge spawns the launcher through a
+title-named symlink (`bridge.js`), so `mainBundle` is the temp workDir —
+no Info.plist is ever seen. Wrapping the launcher in a real `.app` cannot
+help for the same reason. The launcher flips the private
+`_setMediaDevicesEnabled:` WKPreferences SPI in dev/spawn mode only, inside
+`apply_webview_prefs` (the one seam both window paths use: secondaries
+build their config with it, main applies it to the created webview's
+configuration before the first navigation). Probe matrix and WebKit
+source pointers: issue #96. Self-driving page: `test/media-dev/`.
+
+- [x] **macOS dev, main window** — `mediaDevices: "object"`, `secure: true`;
+  pre-fix binary same flow: `"undefined"`. *(2026-10-26, macOS 27.0.1
+  arm64, repo launcher + TINYJS_LAUNCHER A/B, results via tiny.store.)*
+- [x] **macOS dev, getUserMedia end to end** — the TCC mic prompt appeared
+  once on first run, and after Allow the stream opened
+  (`granted: MacBook Air Microphone`, track stopped after). Later runs of
+  the same launcher binary get no prompt — the grant persists, the
+  documented attaches-to-the-shared-launcher behaviour. Note this also
+  explains why the bug looked new: with a standing grant even a pre-fix
+  launcher exposes the API, so macOS 26/27 TCC tightening was what pulled
+  the mask off. *(2026-10-26.)*
+- [x] **macOS dev, secondary window** — `tiny.win.open('second')` on the
+  same page: `mediaDevices: "object"` (the `do_winopen` config path;
+  `TINYJS_HTML` runs can't cover it — a materialized page has no sibling
+  for the default `index.html`, so the page must be the app's frontend).
+  *(2026-10-26.)* Both windows re-measured after the prefs-seam refactor
+  (`apply_webview_prefs`, one seam for both paths): main `object` +
+  `gum: granted`, second `object`. *(2026-10-27, macOS 27.0.1 arm64, temp
+  app dir + page as frontend, no TCC prompt — standing grant.)*
+- [x] **macOS packaged `.app` on the fixed launcher** — no code path
+  changes (`g_bundle_mode` gates the SPI out), but per house rules an
+  eyeball of a built app declaring `permissions.microphone` belongs here:
+  prompt once, record, `mediaDevices` still exposed. Method (no tool-dir
+  install needed): `tinyjs build` a temp app, replace
+  `<app>.app/Contents/MacOS/<name>` with the freshly built fixed
+  launcher, re-sign ad-hoc — the same embed the build would have done.
+  One trap: the verification needs a bundle id TCC has never granted —
+  the first attempt reused the same executable the dev run (below) had
+  just gotten a mic grant for, and the packaged `getUserMedia` came back
+  `granted` with NO dialog. Rebuilt as a fresh id, the prompt appeared
+  (naming the app, showing the declared usage string — confirmed by
+  hand; the dev-mode dialog shows no reason text, the no-Info.plist
+  difference #96 documents), blocked `getUserMedia`
+  until Allow, then `md_main` = `object` + `granted`, `md_second` =
+  `object`. *(2026-10-27, macOS 27.0.1 arm64, `test/media-dev/page.html`
+  as the app's frontend, results via tiny.store.)*
+- [x] **Clean-TCC evidence, no reset run** — a system-wide
+  `tccutil reset Microphone` was judged out of scope on this machine
+  (it clears every app's mic grant, not just ours). Evidence instead:
+  the FAIL side is the #96 field report itself — `navigator.mediaDevices`
+  `undefined` under `tinyjs dev` on macOS 26+, from a reporter with no
+  standing grant on this launcher; the fixed side was observed from an
+  un-granted identity — the 2026-10-27 dev run above used a freshly
+  built ad-hoc launcher (new code identity, no prior TCC grant for it):
+  its first `getUserMedia` popped the TCC mic dialog (answered by hand),
+  then reached `granted: MacBook Air Microphone`.

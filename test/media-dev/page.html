@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>media-dev</title></head>
+<body>
+<p>media-dev self-driving page — see README.md</p>
+<script>
+// Self-driving check for dev-mode media capture exposure (#96/#97).
+// Run:  TINYJS_HTML=<repo>/test/media-dev/page.html tinyjs dev
+// (from any app dir). Results land in the app's store under md_<win>;
+// read them from the per-app store.json (paths: tiny.app.paths.data).
+(async () => {
+  for (let i = 0; i < 50 && !(window.tiny && tiny.store); i++)
+    await new Promise(r => setTimeout(r, 100));
+  if (!(window.tiny && tiny.store)) {
+    document.title = 'NO-TINY';
+    return;
+  }
+  const win = tiny.win.id; // 'main' or the win.open id
+  const r = {
+    win,
+    mediaDevices: typeof navigator.mediaDevices,
+    secure: isSecureContext,
+    gum: 'not attempted'
+  };
+  if (win === 'main') {
+    // Secondary windows take the do_winopen path (own WKWebViewConfiguration)
+    // — make one load this same materialized page so it reports too.
+    setTimeout(() => tiny.win.open('second').catch(() => {}), 800);
+    if (typeof navigator.mediaDevices === 'object') {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        r.gum = 'granted: ' + (s.getAudioTracks()[0]?.label || '(no label)');
+        s.getTracks().forEach(t => t.stop());
+      } catch (e) {
+        r.gum = e.name + ': ' + e.message;
+      }
+    } else {
+      r.gum = 'skipped: mediaDevices undefined';
+    }
+  }
+  await tiny.store.set('md_' + win, r);
+  document.title = 'DONE ' + win;
+})();
+</script>
+</body>
+</html>
