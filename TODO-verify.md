@@ -62,16 +62,52 @@ A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
 - [ ] **`emoji:` on macOS** — never compiled. NSImage drawingHandler at
   16pt, system font 13pt → Apple Color Emoji fallback. Check: colour, sharp
   at 2x, centred, ZWJ/skin-tone sequences, highlight doesn't tint it.
-- [ ] **`emoji:` on Linux** — never compiled. Pango "emoji" family into a
-  16×scale cairo surface (menu bar only). Check: builds (22.04 CI too),
-  colour with Noto Color Emoji installed, sane fallback without it.
-- [ ] **Linux** — never compiled. Menu bar only: label moved into a box
-  behind a GtkImage (`menu_item_set_icon`). Check: it builds (CI 22.04
-  too); icons in the menu bar at 1x and 2x scale; Ctrl+<key> shortcut
-  text still shows on an icon'd item AND the accelerator still fires;
-  `menu.update` relabel works on an icon'd item (`menu_item_set_text`);
-  the checkbox column + icon look acceptable; right-click and tray menus
-  unchanged (labels only, by design — WebKitContextMenu / AppIndicator).
+- [x] **`emoji:` on Linux** — Pango "emoji" family into a 16×scale cairo
+  surface (menu bar + right-click). *(2026-10-29, arm64 Ubuntu 24.04, dev,
+  XWayland, Noto Color Emoji installed; xwd of both popups.)* Builds clean.
+  SEEN in colour in the menu bar AND right-click menu: 👋 (with Ctrl+K
+  text), checked 📁 (✓ in the check column), 👍🏽, 🏳️‍🌈 (ZWJ), ★ in text
+  colour, submenu parent 🧮. A disabled item's icon is NOT greyed (GTK
+  leaves images on insensitive items alone — pngs too), unlike Windows.
+- [ ] **`emoji:` on Linux, still to see** — 22.04 CI build, `GDK_SCALE=2`
+  sharpness, fallback without a colour emoji font.
+- [x] **Linux** — menu bar + right-click: label moved into a box behind a GtkImage
+  (`menu_item_set_icon`). *(2026-10-29, arm64 Ubuntu 24.04 / GTK 3.24.41,
+  dev, XWayland via `GDK_BACKEND=x11`; popups photographed with xwd, keys
+  via the launcher's XTest `keystroke`.)* Builds with no warnings. Menu bar
+  at 1x: project-relative png drawn at 16px (32px source, smooth edge), a
+  64x16 png keeps its aspect (64px wide), sf:, a missing file and a
+  non-png file are plain labels, a disabled item's icon draws, an icon'd
+  submenu parent AND its icon'd child both draw. `checked:true` + icon:
+  the ✓ sits in the check column left of the icon, looks fine. Ctrl+K
+  text shows on the icon'd item and the accelerator fires (`menu.on` got
+  `red`) before and after a relabel; `menu.update` relabel keeps icon and
+  shortcut text, `menu.get` reads the new label back; unchecking drops
+  the ✓ and keeps the icon. At `GDK_SCALE=2` the png loads at 32 device
+  px (1:1 with the source, sharp) and the wide one at 128. Tray: its
+  dbusmenu `GetLayout` carries
+  labels and toggle props, no icon props (and the relabel reached it).
+  Not checked: CI's 22.04 build (the calls are GTK 3.10-era, so expected
+  fine), x86_64, a native-Wayland run, and a scale change while running
+  (the icon's scale is fixed when the menu is built).
+- [x] **Linux right-click is now our GtkMenu** (same day, same rig) — a
+  WebKitContextMenuItem takes no image, so `on_context_menu` pops a
+  `build_gtk_menu(…, "ctx")` at the pointer and returns TRUE. Seen via
+  Shift+F10: icons, ✓ on a `checked` item, an icon'd submenu, a disabled
+  item; a click reaches `menu.onContext` (not `menu.on`); `menu.update`
+  relabel/uncheck shows on the next right-click; `menu.get` answers for a
+  context-only item BEFORE its first right-click (spec fallback) and after
+  an update. Stock roles: Copy then Paste in a textarea → `hellohello`,
+  Undo → `hello`; Paste greys out off an editable, Undo with nothing to
+  undo. `setContext(null)` → WebKit's default menu (Back…Inspect Element)
+  is back. Known: Copy stays ENABLED with no selection — the menu bar's
+  stock Copy does the same (WebKit's can-execute answer); WebKit's own
+  stock Copy used to grey out there. Stock labels are ours now
+  (untranslated, as the menu bar's already were).
+- [ ] **Linux right-click, still to see** — a real mouse right-click (menu
+  at the pointer, not just Shift+F10); a SECONDARY window's right-click
+  (stock items act on that window's webview); native Wayland (popup at
+  pointer from a key event); kitchen-sink's emoji icons.
 
 ## Backend `app.dialog` (2026-10-25)
 

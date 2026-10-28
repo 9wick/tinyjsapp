@@ -95,9 +95,9 @@ A png is scaled to the menu's icon size, keeping its aspect ratio, and drawn in 
 |---|---|---|---|
 | macOS | png, `sf:`, `emoji:` | png, `sf:`, `emoji:` | png, `sf:`, `emoji:` |
 | Windows | png, `emoji:` | png, `emoji:` | png, `emoji:` |
-| Linux | png, `emoji:` | — | — |
+| Linux | png, `emoji:` | png, `emoji:` | — |
 
-When an icon can't be drawn (`sf:` off macOS, a missing file, the gaps in the table) the item shows its label alone, so it's safe to set everywhere. Linux's right-click menu is WebKitGTK's, which takes no images, and AppIndicator drops them from tray menus. Some Linux desktops hide menu images in every app; that's the theme's call.
+When an icon can't be drawn (`sf:` off macOS, a missing file, the gaps in the table) the item shows its label alone, so it's safe to set everywhere. AppIndicator drops them from Linux tray menus. Some Linux desktops hide menu images in every app; that's the theme's call.
 
 ## keyboard shortcuts {#keys}
 
@@ -151,7 +151,7 @@ await tiny.menu.get('mute');   // { exists: true, label: 'Unmute', checked: true
 await tiny.menu.get('nope');   // { exists: false }
 ```
 
-`get` reads an item back from the menu bar or the tray menu, and on macOS and Windows from the right-click menu too. An `update` for an id that doesn't exist does nothing. An empty `label` leaves the label unchanged.
+`get` reads an item back from the menu bar, the tray menu or the right-click menu. An `update` for an id that doesn't exist does nothing. An empty `label` leaves the label unchanged.
 
 ## standard menus {#roles}
 

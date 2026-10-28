@@ -24,10 +24,10 @@ declare interface TinyMenuItem {
   /**
    * Optional icon beside the label: a png path (absolute or project-relative),
    * 'sf:<name>' for an SF Symbol (macOS only) or 'emoji:<glyph>' for a colour
-   * emoji drawn at menu size (no asset needed). Shown in menu bars on all
-   * three platforms, in right-click and tray menus on macOS and Windows.
-   * Where it can't be drawn (sf: off macOS, an unreadable file, Linux
-   * right-click/tray menus) the item shows its label alone.
+   * emoji drawn at menu size (no asset needed). Shown in menu bars and
+   * right-click menus on all three platforms, in tray menus on macOS and
+   * Windows. Where it can't be drawn (sf: off macOS, an unreadable file,
+   * Linux tray menus) the item shows its label alone.
    */
   icon?: string;
   submenu?: TinyMenuItem[];
