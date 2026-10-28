@@ -181,6 +181,9 @@ tiny.menu.set([
                                              // alone means ⌘⇧
     { id: 'mute', label: 'Mute', checked: true },
     { id: 'no', label: 'Nope', enabled: false },
+    { id: 'hi', label: 'Hi', icon: 'emoji:👋' },    // icon: png path, 'sf:<symbol>'
+                                             // (macOS) or 'emoji:<glyph>'; label
+                                             // only where it can't draw (Linux tray)
     { separator: true },
     { id: 'more', label: 'More', submenu: [{ id: 'a', label: 'Sub' }] },
   ]}]);

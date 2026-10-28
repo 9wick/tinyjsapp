@@ -59,9 +59,15 @@ A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
   SEEN in colour in the tray menu — 👋, checked 📁 with the badge, 👍🏽,
   🏳️‍🌈 (ZWJ), ★ in text colour, disabled 🔔 greyed, submenu parent 🧮 and
   its 🖨️ (VS16); bar readback has bitmaps on all of them.
-- [ ] **`emoji:` on macOS** — never compiled. NSImage drawingHandler at
-  16pt, system font 13pt → Apple Color Emoji fallback. Check: colour, sharp
-  at 2x, centred, ZWJ/skin-tone sequences, highlight doesn't tint it.
+- [ ] **`emoji:` on macOS** — NSImage drawingHandler at 16pt, system font
+  13pt → Apple Color Emoji fallback. *(2026-10-29, macOS 27.0.1, 2x, dev,
+  right-click menu, screenshot.)* Builds clean. SEEN in colour, centred,
+  sharp: 👋 (with ⌘K), checked 📁 (✓ in its own column), 👍🏽, 🏳️‍🌈 (ZWJ),
+  submenu parent 🧮, beside a 32px png at the same size. FIXED: ★ drew
+  BLACK (no foreground colour set) — near-invisible on the dark menu; now
+  labelColor, seen white. A disabled 🔔 is NOT greyed (as on Linux).
+  Still to see: menu bar + tray, the submenu child 🖨️, light mode, the
+  highlighted row, macOS 14–26.
 - [x] **`emoji:` on Linux** — Pango "emoji" family into a 16×scale cairo
   surface (menu bar + right-click). *(2026-10-29, arm64 Ubuntu 24.04, dev,
   XWayland, Noto Color Emoji installed; xwd of both popups.)* Builds clean.

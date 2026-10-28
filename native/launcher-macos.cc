@@ -993,9 +993,12 @@ static NSImage *menu_item_image(const std::string &icon) {
   }
   if (icon.rfind("emoji:", 0) == 0) {
     // Drawn on demand at 16pt, so it's sharp at any backing scale; Apple
-    // Color Emoji reaches it through the system font's fallback.
+    // Color Emoji reaches it through the system font's fallback. A glyph
+    // with no colour form (★) takes labelColor, which resolves against the
+    // menu's appearance at draw time — black would vanish on a dark menu.
     NSString *glyph = ns(icon.substr(6));
-    NSDictionary *attrs = @{NSFontAttributeName : [NSFont systemFontOfSize:13.0]};
+    NSDictionary *attrs = @{NSFontAttributeName : [NSFont systemFontOfSize:13.0],
+                            NSForegroundColorAttributeName : [NSColor labelColor]};
     return [NSImage imageWithSize:NSMakeSize(16, 16) flipped:NO
                    drawingHandler:^BOOL(NSRect r) {
       NSSize s = [glyph sizeWithAttributes:attrs];

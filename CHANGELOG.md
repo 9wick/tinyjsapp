@@ -12,7 +12,8 @@ https://tinyjs.app/changelog.
   colour emoji drawn at menu size (no asset to ship). macOS and Windows
   show them in every menu; Linux in the menu bar and right-click menu
   (AppIndicator tray menus carry no images). An icon that can't be drawn
-  leaves the item label-only. On Windows, relabelling an item with
+  leaves the item label-only. macOS 27 hides menu item images unless
+  the item opts in; tinyjs opts in every item that has one. On Windows, relabelling an item with
   `menu.update` now keeps the rest of the item intact, and a checked
   item with an icon shows a tick badge on the icon (Win32 draws no
   checkmark beside one).
