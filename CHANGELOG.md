@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.68.0 — 2026-10-29
 
 - **Menu item icons.** Menu bar, right-click and tray items take an
   optional `icon`: a png path (absolute or project-relative),
