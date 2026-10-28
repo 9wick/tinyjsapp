@@ -70,7 +70,16 @@ Item ids should be unique across all your menus: [`update`](#update) changes eve
 
 ### icons {#icons}
 
-`icon` is optional. It takes a png path, absolute or relative to the project, or `'sf:<name>'` for an [SF Symbol](https://developer.apple.com/sf-symbols/) on macOS:
+`icon` is optional. It takes a png path, absolute or relative to the project, `'sf:<name>'` for an [SF Symbol](https://developer.apple.com/sf-symbols/) on macOS, or `'emoji:<glyph>'` for an emoji, drawn in colour at the menu's size on every platform, so there's no asset to ship:
+
+```js
+tiny.menu.setContext([
+  { id: 'open', label: 'Open', icon: 'emoji:📂' },
+  { id: 'trash', label: 'Delete', icon: 'emoji:🗑️' },
+]);
+```
+
+Or pick per platform:
 
 ```js
 const icon = (sf, png) => tiny.system.isMacOS() ? sf : png;
@@ -80,13 +89,13 @@ tiny.menu.setContext([
 ]);
 ```
 
-A png is scaled to the menu's icon size, keeping its aspect ratio, and drawn in its own colors; ship it at 32px or more tall so it stays sharp on high-DPI screens. SF Symbols follow the menu's text color.
+A png is scaled to the menu's icon size, keeping its aspect ratio, and drawn in its own colors; ship it at 32px or more tall so it stays sharp on high-DPI screens. SF Symbols follow the menu's text color. An `emoji:` glyph with no colour form (`'emoji:★'`) draws in the text color too. On Windows the icon sits where the checkmark would, so a `checked` item with an icon wears a small tick badge in the icon's corner instead.
 
 | | menu bar | right-click | tray |
 |---|---|---|---|
-| macOS | png, `sf:` | png, `sf:` | png, `sf:` |
-| Windows | png | png | png |
-| Linux | png | — | — |
+| macOS | png, `sf:`, `emoji:` | png, `sf:`, `emoji:` | png, `sf:`, `emoji:` |
+| Windows | png, `emoji:` | png, `emoji:` | png, `emoji:` |
+| Linux | png, `emoji:` | — | — |
 
 When an icon can't be drawn (`sf:` off macOS, a missing file, the gaps in the table) the item shows its label alone, so it's safe to set everywhere. Linux's right-click menu is WebKitGTK's, which takes no images, and AppIndicator drops them from tray menus. Some Linux desktops hide menu images in every app; that's the theme's call.
 

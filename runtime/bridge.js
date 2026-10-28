@@ -1907,13 +1907,14 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   // WebView2. The tray skips them (nothing to edit there).
   //
   // icon? is optional and decorative: a png path (absolute or project-
-  // relative) or 'sf:<name>' for an SF Symbol (macOS only). A launcher that
+  // relative), 'sf:<name>' for an SF Symbol (macOS only) or 'emoji:<glyph>'
+  // for a colour emoji drawn at menu size (no asset). A launcher that
   // can't draw it (sf: off macOS, a GTK theme hiding menu images) shows the
   // label alone, so apps can set it everywhere.
   const STOCK_ROLES = new Set(['standard', 'undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
   const menuIcon = (icon) => {
     icon = icon ? String(icon) : '';
-    if (icon && !isAbs(icon) && !icon.startsWith('sf:')) icon = tjs.cwd + '/' + icon;
+    if (icon && !isAbs(icon) && !/^(sf|emoji):/.test(icon)) icon = tjs.cwd + '/' + icon;
     return one(icon);
   };
 

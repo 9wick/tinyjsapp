@@ -50,6 +50,21 @@ A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
   NO tick** — the bitmap takes the check column, no frame either
   (readback: `MFS_CHECKED` + bitmap). Needs a decision (e.g. drop the
   bitmap while checked, or draw the tick into it). 150% not tried.
+  FIXED same day: a checked item now gets an icon variant with a tick
+  badge (accent disc, white tick, menu-coloured ring) bottom-right,
+  cached per path; `menu.update` swaps it both ways. SEEN in tray and
+  right-click menus — built checked, checked→unchecked and
+  unchecked→checked; bar readback shows the swapped handle + MFS_CHECKED.
+  `emoji:` (Direct2D + DirectWrite colour font, DLLs loaded at runtime):
+  SEEN in colour in the tray menu — 👋, checked 📁 with the badge, 👍🏽,
+  🏳️‍🌈 (ZWJ), ★ in text colour, disabled 🔔 greyed, submenu parent 🧮 and
+  its 🖨️ (VS16); bar readback has bitmaps on all of them.
+- [ ] **`emoji:` on macOS** — never compiled. NSImage drawingHandler at
+  16pt, system font 13pt → Apple Color Emoji fallback. Check: colour, sharp
+  at 2x, centred, ZWJ/skin-tone sequences, highlight doesn't tint it.
+- [ ] **`emoji:` on Linux** — never compiled. Pango "emoji" family into a
+  16×scale cairo surface (menu bar only). Check: builds (22.04 CI too),
+  colour with Noto Color Emoji installed, sane fallback without it.
 - [ ] **Linux** — never compiled. Menu bar only: label moved into a box
   behind a GtkImage (`menu_item_set_icon`). Check: it builds (CI 22.04
   too); icons in the menu bar at 1x and 2x scale; Ctrl+<key> shortcut

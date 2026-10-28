@@ -1910,15 +1910,43 @@ static void add_stock_items(GtkWidget* menu, const std::string& role, GtkWindow*
 // theirs to decide. Menu bar only: AppIndicator re-exports the tray menu over
 // D-Bus without images from a hand-built item, and the right-click menu is a
 // WebKitContextMenu (on_context_menu), whose items take no image at all.
+//
+// 'emoji:<glyph>' draws the glyph with Pango at the same size, in colour
+// where the system has a colour emoji font (Noto Color Emoji).
+static cairo_surface_t* emoji_surface(const std::string& glyph, int scale) {
+  int px = 16 * scale;
+  cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
+  cairo_t* cr = cairo_create(surf);
+  PangoLayout* layout = pango_cairo_create_layout(cr);
+  PangoFontDescription* fd = pango_font_description_from_string("emoji");
+  pango_font_description_set_absolute_size(fd, px * 0.8 * PANGO_SCALE);
+  pango_layout_set_font_description(layout, fd);
+  pango_font_description_free(fd);
+  pango_layout_set_text(layout, glyph.c_str(), -1);
+  int w = 0, h = 0;
+  pango_layout_get_pixel_size(layout, &w, &h);
+  cairo_move_to(cr, (px - w) / 2.0, (px - h) / 2.0);
+  pango_cairo_show_layout(cr, layout);
+  g_object_unref(layout);
+  cairo_destroy(cr);
+  cairo_surface_set_device_scale(surf, scale, scale);
+  return surf;
+}
+
 static void menu_item_set_icon(GtkWidget* mi, const std::string& icon) {
   if (icon.empty() || icon.rfind("sf:", 0) == 0) return;
   int scale = gtk_widget_get_scale_factor(mi);
   if (scale < 1) scale = 1;
-  GdkPixbuf* pix = gdk_pixbuf_new_from_file_at_scale(icon.c_str(), -1, 16 * scale,
-                                                     TRUE, nullptr);
-  if (!pix) return;
-  cairo_surface_t* surf = gdk_cairo_surface_create_from_pixbuf(pix, scale, nullptr);
-  g_object_unref(pix);
+  cairo_surface_t* surf = nullptr;
+  if (icon.rfind("emoji:", 0) == 0) {
+    surf = emoji_surface(icon.substr(6), scale);
+  } else {
+    GdkPixbuf* pix = gdk_pixbuf_new_from_file_at_scale(icon.c_str(), -1, 16 * scale,
+                                                       TRUE, nullptr);
+    if (!pix) return;
+    surf = gdk_cairo_surface_create_from_pixbuf(pix, scale, nullptr);
+    g_object_unref(pix);
+  }
   GtkWidget* img = gtk_image_new_from_surface(surf);
   cairo_surface_destroy(surf);
   GtkWidget* label = gtk_bin_get_child(GTK_BIN(mi));

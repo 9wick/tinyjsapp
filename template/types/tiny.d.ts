@@ -22,8 +22,9 @@ declare interface TinyMenuItem {
   /** false = grayed out */
   enabled?: boolean;
   /**
-   * Optional icon beside the label: a png path (absolute or project-relative)
-   * or 'sf:<name>' for an SF Symbol (macOS only). Shown in menu bars on all
+   * Optional icon beside the label: a png path (absolute or project-relative),
+   * 'sf:<name>' for an SF Symbol (macOS only) or 'emoji:<glyph>' for a colour
+   * emoji drawn at menu size (no asset needed). Shown in menu bars on all
    * three platforms, in right-click and tray menus on macOS and Windows.
    * Where it can't be drawn (sf: off macOS, an unreadable file, Linux
    * right-click/tray menus) the item shows its label alone.

@@ -991,6 +991,20 @@ static NSImage *menu_item_image(const std::string &icon) {
     }
     return nil;
   }
+  if (icon.rfind("emoji:", 0) == 0) {
+    // Drawn on demand at 16pt, so it's sharp at any backing scale; Apple
+    // Color Emoji reaches it through the system font's fallback.
+    NSString *glyph = ns(icon.substr(6));
+    NSDictionary *attrs = @{NSFontAttributeName : [NSFont systemFontOfSize:13.0]};
+    return [NSImage imageWithSize:NSMakeSize(16, 16) flipped:NO
+                   drawingHandler:^BOOL(NSRect r) {
+      NSSize s = [glyph sizeWithAttributes:attrs];
+      [glyph drawAtPoint:NSMakePoint((r.size.width - s.width) / 2,
+                                     (r.size.height - s.height) / 2)
+          withAttributes:attrs];
+      return YES;
+    }];
+  }
   NSImage *img = [[[NSImage alloc] initWithContentsOfFile:ns(icon)] autorelease];
   if (!img) return nil;
   NSSize orig = img.size;
