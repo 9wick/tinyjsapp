@@ -4,7 +4,7 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
-## Unreleased
+## 0.67.1 — 2026-10-28
 
 - **Linux X11: backend dialogs from a tray action now come up in front
   (#95).** A windowless app's `app.dialog` panel was mapped without a
