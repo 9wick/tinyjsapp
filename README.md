@@ -973,6 +973,7 @@ tiny.menu.set([
     { id: 'find',  label: 'Replace…', key: 'alt+f' }, // ⌥⌘F ('F' alone = ⌘⇧F)
     { id: 'mute',  label: 'Mute', checked: true },    // ✓ checkmark
     { id: 'later', label: 'Not Yet', enabled: false },// grayed out
+    { id: 'wave',  label: 'Say Hi', icon: 'emoji:👋' }, // or a png path / 'sf:<symbol>'
     { separator: true },
     { id: 'more',  label: 'More', submenu: [          // nests
       { id: 'a', label: 'Sub Item' },
@@ -986,8 +987,10 @@ tiny.menu.update('mute', { checked: false, label: 'Unmuted' });
 const { exists, label, checked, enabled } = await tiny.menu.get('mute');
 ```
 
-The same item shape (checked / enabled / submenu) works in tray and context
-menus, and `menu.update` / `menu.get` reach those too.
+The same item shape (checked / enabled / icon / submenu) works in tray and
+context menus, and `menu.update` / `menu.get` reach those too. Icons show in
+every menu on macOS and Windows; Linux tray menus drop them (see
+[menus › icons](https://tinyjs.app/docs/menus#icons)).
 
 On macOS you get that Edit menu by default, because the webview's ⌘C/⌘V ride
 its key equivalents. Where it sits is up to you. `{ role: 'edit' }` in the
@@ -1974,7 +1977,7 @@ only remaining step.
 | backend → launcher | `EVAL <js>`                | run JS in the page               |
 | backend → launcher | `TITLE <text>` / `SIZE <w> <h>` | window control              |
 | backend → launcher | `DLG <id> <op>[\t<arg>…]`  | native dialog (file panels, alert/confirm/prompt); page ids resolve in the page, `q<id>` replies to the backend via `GOT <id> <json>` |
-| backend → launcher | `MENUBEGIN` … `MENU <t>` / `ITEM id\tlabel\tkey` / `SEP` … `MENUEND` | declare custom menu bar menus |
+| backend → launcher | `MENUBEGIN` … `MENU <t>` / `ITEM id\tlabel\tkey\tflags\ticon` / `SEP` … `MENUEND` | declare custom menu bar menus |
 | launcher → backend | `MENU <id>`                | a custom menu item was clicked   |
 | backend → launcher | `TRAYBEGIN <t>\t<icon>\t<tmpl>\t<tip>\t<primary>` … `ITEM`/`SEP` … `TRAYEND` / `TRAYREMOVE` | declare/remove the menu bar status item (icon: png path or `sf:<symbol>`; primary=1: menu on right-click only) |
 | launcher → backend | `TRAY <id>` / `TRAYCLICK`  | tray menu item / tray icon clicked (no menu, or left click with primary=1) |

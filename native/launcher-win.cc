@@ -53,6 +53,8 @@
 #include <aclapi.h>       // instance-pipe DACL (#29.2)
 #include <sddl.h>
 #include <gdiplus.h>
+#include <d2d1.h>         // colour emoji menu icons (loaded at runtime)
+#include <dwrite.h>
 #include <mmdeviceapi.h>  // WASAPI loopback capture (tiny.audioTap)
 #include <audioclient.h>
 #include <mmreg.h>        // WAVEFORMATEXTENSIBLE
@@ -82,6 +84,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -145,6 +148,7 @@ struct ItemReg {
                          // wearing the same ids. null for tray / context.
   std::string role;      // a stock editing item (copy, paste, …): no id, and
                          // a click runs send_stock_edit instead of MENU <id>
+  std::string icon;      // png path, so a check toggle can swap the bitmap
 };
 static void send_stock_edit(const std::string &role);  // below, by KEYSTROKE
 static std::map<UINT, ItemReg *> g_cmd_reg;
@@ -486,6 +490,7 @@ static bool png_encoder_clsid() {
 
 struct MenuItemSpec {
   std::string id, label, key;
+  std::string icon;  // ITEM 5th / SUB 3rd field: png path ('sf:' is macOS-only)
   std::string role;  // ROLEITEM: a stock editing item (copy, standard, …)
   bool separator = false;
   bool checked = false;
@@ -635,6 +640,198 @@ static void add_stock_items(HMENU menu, const std::string &role,
   }                                            // unknown role: ignored
 }
 
+// A menu item's optional icon: the png scaled to small-icon height (aspect
+// kept) into a 32bpp premultiplied-alpha DIB, which themed Win32 menus draw
+// with its transparency. Menus don't own their hbmpItem, so bitmaps are
+// cached by path for the process's life — an app has a handful, and menus
+// are rebuilt on every set. 'sf:' (macOS SF Symbols) and unreadable files
+// give nullptr: the item shows its label alone.
+//
+// The bitmap sits in the check column and Win32 then draws no tick for a
+// checked item (no frame either, Windows 11), so a checked item gets its own
+// variant: the icon with a tick badge in the bottom-right corner.
+
+// 'emoji:<glyph>' menu icons, in colour. GDI+ only draws a glyph's
+// monochrome outline (fine for the tray's silhouettes, see icon_from_emoji),
+// so these go through Direct2D + DirectWrite, which draw Segoe UI Emoji's
+// colour layers. A px×px 32bpp premultiplied top-down DIB, *bits set;
+// nullptr if either DLL or the font is missing. Loaded at runtime so the
+// build's link line stays as it is.
+static HBITMAP emoji_dib(const std::string &utf8, int px, void **bits_out) {
+  using CreateD2D = HRESULT(WINAPI *)(D2D1_FACTORY_TYPE, REFIID,
+                                      const D2D1_FACTORY_OPTIONS *, void **);
+  using CreateDW = HRESULT(WINAPI *)(DWRITE_FACTORY_TYPE, REFIID, IUnknown **);
+  static ID2D1Factory *d2d = nullptr;
+  static IDWriteFactory *dw = nullptr;
+  static bool tried = false;
+  if (!tried) {
+    tried = true;
+    HMODULE m1 = LoadLibraryW(L"d2d1.dll"), m2 = LoadLibraryW(L"dwrite.dll");
+    auto f1 = m1 ? (CreateD2D)(void *)GetProcAddress(m1, "D2D1CreateFactory") : nullptr;
+    auto f2 = m2 ? (CreateDW)(void *)GetProcAddress(m2, "DWriteCreateFactory") : nullptr;
+    if (f1 && f2) {
+      f1(D2D1_FACTORY_TYPE_MULTI_THREADED, __uuidof(ID2D1Factory), nullptr,
+         (void **)&d2d);
+      f2(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+         (IUnknown **)&dw);
+    }
+  }
+  if (!d2d || !dw || px < 1)
+    return nullptr;
+  BITMAPINFO bi = {};
+  bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+  bi.bmiHeader.biWidth = px;
+  bi.bmiHeader.biHeight = -px;
+  bi.bmiHeader.biPlanes = 1;
+  bi.bmiHeader.biBitCount = 32;
+  bi.bmiHeader.biCompression = BI_RGB;
+  void *bits = nullptr;
+  HBITMAP hbm = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+  if (!hbm || !bits) {
+    if (hbm) DeleteObject(hbm);
+    return nullptr;
+  }
+  HDC dc = CreateCompatibleDC(nullptr);
+  HGDIOBJ old = SelectObject(dc, hbm);
+  bool ok = false;
+  D2D1_RENDER_TARGET_PROPERTIES props = {};
+  props.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
+  props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+  ID2D1DCRenderTarget *rt = nullptr;
+  IDWriteTextFormat *fmt = nullptr;
+  ID2D1SolidColorBrush *brush = nullptr;
+  RECT rc = {0, 0, px, px};
+  std::wstring text = widen(utf8);
+  if (SUCCEEDED(d2d->CreateDCRenderTarget(&props, &rt)) &&
+      SUCCEEDED(rt->BindDC(dc, &rc)) &&
+      SUCCEEDED(dw->CreateTextFormat(
+          L"Segoe UI Emoji", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, px * 0.8f,
+          L"", &fmt))) {
+    fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    // A glyph with no colour layers (plain text, old emoji) draws in the
+    // menu's text colour.
+    COLORREF fg = GetSysColor(COLOR_MENUTEXT);
+    D2D1_COLOR_F col = {GetRValue(fg) / 255.f, GetGValue(fg) / 255.f,
+                        GetBValue(fg) / 255.f, 1.f};
+    if (SUCCEEDED(rt->CreateSolidColorBrush(col, &brush))) {
+      // Grayscale: ClearType's per-channel coverage has no alpha to give.
+      rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+      rt->BeginDraw();
+      rt->Clear(D2D1_COLOR_F{0, 0, 0, 0});
+      D2D1_RECT_F box = {0, 0, (float)px, (float)px};
+      rt->DrawText(text.c_str(), (UINT32)text.size(), fmt, box, brush,
+                   D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+      ok = SUCCEEDED(rt->EndDraw());
+    }
+  }
+  if (brush) brush->Release();
+  if (fmt) fmt->Release();
+  if (rt) rt->Release();
+  GdiFlush();
+  SelectObject(dc, old);
+  DeleteDC(dc);
+  if (!ok) {
+    DeleteObject(hbm);
+    return nullptr;
+  }
+  *bits_out = bits;
+  return hbm;
+}
+
+static std::map<std::string, HBITMAP> g_menu_bitmaps;
+static HBITMAP menu_item_bitmap(const std::string &icon, bool checked) {
+  if (icon.empty() || icon.rfind("sf:", 0) == 0)
+    return nullptr;
+  std::string cache_key = checked ? icon + "\n checked" : icon;
+  auto hit = g_menu_bitmaps.find(cache_key);
+  if (hit != g_menu_bitmaps.end())
+    return hit->second;
+  HBITMAP hbm = nullptr;
+  int h = GetSystemMetrics(SM_CYSMICON);
+  // The source: a png from disk, or an emoji drawn at the menu's size.
+  HBITMAP emoji = nullptr;
+  std::unique_ptr<Gdiplus::Bitmap> srcp;
+  if (ensure_gdiplus()) {
+    if (icon.rfind("emoji:", 0) == 0) {
+      void *ebits = nullptr;
+      if ((emoji = emoji_dib(icon.substr(6), h, &ebits)))
+        srcp.reset(new Gdiplus::Bitmap(h, h, h * 4, PixelFormat32bppPARGB,
+                                       (BYTE *)ebits));
+    } else {
+      srcp.reset(new Gdiplus::Bitmap(widen(icon).c_str()));
+    }
+  }
+  if (srcp) {
+    Gdiplus::Bitmap &src = *srcp;
+    if (src.GetLastStatus() == Gdiplus::Ok && src.GetHeight() > 0) {
+      int w = (int)((double)h * src.GetWidth() / src.GetHeight() + 0.5);
+      if (w < 1) w = 1;
+      BITMAPINFO bi = {};
+      bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+      bi.bmiHeader.biWidth = w;
+      bi.bmiHeader.biHeight = -h;  // top-down, matching GDI+'s row order
+      bi.bmiHeader.biPlanes = 1;
+      bi.bmiHeader.biBitCount = 32;
+      bi.bmiHeader.biCompression = BI_RGB;
+      void *bits = nullptr;
+      hbm = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+      if (hbm && bits) {
+        // Zero-filled by CreateDIBSection: transparent until drawn on.
+        Gdiplus::Bitmap dst(w, h, w * 4, PixelFormat32bppPARGB, (BYTE *)bits);
+        Gdiplus::Graphics gfx(&dst);
+        gfx.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        gfx.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+        gfx.DrawImage(&src, 0, 0, w, h);
+        if (checked) {
+          // Accent-coloured disc, white tick: readable on light and dark
+          // menus and over any icon. A thin menu-coloured ring separates
+          // it from the icon underneath.
+          gfx.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+          float d = h * 0.62f, x = w - d, y = h - d;
+          COLORREF hi = GetSysColor(COLOR_HIGHLIGHT);
+          COLORREF bg = GetSysColor(COLOR_MENU);
+          Gdiplus::SolidBrush ring(Gdiplus::Color(255, GetRValue(bg),
+                                                  GetGValue(bg), GetBValue(bg)));
+          Gdiplus::SolidBrush disc(Gdiplus::Color(255, GetRValue(hi),
+                                                  GetGValue(hi), GetBValue(hi)));
+          float r = d * 0.09f;
+          gfx.FillEllipse(&ring, x - r, y - r, d + r, d + r);
+          gfx.FillEllipse(&disc, x, y, d - r, d - r);
+          Gdiplus::Pen tick(Gdiplus::Color(255, 255, 255, 255), d * 0.13f);
+          tick.SetStartCap(Gdiplus::LineCapRound);
+          tick.SetEndCap(Gdiplus::LineCapRound);
+          tick.SetLineJoin(Gdiplus::LineJoinRound);
+          float s = d - r;
+          Gdiplus::PointF pts[3] = {{x + s * 0.27f, y + s * 0.52f},
+                                    {x + s * 0.43f, y + s * 0.68f},
+                                    {x + s * 0.74f, y + s * 0.34f}};
+          gfx.DrawLines(&tick, pts, 3);
+        }
+      }
+    }
+  }
+  srcp.reset();  // it borrows the emoji DIB's bits
+  if (emoji)
+    DeleteObject(emoji);
+  g_menu_bitmaps[cache_key] = hbm;  // a miss is cached too: one failed load
+  return hbm;
+}
+
+static void set_item_bitmap(HMENU menu, UINT item, BOOL by_pos,
+                            const std::string &icon, bool checked = false) {
+  HBITMAP hbm = menu_item_bitmap(icon, checked);
+  if (!hbm)
+    return;
+  MENUITEMINFOW mii = {sizeof(mii)};
+  mii.fMask = MIIM_BITMAP;
+  mii.hbmpItem = hbm;
+  SetMenuItemInfoW(menu, item, by_pos, &mii);
+}
+
 static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
                              const std::string &kind, HWND owner) {
   for (const auto &it : items) {
@@ -652,6 +849,7 @@ static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
       build_menu_items(sub, it.submenu, kind, owner);
       AppendMenuW(menu, MF_POPUP, (UINT_PTR)sub,
                   widen(it.label.empty() ? it.id : it.label).c_str());
+      set_item_bitmap(menu, (UINT)(GetMenuItemCount(menu) - 1), TRUE, it.icon);
       continue;
     }
     UINT cmd = g_next_cmd++;
@@ -662,6 +860,7 @@ static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
                                it.label.empty() ? it.id : it.label, kind,
                                it.checked, !it.disabled, bare, alt, shift,
                                owner};
+    reg->icon = it.icon;
     g_cmd_reg[cmd] = reg;
     if (!it.id.empty())
       g_id_reg.emplace(it.id, reg);
@@ -672,6 +871,7 @@ static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
       flags |= MF_GRAYED;
     AppendMenuW(menu, flags, cmd,
                 widen(reg->label + display_key(it.key)).c_str());
+    set_item_bitmap(menu, cmd, FALSE, it.icon, it.checked);
   }
 }
 
@@ -851,13 +1051,18 @@ static void do_menu_update(webview_t, void *arg) {
       continue;
     if (!req->label.empty()) {
       reg->label = req->label;
-      ModifyMenuW(reg->parent, reg->cmd, MF_BYCOMMAND | MF_STRING, reg->cmd,
-                  widen(reg->label).c_str());
+      // MIIM_STRING alone: ModifyMenu would replace the whole item, icon too.
+      std::wstring text = widen(reg->label);
+      MENUITEMINFOW mii = {sizeof(mii)};
+      mii.fMask = MIIM_STRING;
+      mii.dwTypeData = text.data();
+      SetMenuItemInfoW(reg->parent, reg->cmd, FALSE, &mii);
     }
     if (!req->checked.empty()) {
       reg->checked = req->checked == "1";
       CheckMenuItem(reg->parent, reg->cmd,
                     MF_BYCOMMAND | (reg->checked ? MF_CHECKED : MF_UNCHECKED));
+      set_item_bitmap(reg->parent, reg->cmd, FALSE, reg->icon, reg->checked);
     }
     if (!req->enabled.empty()) {
       reg->enabled = req->enabled == "1";
@@ -8546,6 +8751,7 @@ static void pipe_read_loop() {
           it.checked = p[3].find('c') != std::string::npos;
           it.disabled = p[3].find('d') != std::string::npos;
         }
+        it.icon = p.size() > 4 ? p[4] : "";
         build_stack.back().push_back(it);
       } else if ((in_menu_block || in_tray_block || in_ctx_block) &&
                  line == "SEP") {
@@ -8564,6 +8770,7 @@ static void pipe_read_loop() {
         MenuItemSpec parent;
         parent.id = p.size() > 0 ? p[0] : "";
         parent.label = p.size() > 1 ? p[1] : parent.id;
+        parent.icon = p.size() > 2 ? p[2] : "";
         sub_parents.push_back(parent);
         build_stack.push_back({});
       } else if ((in_menu_block || in_tray_block || in_ctx_block) &&

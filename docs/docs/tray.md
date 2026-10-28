@@ -45,7 +45,9 @@ await tiny.tray.remove()
 | `menu` | item[] | the menu, in the same [item shape](./menus#items) as the menu bar |
 | `primaryAction` | boolean | `true`: a left click is a [click event](#clicks) and the menu opens on right-click |
 
-Menu items take `id`, `label`, `checked`, `enabled`, `submenu` and `separator`. Stock editing items (`{ role: 'copy' }`) are skipped — there's nothing to edit in a tray menu.
+Menu items take `id`, `label`, `checked`, `enabled`, `icon`, `submenu` and `separator`. Stock editing items (`{ role: 'copy' }`) are skipped — there's nothing to edit in a tray menu.
+
+An item's [`icon`](./menus#icons) shows in the tray menu on macOS and Windows; Linux tray menus drop it and show the label. A menu item's `'emoji:<glyph>'` is drawn in colour on every platform, unlike the tray's own `icon` below.
 
 ## icons {#icons}
 

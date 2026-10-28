@@ -61,11 +61,43 @@ To give one window a different menu, see [one window's menu](#per-window).
 | `key` | string | keyboard shortcut — see [shortcuts](#keys) |
 | `checked` | boolean | shows a checkmark |
 | `enabled` | boolean | `false` greys the item out |
+| `icon` | string | an image beside the label — see [icons](#icons) |
 | `submenu` | item[] | a nested menu; the item itself only opens it |
 | `separator` | `true` | a divider line; other fields are ignored |
 | `role` | string | a stock editing item instead of your own — see [the Edit menu](#edit) |
 
 Item ids should be unique across all your menus: [`update`](#update) changes every item with that id.
+
+### icons {#icons}
+
+`icon` is optional. It takes a png path, absolute or relative to the project, `'sf:<name>'` for an [SF Symbol](https://developer.apple.com/sf-symbols/) on macOS, or `'emoji:<glyph>'` for an emoji, drawn in colour at the menu's size on every platform, so there's no asset to ship:
+
+```js
+tiny.menu.setContext([
+  { id: 'open', label: 'Open', icon: 'emoji:📂' },
+  { id: 'trash', label: 'Delete', icon: 'emoji:🗑️' },
+]);
+```
+
+Or pick per platform:
+
+```js
+const icon = (sf, png) => tiny.system.isMacOS() ? sf : png;
+tiny.menu.setContext([
+  { id: 'open', label: 'Open', icon: icon('sf:folder', 'assets/folder.png') },
+  { id: 'trash', label: 'Delete', icon: icon('sf:trash', 'assets/trash.png') },
+]);
+```
+
+A png is scaled to the menu's icon size, keeping its aspect ratio, and drawn in its own colors; ship it at 32px or more tall so it stays sharp on high-DPI screens. SF Symbols follow the menu's text color. An `emoji:` glyph with no colour form (`'emoji:★'`) draws in the text color too. On Windows the icon sits where the checkmark would, so a `checked` item with an icon wears a small tick badge in the icon's corner instead.
+
+| | menu bar | right-click | tray |
+|---|---|---|---|
+| macOS | png, `sf:`, `emoji:` | png, `sf:`, `emoji:` | png, `sf:`, `emoji:` |
+| Windows | png, `emoji:` | png, `emoji:` | png, `emoji:` |
+| Linux | png, `emoji:` | png, `emoji:` | — |
+
+When an icon can't be drawn (`sf:` off macOS, a missing file, the gaps in the table) the item shows its label alone, so it's safe to set everywhere. AppIndicator drops them from Linux tray menus. Some Linux desktops hide menu images in every app; that's the theme's call.
 
 ## keyboard shortcuts {#keys}
 
@@ -119,7 +151,7 @@ await tiny.menu.get('mute');   // { exists: true, label: 'Unmute', checked: true
 await tiny.menu.get('nope');   // { exists: false }
 ```
 
-`get` reads an item back from the menu bar or the tray menu, and on macOS and Windows from the right-click menu too. An `update` for an id that doesn't exist does nothing. An empty `label` leaves the label unchanged.
+`get` reads an item back from the menu bar, the tray menu or the right-click menu. An `update` for an id that doesn't exist does nothing. An empty `label` leaves the label unchanged.
 
 ## standard menus {#roles}
 

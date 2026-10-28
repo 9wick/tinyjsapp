@@ -4,6 +4,25 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Menu item icons.** Menu bar, right-click and tray items take an
+  optional `icon`: a png path (absolute or project-relative),
+  `'sf:<name>'` for an SF Symbol on macOS, or `'emoji:<glyph>'` for a
+  colour emoji drawn at menu size (no asset to ship). macOS and Windows
+  show them in every menu; Linux in the menu bar and right-click menu
+  (AppIndicator tray menus carry no images). An icon that can't be drawn
+  leaves the item label-only. macOS 27 hides menu item images unless
+  the item opts in; tinyjs opts in every item that has one. On Windows, relabelling an item with
+  `menu.update` now keeps the rest of the item intact, and a checked
+  item with an icon shows a tick badge on the icon (Win32 draws no
+  checkmark beside one).
+- **Linux: a custom right-click menu (`menu.setContext`) is now a GTK menu
+  of the launcher's own** instead of WebKitGTK's, which is what lets it
+  carry icons, and `checked: true` now shows its ✓ there too. Stock roles
+  (copy, paste, undo, …) run the webview's editing commands and grey out
+  per click, as in the menu bar.
+
 ## 0.67.1 — 2026-10-28
 
 - **Linux X11: backend dialogs from a tray action now come up in front

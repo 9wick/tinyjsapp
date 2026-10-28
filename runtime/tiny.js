@@ -423,7 +423,7 @@
 
     menu: {
       // menus: [{ title, items: [...] }]; items support { id, label, key?,
-      // checked?, enabled?, submenu?: [...] } | { separator: true } — same
+      // checked?, enabled?, icon?, submenu?: [...] } | { separator: true } — same
       // item shape works for tray and context menus.
       //
       // The APP menu: it shows on every window, including windows opened

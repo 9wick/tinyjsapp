@@ -8,6 +8,121 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Menu item icons — `icon` on `TinyMenuItem` (2026-10-29)
+
+`ITEM` gained a 5th field and `SUB` a 3rd: the icon, a png path (bridge.js
+resolves project-relative ones against cwd) or `sf:<name>`. Same builders
+for menu bar / right-click / tray on each OS, so one path per OS covers
+all three menus. Kitchen sink: the right-click menu (Overview / GPU /
+Notification / Print) and Tools ▸ Menus ▸ "Add a Demo menu" (Say hello,
+A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
+
+- [ ] **macOS** — compiled, and a dev run with sf:, relative png, wide png,
+  missing file, unknown symbol and an icon'd submenu: every call succeeded,
+  `menu.update` relabel + `menu.get` read back right. macOS 27 HIDES menu
+  item images unless the item sets `preferredImageVisibility = .visible`
+  (new in the 27 SDK; `show_menu_item_image` sets it by key). Without it
+  nothing showed, even a plain AppKit menu built for a macOS 14 target.
+  SEEN on 27.0.1: right-click menu with sf:bell + a png, both drawn.
+  Kitchen sink's icons confirmed by hand on macOS 27 (2026-10-29).
+  Still to look at: the menu bar and tray menus; on macOS 14/15/26 the
+  icons show with no opt-in (selector absent). SF Symbols follow
+  the text color (and turn white on highlight), pngs at 16pt keep their
+  aspect, a missing file / unknown symbol is a plain label, ⌘J still
+  shows beside an icon'd item, checkmark + icon on one item looks sane.
+- [ ] **Windows** — never compiled. `menu_item_bitmap` (GDI+ → 32bpp
+  PARGB DIB at SM_CYSMICON, cached per path) + `MIIM_BITMAP`. Check:
+  it builds; alpha edges are clean (no black fringe = premultiply right);
+  icons in menu bar, right-click and tray; a submenu parent's icon
+  (set by position); `sf:` is a plain label; a CHECKED item with an icon
+  (Win32 draws the bitmap in the check column — tick or framed icon?);
+  `menu.update` relabel KEEPS the icon (switched ModifyMenuW →
+  SetMenuItemInfoW MIIM_STRING for that); 150%/200% scaling looks sharp.
+  *2026-10-29, Windows 11 26200 arm64, 200%, dev:* builds clean. SEEN in
+  the tray + right-click menus (screenshots), menu bar by the maintainer
+  and by reading back each item's `hbmpItem`: relative, absolute, a 4:1
+  png (aspect kept, it spills into the left gutter but not onto the
+  label), half-alpha + anti-aliased edges blend clean, no fringe;
+  disabled greys its icon; missing file / `sf:` / none are label-only and
+  aligned; submenu parent icons show in the menu bar AND the context menu;
+  relabel kept the same bitmap handle; clicks still arrive (`TRAY abs`);
+  32px icons crisp at 200%. **FAILS: a CHECKED item with an icon shows
+  NO tick** — the bitmap takes the check column, no frame either
+  (readback: `MFS_CHECKED` + bitmap). Needs a decision (e.g. drop the
+  bitmap while checked, or draw the tick into it). 150% not tried.
+  FIXED same day: a checked item now gets an icon variant with a tick
+  badge (accent disc, white tick, menu-coloured ring) bottom-right,
+  cached per path; `menu.update` swaps it both ways. SEEN in tray and
+  right-click menus — built checked, checked→unchecked and
+  unchecked→checked; bar readback shows the swapped handle + MFS_CHECKED.
+  `emoji:` (Direct2D + DirectWrite colour font, DLLs loaded at runtime):
+  SEEN in colour in the tray menu — 👋, checked 📁 with the badge, 👍🏽,
+  🏳️‍🌈 (ZWJ), ★ in text colour, disabled 🔔 greyed, submenu parent 🧮 and
+  its 🖨️ (VS16); bar readback has bitmaps on all of them.
+- [ ] **`emoji:` on macOS** — NSImage drawingHandler at 16pt, system font
+  13pt → Apple Color Emoji fallback. *(2026-10-29, macOS 27.0.1, 2x, dev,
+  right-click menu, screenshot.)* Builds clean. SEEN in colour, centred,
+  sharp: 👋 (with ⌘K), checked 📁 (✓ in its own column), 👍🏽, 🏳️‍🌈 (ZWJ),
+  submenu parent 🧮, beside a 32px png at the same size. FIXED: ★ drew
+  BLACK (no foreground colour set) — near-invisible on the dark menu; now
+  labelColor, seen white. A disabled 🔔 is NOT greyed (as on Linux).
+  Still to see: menu bar + tray, the submenu child 🖨️, light mode, the
+  highlighted row, macOS 14–26.
+- [x] **`emoji:` on Linux** — Pango "emoji" family into a 16×scale cairo
+  surface (menu bar + right-click). *(2026-10-29, arm64 Ubuntu 24.04, dev,
+  XWayland, Noto Color Emoji installed; xwd of both popups.)* Builds clean.
+  SEEN in colour in the menu bar AND right-click menu: 👋 (with Ctrl+K
+  text), checked 📁 (✓ in the check column), 👍🏽, 🏳️‍🌈 (ZWJ), ★ in text
+  colour, submenu parent 🧮. A disabled item's icon is NOT greyed (GTK
+  leaves images on insensitive items alone — pngs too), unlike Windows.
+  `GDK_SCALE=2` (same day, bar + right-click): 👋 is 28×27 device px vs
+  14×14 at 1x, its 2×2 blocks mostly non-uniform — drawn at 2x, not
+  upscaled; sharp, about the size of a 32px png beside it.
+- [ ] **`emoji:` on Linux, still to see** — 22.04 CI build, fallback
+  without a colour emoji font.
+- [x] **Linux** — menu bar + right-click: label moved into a box behind a GtkImage
+  (`menu_item_set_icon`). *(2026-10-29, arm64 Ubuntu 24.04 / GTK 3.24.41,
+  dev, XWayland via `GDK_BACKEND=x11`; popups photographed with xwd, keys
+  via the launcher's XTest `keystroke`.)* Builds with no warnings. Menu bar
+  at 1x: project-relative png drawn at 16px (32px source, smooth edge), a
+  64x16 png keeps its aspect (64px wide), sf:, a missing file and a
+  non-png file are plain labels, a disabled item's icon draws, an icon'd
+  submenu parent AND its icon'd child both draw. `checked:true` + icon:
+  the ✓ sits in the check column left of the icon, looks fine. Ctrl+K
+  text shows on the icon'd item and the accelerator fires (`menu.on` got
+  `red`) before and after a relabel; `menu.update` relabel keeps icon and
+  shortcut text, `menu.get` reads the new label back; unchecking drops
+  the ✓ and keeps the icon. At `GDK_SCALE=2` the png loads at 32 device
+  px (1:1 with the source, sharp) and the wide one at 128. Tray: its
+  dbusmenu `GetLayout` carries
+  labels and toggle props, no icon props (and the relabel reached it).
+  Not checked: CI's 22.04 build (the calls are GTK 3.10-era, so expected
+  fine), x86_64, a native-Wayland run, and a scale change while running
+  (the icon's scale is fixed when the menu is built).
+- [x] **Linux right-click is now our GtkMenu** (same day, same rig) — a
+  WebKitContextMenuItem takes no image, so `on_context_menu` pops a
+  `build_gtk_menu(…, "ctx")` at the pointer and returns TRUE. Seen via
+  Shift+F10: icons, ✓ on a `checked` item, an icon'd submenu, a disabled
+  item; a click reaches `menu.onContext` (not `menu.on`); `menu.update`
+  relabel/uncheck shows on the next right-click; `menu.get` answers for a
+  context-only item BEFORE its first right-click (spec fallback) and after
+  an update. Stock roles: Copy then Paste in a textarea → `hellohello`,
+  Undo → `hello`; Paste greys out off an editable, Undo with nothing to
+  undo. `setContext(null)` → WebKit's default menu (Back…Inspect Element)
+  is back. Known: Copy stays ENABLED with no selection — the menu bar's
+  stock Copy does the same (WebKit's can-execute answer); WebKit's own
+  stock Copy used to grey out there. Stock labels are ours now
+  (untranslated, as the menu bar's already were).
+- [x] **Linux right-click, real mouse** (same day; XTest button events from
+  a 15-line C tool, since this VM has no xdotool) — right-click at root
+  (897,595) opened the menu window at (887,585), i.e. the visible menu at
+  the pointer after GTK's 10px shadow margin; at `GDK_SCALE=2` likewise
+  (12px margin). A left-click on an item sent its id to `menu.onContext`
+  and closed the menu.
+- [ ] **Linux right-click, still to see** — a SECONDARY window's right-click
+  (stock items act on that window's webview); native Wayland (popup at
+  pointer from a key event); kitchen-sink's emoji icons.
+
 ## Backend `app.dialog` (2026-10-25)
 
 All seven `tiny.dialog` methods are available from the backend, using the

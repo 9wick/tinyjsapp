@@ -110,6 +110,7 @@ struct MenuItemSpec {
   bool separator = false;
   bool submenu = false;
   std::string id, label, key, flags;
+  std::string icon;  // ITEM 5th / SUB 3rd field: png path ('sf:' is macOS-only)
   std::string role;  // ROLEITEM: a stock editing item (copy, standard, …)
   std::vector<MenuItemSpec> children;
 };
@@ -712,89 +713,42 @@ struct RegItem {
 // Hence a multimap: an app-wide MENUUPD patches every copy, MENUUPD@<win> one.
 static std::multimap<std::string, RegItem> g_items;
 
-// Undo/Redo have no context-menu stock action in WebKitGTK (the
-// WebKitContextMenuAction enum jumps straight from RELOAD to COPY) — only the
-// editing-command strings exist. So those two roles ride on the webview's
-// editing commands instead of on WebKit's own menu items.
-struct CtxEdit { WebKitWebView* wv; const char* command; };
+static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
+                                 const std::string& kind, GtkWindow* owner,
+                                 GtkAccelGroup* accel);
+static void clear_registry_kind(const std::string& kind, GtkWindow* owner);
 
-static gboolean on_context_menu(WebKitWebView* wv, WebKitContextMenu* menu,
-                                GdkEvent*, WebKitHitTestResult*, gpointer) {
+// The custom right-click menu is OUR GtkMenu, not WebKit's: a
+// WebKitContextMenuItem takes no image (nor a check mark), so item icons and
+// `checked` need the same builder as the menu bar. Stock roles ride the
+// webview's editing commands there (add_stock_items), greyed per click.
+// Rebuilt from g_ctx_items on every right-click; the previous one is kept
+// until then, because its widgets are in g_items and menu.update reaches
+// them (an update while it's open shows live).
+static GtkWidget* g_ctx_menu = nullptr;
+
+static gboolean on_context_menu(WebKitWebView* wv, WebKitContextMenu*,
+                                GdkEvent* event, WebKitHitTestResult*, gpointer) {
   if (g_ctx_custom) {
-    webkit_context_menu_remove_all(menu);
-    std::function<void(WebKitContextMenu*, const std::vector<MenuItemSpec>&)> build =
-      [&](WebKitContextMenu* m, const std::vector<MenuItemSpec>& items) {
-        for (const auto& it : items) {
-          if (!it.role.empty()) {
-            // WebKit's own stock actions: they enable themselves per click.
-            // undo/redo are ours (see CtxEdit above); they stay enabled, since
-            // the can-execute query is async and the menu is already on screen
-            // by the time it answers — a no-op on an empty undo stack. Their
-            // labels are ours too, so untranslated where WebKit's are not.
-            auto stock = [&](const std::string& r) {
-              if (r == "undo" || r == "redo") {
-                GSimpleAction* act = g_simple_action_new(("tinyedit-" + r).c_str(), nullptr);
-                g_signal_connect_data(act, "activate",
-                  G_CALLBACK(+[](GSimpleAction*, GVariant*, gpointer data) {
-                    CtxEdit* e = (CtxEdit*)data;
-                    webkit_web_view_execute_editing_command(e->wv, e->command);
-                  }),
-                  new CtxEdit{wv, r == "undo" ? WEBKIT_EDITING_COMMAND_UNDO
-                                              : WEBKIT_EDITING_COMMAND_REDO},
-                  [](gpointer data, GClosure*) { delete (CtxEdit*)data; },
-                  (GConnectFlags)0);
-                webkit_context_menu_append(m,
-                  webkit_context_menu_item_new_from_gaction(
-                    G_ACTION(act), r == "undo" ? "Undo" : "Redo", nullptr));
-                g_object_unref(act);
-                return;
-              }
-              WebKitContextMenuAction a =
-                  r == "cut" ? WEBKIT_CONTEXT_MENU_ACTION_CUT
-                : r == "copy" ? WEBKIT_CONTEXT_MENU_ACTION_COPY
-                : r == "paste" ? WEBKIT_CONTEXT_MENU_ACTION_PASTE
-                : r == "selectAll" ? WEBKIT_CONTEXT_MENU_ACTION_SELECT_ALL
-                : WEBKIT_CONTEXT_MENU_ACTION_NO_ACTION;
-              if (a != WEBKIT_CONTEXT_MENU_ACTION_NO_ACTION)
-                webkit_context_menu_append(m, webkit_context_menu_item_new_from_stock_action(a));
-            };
-            if (it.role == "standard") {
-              for (const char* r : {"undo", "redo", "-", "cut", "copy", "paste", "selectAll"})
-                if (r[0] == '-') webkit_context_menu_append(m, webkit_context_menu_item_new_separator());
-                else stock(r);
-            } else {
-              stock(it.role);
-            }
-            continue;
-          }
-          if (it.separator) {
-            webkit_context_menu_append(m, webkit_context_menu_item_new_separator());
-            continue;
-          }
-          if (it.submenu) {
-            WebKitContextMenu* sub = webkit_context_menu_new();
-            build(sub, it.children);
-            webkit_context_menu_append(m,
-              webkit_context_menu_item_new_with_submenu(it.label.c_str(), sub));
-            continue;
-          }
-          GSimpleAction* act = g_simple_action_new(
-              ("tinyctx-" + it.id).c_str(), nullptr);
-          bool disabled = it.flags.find('d') != std::string::npos;
-          g_simple_action_set_enabled(act, !disabled);
-          g_signal_connect_data(act, "activate",
-            G_CALLBACK(+[](GSimpleAction*, GVariant*, gpointer data) {
-              pipe_write_line("CTX " + std::string((const char*)data));
-            }), g_strdup(it.id.c_str()),
-            [](gpointer data, GClosure*) { g_free(data); }, (GConnectFlags)0);
-          webkit_context_menu_append(m,
-            webkit_context_menu_item_new_from_gaction(
-              G_ACTION(act), it.label.c_str(), nullptr));
-          g_object_unref(act);
-        }
-      };
-    build(menu, g_ctx_items);
-    return FALSE;  // show the (replaced) menu
+    clear_registry_kind("ctx", nullptr);
+    if (g_ctx_menu) gtk_widget_destroy(g_ctx_menu);
+    GtkWidget* top = gtk_widget_get_toplevel(GTK_WIDGET(wv));
+    g_ctx_menu = build_gtk_menu(g_ctx_items, "ctx",
+                                GTK_IS_WINDOW(top) ? GTK_WINDOW(top) : nullptr, nullptr);
+    // The owner was for the stock items' webview; the registry keeps context
+    // items window-less, so win.menu.* never patches this one popup.
+    for (auto& kv : g_items)
+      if (kv.second.kind == "ctx") kv.second.owner = nullptr;
+    // Attached, it dies with its webview (a closed secondary window): forget
+    // it then, or the next right-click destroys it twice.
+    g_signal_connect(g_ctx_menu, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer) {
+      g_ctx_menu = nullptr;
+      clear_registry_kind("ctx", nullptr);
+    }), nullptr);
+    gtk_menu_attach_to_widget(GTK_MENU(g_ctx_menu), GTK_WIDGET(wv), nullptr);
+    gtk_widget_show_all(g_ctx_menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(g_ctx_menu), event);
+    return TRUE;  // ours is up; WebKit shows nothing
   }
   if (g_ctx_suppress) return TRUE;  // show nothing
   return FALSE;                     // default WebKit menu
@@ -1747,6 +1701,7 @@ static void build_item_line(const std::string& op, const std::string& rest) {
     it.label = tab_field(f, 1);
     it.key = tab_field(f, 2);
     it.flags = tab_field(f, 3);
+    it.icon = tab_field(f, 4);
     if (it.id.empty()) it.id = it.label;
     if (it.label.empty()) it.label = it.id;
     level->push_back(it);
@@ -1756,6 +1711,7 @@ static void build_item_line(const std::string& op, const std::string& rest) {
     sub.submenu = true;
     sub.id = tab_field(f, 0);
     sub.label = tab_field(f, 1);
+    sub.icon = tab_field(f, 2);
     if (sub.label.empty()) sub.label = sub.id;
     level->push_back(sub);
     g_build_stack.push_back(&level->back().children);
@@ -1792,6 +1748,7 @@ static void on_menu_item_activate(GtkMenuItem* item, gpointer data) {
     if (!it->second.enabled) return;
   }
   if (kind == "tray") pipe_write_line("TRAY " + id);
+  else if (kind == "ctx") pipe_write_line("CTX " + id);
   else pipe_write_line("MENU " + id);
 }
 
@@ -1897,8 +1854,77 @@ static void add_stock_items(GtkWidget* menu, const std::string& role, GtkWindow*
   }                                            // unknown role: ignored
 }
 
+// A menu item's optional icon. GTK3 dropped GtkImageMenuItem, so the item's
+// own label is moved into a box behind a GtkImage — the same GtkAccelLabel,
+// so shortcut text still draws, and remembered as "tiny-label" because
+// gtk_menu_item_set_label only finds a label that is the item's direct child
+// (see menu_item_set_text). The png loads at 16px x the widget's scale.
+// 'sf:' (macOS SF Symbols) and unreadable files leave the item label-only.
+// Some desktops' themes hide menu images entirely (gtk-menu-images); that's
+// theirs to decide. Menu bar and right-click (on_context_menu) only:
+// AppIndicator re-exports the tray menu over D-Bus without images from a
+// hand-built item.
+//
+// 'emoji:<glyph>' draws the glyph with Pango at the same size, in colour
+// where the system has a colour emoji font (Noto Color Emoji).
+static cairo_surface_t* emoji_surface(const std::string& glyph, int scale) {
+  int px = 16 * scale;
+  cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
+  cairo_t* cr = cairo_create(surf);
+  PangoLayout* layout = pango_cairo_create_layout(cr);
+  PangoFontDescription* fd = pango_font_description_from_string("emoji");
+  pango_font_description_set_absolute_size(fd, px * 0.8 * PANGO_SCALE);
+  pango_layout_set_font_description(layout, fd);
+  pango_font_description_free(fd);
+  pango_layout_set_text(layout, glyph.c_str(), -1);
+  int w = 0, h = 0;
+  pango_layout_get_pixel_size(layout, &w, &h);
+  cairo_move_to(cr, (px - w) / 2.0, (px - h) / 2.0);
+  pango_cairo_show_layout(cr, layout);
+  g_object_unref(layout);
+  cairo_destroy(cr);
+  cairo_surface_set_device_scale(surf, scale, scale);
+  return surf;
+}
+
+static void menu_item_set_icon(GtkWidget* mi, const std::string& icon) {
+  if (icon.empty() || icon.rfind("sf:", 0) == 0) return;
+  int scale = gtk_widget_get_scale_factor(mi);
+  if (scale < 1) scale = 1;
+  cairo_surface_t* surf = nullptr;
+  if (icon.rfind("emoji:", 0) == 0) {
+    surf = emoji_surface(icon.substr(6), scale);
+  } else {
+    GdkPixbuf* pix = gdk_pixbuf_new_from_file_at_scale(icon.c_str(), -1, 16 * scale,
+                                                       TRUE, nullptr);
+    if (!pix) return;
+    surf = gdk_cairo_surface_create_from_pixbuf(pix, scale, nullptr);
+    g_object_unref(pix);
+  }
+  GtkWidget* img = gtk_image_new_from_surface(surf);
+  cairo_surface_destroy(surf);
+  GtkWidget* label = gtk_bin_get_child(GTK_BIN(mi));
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_box_pack_start(GTK_BOX(box), img, FALSE, FALSE, 0);
+  if (label) {
+    g_object_ref(label);
+    gtk_container_remove(GTK_CONTAINER(mi), label);
+    gtk_box_pack_start(GTK_BOX(box), label, TRUE, TRUE, 0);
+    g_object_unref(label);
+    g_object_set_data(G_OBJECT(mi), "tiny-label", label);
+  }
+  gtk_container_add(GTK_CONTAINER(mi), box);
+}
+
+static void menu_item_set_text(GtkWidget* mi, const char* text) {
+  GtkWidget* label = (GtkWidget*)g_object_get_data(G_OBJECT(mi), "tiny-label");
+  if (label && GTK_IS_LABEL(label)) gtk_label_set_text(GTK_LABEL(label), text);
+  else gtk_menu_item_set_label(GTK_MENU_ITEM(mi), text);
+}
+
 // Build a GtkMenu from item specs; register items under `kind`. `owner` and
-// `accel` are the window this copy belongs to (null for tray / context).
+// `accel` are the window this copy belongs to (null for tray; a context menu
+// has an owner, for its stock items, but no accel group).
 static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
                                  const std::string& kind,
                                  GtkWindow* owner = nullptr,
@@ -1916,6 +1942,7 @@ static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
     }
     if (it.submenu) {
       GtkWidget* mi = gtk_menu_item_new_with_label(it.label.c_str());
+      if (kind != "tray") menu_item_set_icon(mi, it.icon);
       gtk_menu_item_set_submenu(GTK_MENU_ITEM(mi),
                                 build_gtk_menu(it.children, kind, owner, accel));
       gtk_menu_shell_append(GTK_MENU_SHELL(menu), mi);
@@ -1927,6 +1954,7 @@ static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(mi), checked);
     // hide the check box unless checked (plain items look plain)
     if (!checked) g_object_set(mi, "draw-as-radio", FALSE, NULL);
+    if (kind != "tray") menu_item_set_icon(mi, it.icon);
     gtk_widget_set_sensitive(mi, !disabled);
     if (!it.key.empty() && accel && kind == "menu") {
       std::string key;
@@ -2025,7 +2053,7 @@ static void menu_update(const std::string& rest, const std::string& winid = "") 
     if (only && reg.owner != only) continue;
     if (!label.empty()) {
       reg.label = label;
-      if (reg.widget) gtk_menu_item_set_label(GTK_MENU_ITEM(reg.widget), label.c_str());
+      if (reg.widget) menu_item_set_text(reg.widget, label.c_str());
     }
     if (!checked.empty()) {
       reg.checked = checked == "1";
@@ -2042,7 +2070,7 @@ static void menu_update(const std::string& rest, const std::string& winid = "") 
       if (reg.widget) gtk_widget_set_sensitive(reg.widget, reg.enabled);
     }
   }
-  // context-menu items live in the stored spec, not widgets
+  // the stored context-menu spec too: the next right-click builds from it
   std::function<void(std::vector<MenuItemSpec>&)> patch =
     [&](std::vector<MenuItemSpec>& items) {
       for (auto& mi : items) {
@@ -2912,6 +2940,23 @@ G_GNUC_END_IGNORE_DEPRECATIONS
     auto range = g_items.equal_range(id);
     for (auto it = range.first; it != range.second && !found; ++it)
       if (!only || it->second.owner == only) found = &it->second;
+    // a context item before its first right-click: only the spec has it
+    RegItem spec;
+    std::function<const MenuItemSpec*(const std::vector<MenuItemSpec>&)> find =
+      [&](const std::vector<MenuItemSpec>& items) -> const MenuItemSpec* {
+        for (const auto& mi : items) {
+          if (mi.submenu) { if (auto c = find(mi.children)) return c; continue; }
+          if (!mi.separator && mi.role.empty() && mi.id == id) return &mi;
+        }
+        return nullptr;
+      };
+    if (!found && !only && g_ctx_custom)
+      if (const MenuItemSpec* mi = find(g_ctx_items)) {
+        spec.label = mi->label;
+        spec.checked = mi->flags.find('c') != std::string::npos;
+        spec.enabled = mi->flags.find('d') == std::string::npos;
+        found = &spec;
+      }
     if (!found) { send_got(qid, "{\"exists\":false}"); return; }
     send_got(qid, "{\"exists\":true,\"label\":" + json_escape(found->label) +
                   ",\"checked\":" + (found->checked ? "true" : "false") +
@@ -7335,6 +7380,7 @@ static void handle_line(const std::string& line) {
   if (line == "CTXCLEAR") {
     g_ctx_custom = false;
     g_ctx_items.clear();
+    if (g_ctx_menu) gtk_widget_destroy(g_ctx_menu);  // its items leave g_items
     return;
   }
   if (line.rfind("CTXSUPPRESS", 0) == 0) {
