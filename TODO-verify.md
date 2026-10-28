@@ -8,6 +8,44 @@ Tick a box only after seeing it with your own eyes on that OS — a
 fire-and-forget wire op that reaches a shell which ignores it looks exactly
 like one that was never implemented.
 
+## Menu item icons — `icon` on `TinyMenuItem` (2026-10-29)
+
+`ITEM` gained a 5th field and `SUB` a 3rd: the icon, a png path (bridge.js
+resolves project-relative ones against cwd) or `sf:<name>`. Same builders
+for menu bar / right-click / tray on each OS, so one path per OS covers
+all three menus. Kitchen sink: the right-click menu (Overview / GPU /
+Notification / Print) and Tools ▸ Menus ▸ "Add a Demo menu" (Say hello,
+A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
+
+- [ ] **macOS** — compiled, and a dev run with sf:, relative png, wide png,
+  missing file, unknown symbol and an icon'd submenu: every call succeeded,
+  `menu.update` relabel + `menu.get` read back right. macOS 27 HIDES menu
+  item images unless the item sets `preferredImageVisibility = .visible`
+  (new in the 27 SDK; `show_menu_item_image` sets it by key). Without it
+  nothing showed, even a plain AppKit menu built for a macOS 14 target.
+  SEEN on 27.0.1: right-click menu with sf:bell + a png, both drawn.
+  Kitchen sink's icons confirmed by hand on macOS 27 (2026-10-29).
+  Still to look at: the menu bar and tray menus; on macOS 14/15/26 the
+  icons show with no opt-in (selector absent). SF Symbols follow
+  the text color (and turn white on highlight), pngs at 16pt keep their
+  aspect, a missing file / unknown symbol is a plain label, ⌘J still
+  shows beside an icon'd item, checkmark + icon on one item looks sane.
+- [ ] **Windows** — never compiled. `menu_item_bitmap` (GDI+ → 32bpp
+  PARGB DIB at SM_CYSMICON, cached per path) + `MIIM_BITMAP`. Check:
+  it builds; alpha edges are clean (no black fringe = premultiply right);
+  icons in menu bar, right-click and tray; a submenu parent's icon
+  (set by position); `sf:` is a plain label; a CHECKED item with an icon
+  (Win32 draws the bitmap in the check column — tick or framed icon?);
+  `menu.update` relabel KEEPS the icon (switched ModifyMenuW →
+  SetMenuItemInfoW MIIM_STRING for that); 150%/200% scaling looks sharp.
+- [ ] **Linux** — never compiled. Menu bar only: label moved into a box
+  behind a GtkImage (`menu_item_set_icon`). Check: it builds (CI 22.04
+  too); icons in the menu bar at 1x and 2x scale; Ctrl+<key> shortcut
+  text still shows on an icon'd item AND the accelerator still fires;
+  `menu.update` relabel works on an icon'd item (`menu_item_set_text`);
+  the checkbox column + icon look acceptable; right-click and tray menus
+  unchanged (labels only, by design — WebKitContextMenu / AppIndicator).
+
 ## Backend `app.dialog` (2026-10-25)
 
 All seven `tiny.dialog` methods are available from the backend, using the

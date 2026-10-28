@@ -30,8 +30,8 @@
 //                         RELOAD                     re-read the HTML file and
 //                                                    re-render (dev hot-reload)
 //                         MENUBEGIN / MENU <title> /
-//                         ITEM <id>\t<label>\t<key>\t<flags c|d> /
-//                         SUB <id>\t<label> … SUBEND /
+//                         ITEM <id>\t<label>\t<key>\t<flags c|d>\t<icon> /
+//                         SUB <id>\t<label>\t<icon> … SUBEND /
 //                         SEP / ROLEITEM <role> /
 //                         MENUROLE <role>[\tnostd] /
 //                         MENUEND                    declare custom menu bar
@@ -813,6 +813,7 @@ static void do_dialog(webview_t w, void *arg) {
 
 struct MenuItemSpec {
   std::string id, label, key;
+  std::string icon;       // ITEM 5th / SUB 3rd field: png path or sf:<name>
   bool separator = false;
   bool checked = false;   // ITEM flags field: 'c'
   bool disabled = false;  // ITEM flags field: 'd'
@@ -975,6 +976,39 @@ static NSEventModifierFlags split_accel(const std::string &spec, std::string &ke
   return mask;
 }
 
+// A menu item's optional icon: sf:<name> is an SF Symbol (template, so it
+// follows the menu's text color and highlight); anything else is a png path,
+// scaled to 16pt tall keeping its aspect ratio and drawn in its own colors.
+// nil (bad path, unknown symbol, pre-11 macOS) means a label-only item.
+static NSImage *menu_item_image(const std::string &icon) {
+  if (icon.empty()) return nil;
+  if (icon.rfind("sf:", 0) == 0) {
+    if (@available(macOS 11.0, *)) {
+      NSImage *img = [NSImage imageWithSystemSymbolName:ns(icon.substr(3))
+                               accessibilityDescription:nil];
+      if (img) [img setTemplate:YES];
+      return img;
+    }
+    return nil;
+  }
+  NSImage *img = [[[NSImage alloc] initWithContentsOfFile:ns(icon)] autorelease];
+  if (!img) return nil;
+  NSSize orig = img.size;
+  CGFloat h = 16.0;
+  CGFloat aspect = orig.height > 0 ? (orig.width / orig.height) : 1.0;
+  [img setSize:NSMakeSize(h * aspect, h)];
+  return img;
+}
+
+// macOS 27 hides menu item images unless the item opts in with
+// preferredImageVisibility = .visible (1) — an icon the app asked for is
+// meant to be seen. Set by key so the launcher still builds on older SDKs;
+// older systems lack the selector and always showed images anyway.
+static void show_menu_item_image(NSMenuItem *mi) {
+  if ([mi respondsToSelector:NSSelectorFromString(@"setPreferredImageVisibility:")])
+    [mi setValue:@1 forKey:@"preferredImageVisibility"];
+}
+
 // Recursively fill `menu` from specs. autoenablesItems=NO so `disabled`
 // sticks (AppKit would otherwise re-enable anything with a live target).
 // Stock editing items, by role. Target nil: they go to the first responder
@@ -1028,6 +1062,8 @@ static void build_menu_into(NSMenu *menu, const std::vector<MenuItemSpec> &items
     mi.state = it.checked ? NSControlStateValueOn : NSControlStateValueOff;
     mi.enabled = it.disabled ? NO : YES;
     mi.tag = it.disabled ? kTinyItemDisabled : 0;
+    if ((mi.image = menu_item_image(it.icon)))
+      show_menu_item_image(mi);
     if (!it.submenu.empty()) {
       NSMenu *sub = [[[NSMenu alloc] initWithTitle:ns(it.label)] autorelease];
       build_menu_into(sub, it.submenu, action, registry);
@@ -9038,6 +9074,7 @@ static void sock_read_loop() {
           it.checked = p[3].find('c') != std::string::npos;
           it.disabled = p[3].find('d') != std::string::npos;
         }
+        it.icon = p.size() > 4 ? p[4] : "";
         build_stack.back().push_back(it);
       } else if ((in_menu_block || in_tray_block || in_ctx_block) && line == "SEP") {
         MenuItemSpec sep;
@@ -9045,11 +9082,12 @@ static void sock_read_loop() {
         build_stack.back().push_back(sep);
       } else if ((in_menu_block || in_tray_block || in_ctx_block) &&
                  line.rfind("SUB ", 0) == 0) {
-        // SUB <id>\t<label>: following ITEMs nest until SUBEND.
+        // SUB <id>\t<label>[\t<icon>]: following ITEMs nest until SUBEND.
         std::vector<std::string> p = split_tabs(line.substr(4));
         MenuItemSpec parent;
         parent.id = p.size() > 0 ? p[0] : "";
         parent.label = p.size() > 1 ? p[1] : parent.id;
+        parent.icon = p.size() > 2 ? p[2] : "";
         sub_parents.push_back(parent);
         build_stack.push_back({});
       } else if ((in_menu_block || in_tray_block || in_ctx_block) &&

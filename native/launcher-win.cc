@@ -486,6 +486,7 @@ static bool png_encoder_clsid() {
 
 struct MenuItemSpec {
   std::string id, label, key;
+  std::string icon;  // ITEM 5th / SUB 3rd field: png path ('sf:' is macOS-only)
   std::string role;  // ROLEITEM: a stock editing item (copy, standard, …)
   bool separator = false;
   bool checked = false;
@@ -635,6 +636,60 @@ static void add_stock_items(HMENU menu, const std::string &role,
   }                                            // unknown role: ignored
 }
 
+// A menu item's optional icon: the png scaled to small-icon height (aspect
+// kept) into a 32bpp premultiplied-alpha DIB, which themed Win32 menus draw
+// with its transparency. Menus don't own their hbmpItem, so bitmaps are
+// cached by path for the process's life — an app has a handful, and menus
+// are rebuilt on every set. 'sf:' (macOS SF Symbols) and unreadable files
+// give nullptr: the item shows its label alone.
+static std::map<std::string, HBITMAP> g_menu_bitmaps;
+static HBITMAP menu_item_bitmap(const std::string &icon) {
+  if (icon.empty() || icon.rfind("sf:", 0) == 0)
+    return nullptr;
+  auto hit = g_menu_bitmaps.find(icon);
+  if (hit != g_menu_bitmaps.end())
+    return hit->second;
+  HBITMAP hbm = nullptr;
+  if (ensure_gdiplus()) {
+    Gdiplus::Bitmap src(widen(icon).c_str());
+    if (src.GetLastStatus() == Gdiplus::Ok && src.GetHeight() > 0) {
+      int h = GetSystemMetrics(SM_CYSMICON);
+      int w = (int)((double)h * src.GetWidth() / src.GetHeight() + 0.5);
+      if (w < 1) w = 1;
+      BITMAPINFO bi = {};
+      bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+      bi.bmiHeader.biWidth = w;
+      bi.bmiHeader.biHeight = -h;  // top-down, matching GDI+'s row order
+      bi.bmiHeader.biPlanes = 1;
+      bi.bmiHeader.biBitCount = 32;
+      bi.bmiHeader.biCompression = BI_RGB;
+      void *bits = nullptr;
+      hbm = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+      if (hbm && bits) {
+        // Zero-filled by CreateDIBSection: transparent until drawn on.
+        Gdiplus::Bitmap dst(w, h, w * 4, PixelFormat32bppPARGB, (BYTE *)bits);
+        Gdiplus::Graphics gfx(&dst);
+        gfx.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        gfx.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+        gfx.DrawImage(&src, 0, 0, w, h);
+      }
+    }
+  }
+  g_menu_bitmaps[icon] = hbm;  // a miss is cached too: one failed load
+  return hbm;
+}
+
+static void set_item_bitmap(HMENU menu, UINT item, BOOL by_pos,
+                            const std::string &icon) {
+  HBITMAP hbm = menu_item_bitmap(icon);
+  if (!hbm)
+    return;
+  MENUITEMINFOW mii = {sizeof(mii)};
+  mii.fMask = MIIM_BITMAP;
+  mii.hbmpItem = hbm;
+  SetMenuItemInfoW(menu, item, by_pos, &mii);
+}
+
 static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
                              const std::string &kind, HWND owner) {
   for (const auto &it : items) {
@@ -652,6 +707,7 @@ static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
       build_menu_items(sub, it.submenu, kind, owner);
       AppendMenuW(menu, MF_POPUP, (UINT_PTR)sub,
                   widen(it.label.empty() ? it.id : it.label).c_str());
+      set_item_bitmap(menu, (UINT)(GetMenuItemCount(menu) - 1), TRUE, it.icon);
       continue;
     }
     UINT cmd = g_next_cmd++;
@@ -672,6 +728,7 @@ static void build_menu_items(HMENU menu, const std::vector<MenuItemSpec> &items,
       flags |= MF_GRAYED;
     AppendMenuW(menu, flags, cmd,
                 widen(reg->label + display_key(it.key)).c_str());
+    set_item_bitmap(menu, cmd, FALSE, it.icon);
   }
 }
 
@@ -851,8 +908,12 @@ static void do_menu_update(webview_t, void *arg) {
       continue;
     if (!req->label.empty()) {
       reg->label = req->label;
-      ModifyMenuW(reg->parent, reg->cmd, MF_BYCOMMAND | MF_STRING, reg->cmd,
-                  widen(reg->label).c_str());
+      // MIIM_STRING alone: ModifyMenu would replace the whole item, icon too.
+      std::wstring text = widen(reg->label);
+      MENUITEMINFOW mii = {sizeof(mii)};
+      mii.fMask = MIIM_STRING;
+      mii.dwTypeData = text.data();
+      SetMenuItemInfoW(reg->parent, reg->cmd, FALSE, &mii);
     }
     if (!req->checked.empty()) {
       reg->checked = req->checked == "1";
@@ -8546,6 +8607,7 @@ static void pipe_read_loop() {
           it.checked = p[3].find('c') != std::string::npos;
           it.disabled = p[3].find('d') != std::string::npos;
         }
+        it.icon = p.size() > 4 ? p[4] : "";
         build_stack.back().push_back(it);
       } else if ((in_menu_block || in_tray_block || in_ctx_block) &&
                  line == "SEP") {
@@ -8564,6 +8626,7 @@ static void pipe_read_loop() {
         MenuItemSpec parent;
         parent.id = p.size() > 0 ? p[0] : "";
         parent.label = p.size() > 1 ? p[1] : parent.id;
+        parent.icon = p.size() > 2 ? p[2] : "";
         sub_parents.push_back(parent);
         build_stack.push_back({});
       } else if ((in_menu_block || in_tray_block || in_ctx_block) &&

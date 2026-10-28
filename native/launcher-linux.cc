@@ -110,6 +110,7 @@ struct MenuItemSpec {
   bool separator = false;
   bool submenu = false;
   std::string id, label, key, flags;
+  std::string icon;  // ITEM 5th / SUB 3rd field: png path ('sf:' is macOS-only)
   std::string role;  // ROLEITEM: a stock editing item (copy, standard, …)
   std::vector<MenuItemSpec> children;
 };
@@ -1747,6 +1748,7 @@ static void build_item_line(const std::string& op, const std::string& rest) {
     it.label = tab_field(f, 1);
     it.key = tab_field(f, 2);
     it.flags = tab_field(f, 3);
+    it.icon = tab_field(f, 4);
     if (it.id.empty()) it.id = it.label;
     if (it.label.empty()) it.label = it.id;
     level->push_back(it);
@@ -1756,6 +1758,7 @@ static void build_item_line(const std::string& op, const std::string& rest) {
     sub.submenu = true;
     sub.id = tab_field(f, 0);
     sub.label = tab_field(f, 1);
+    sub.icon = tab_field(f, 2);
     if (sub.label.empty()) sub.label = sub.id;
     level->push_back(sub);
     g_build_stack.push_back(&level->back().children);
@@ -1897,6 +1900,46 @@ static void add_stock_items(GtkWidget* menu, const std::string& role, GtkWindow*
   }                                            // unknown role: ignored
 }
 
+// A menu item's optional icon. GTK3 dropped GtkImageMenuItem, so the item's
+// own label is moved into a box behind a GtkImage — the same GtkAccelLabel,
+// so shortcut text still draws, and remembered as "tiny-label" because
+// gtk_menu_item_set_label only finds a label that is the item's direct child
+// (see menu_item_set_text). The png loads at 16px x the widget's scale.
+// 'sf:' (macOS SF Symbols) and unreadable files leave the item label-only.
+// Some desktops' themes hide menu images entirely (gtk-menu-images); that's
+// theirs to decide. Menu bar only: AppIndicator re-exports the tray menu over
+// D-Bus without images from a hand-built item, and the right-click menu is a
+// WebKitContextMenu (on_context_menu), whose items take no image at all.
+static void menu_item_set_icon(GtkWidget* mi, const std::string& icon) {
+  if (icon.empty() || icon.rfind("sf:", 0) == 0) return;
+  int scale = gtk_widget_get_scale_factor(mi);
+  if (scale < 1) scale = 1;
+  GdkPixbuf* pix = gdk_pixbuf_new_from_file_at_scale(icon.c_str(), -1, 16 * scale,
+                                                     TRUE, nullptr);
+  if (!pix) return;
+  cairo_surface_t* surf = gdk_cairo_surface_create_from_pixbuf(pix, scale, nullptr);
+  g_object_unref(pix);
+  GtkWidget* img = gtk_image_new_from_surface(surf);
+  cairo_surface_destroy(surf);
+  GtkWidget* label = gtk_bin_get_child(GTK_BIN(mi));
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_box_pack_start(GTK_BOX(box), img, FALSE, FALSE, 0);
+  if (label) {
+    g_object_ref(label);
+    gtk_container_remove(GTK_CONTAINER(mi), label);
+    gtk_box_pack_start(GTK_BOX(box), label, TRUE, TRUE, 0);
+    g_object_unref(label);
+    g_object_set_data(G_OBJECT(mi), "tiny-label", label);
+  }
+  gtk_container_add(GTK_CONTAINER(mi), box);
+}
+
+static void menu_item_set_text(GtkWidget* mi, const char* text) {
+  GtkWidget* label = (GtkWidget*)g_object_get_data(G_OBJECT(mi), "tiny-label");
+  if (label && GTK_IS_LABEL(label)) gtk_label_set_text(GTK_LABEL(label), text);
+  else gtk_menu_item_set_label(GTK_MENU_ITEM(mi), text);
+}
+
 // Build a GtkMenu from item specs; register items under `kind`. `owner` and
 // `accel` are the window this copy belongs to (null for tray / context).
 static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
@@ -1916,6 +1959,7 @@ static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
     }
     if (it.submenu) {
       GtkWidget* mi = gtk_menu_item_new_with_label(it.label.c_str());
+      if (kind != "tray") menu_item_set_icon(mi, it.icon);
       gtk_menu_item_set_submenu(GTK_MENU_ITEM(mi),
                                 build_gtk_menu(it.children, kind, owner, accel));
       gtk_menu_shell_append(GTK_MENU_SHELL(menu), mi);
@@ -1927,6 +1971,7 @@ static GtkWidget* build_gtk_menu(const std::vector<MenuItemSpec>& items,
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(mi), checked);
     // hide the check box unless checked (plain items look plain)
     if (!checked) g_object_set(mi, "draw-as-radio", FALSE, NULL);
+    if (kind != "tray") menu_item_set_icon(mi, it.icon);
     gtk_widget_set_sensitive(mi, !disabled);
     if (!it.key.empty() && accel && kind == "menu") {
       std::string key;
@@ -2025,7 +2070,7 @@ static void menu_update(const std::string& rest, const std::string& winid = "") 
     if (only && reg.owner != only) continue;
     if (!label.empty()) {
       reg.label = label;
-      if (reg.widget) gtk_menu_item_set_label(GTK_MENU_ITEM(reg.widget), label.c_str());
+      if (reg.widget) menu_item_set_text(reg.widget, label.c_str());
     }
     if (!checked.empty()) {
       reg.checked = checked == "1";

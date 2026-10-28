@@ -1905,20 +1905,31 @@ export async function createApp({ html, htmlPath, url = null, title = 'tinyjs', 
   // launcher draws them: macOS as real responder-chain items, Linux through
   // WebKitGTK's editing commands, Windows by replaying the shortcut into
   // WebView2. The tray skips them (nothing to edit there).
+  //
+  // icon? is optional and decorative: a png path (absolute or project-
+  // relative) or 'sf:<name>' for an SF Symbol (macOS only). A launcher that
+  // can't draw it (sf: off macOS, a GTK theme hiding menu images) shows the
+  // label alone, so apps can set it everywhere.
   const STOCK_ROLES = new Set(['standard', 'undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
+  const menuIcon = (icon) => {
+    icon = icon ? String(icon) : '';
+    if (icon && !isAbs(icon) && !icon.startsWith('sf:')) icon = tjs.cwd + '/' + icon;
+    return one(icon);
+  };
 
   function sendItems(items) {
     for (const it of items ?? []) {
       if (it.role) { if (STOCK_ROLES.has(it.role)) send('ROLEITEM ' + it.role); continue; }
       if (it.separator) { send('SEP'); continue; }
       if (it.submenu) {
-        send('SUB ' + [one(it.id), one(it.label ?? it.id)].join('\t'));
+        send('SUB ' + [one(it.id), one(it.label ?? it.id), menuIcon(it.icon)].join('\t'));
         sendItems(it.submenu);
         send('SUBEND');
         continue;
       }
       const flags = (it.checked ? 'c' : '') + (it.enabled === false ? 'd' : '');
-      send('ITEM ' + [one(it.id), one(it.label ?? it.id), one(it.key ?? ''), flags].join('\t'));
+      send('ITEM ' + [one(it.id), one(it.label ?? it.id), one(it.key ?? ''), flags,
+                      menuIcon(it.icon)].join('\t'));
     }
   }
 

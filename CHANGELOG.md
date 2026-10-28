@@ -4,6 +4,16 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Menu item icons.** Menu bar, right-click and tray items take an
+  optional `icon`: a png path (absolute or project-relative) or
+  `'sf:<name>'` for an SF Symbol on macOS. macOS and Windows show them in
+  every menu; Linux in the menu bar only (WebKitGTK's right-click menu and
+  AppIndicator tray menus carry no images). An icon that can't be drawn
+  leaves the item label-only. On Windows, relabelling an item with
+  `menu.update` now keeps the rest of the item intact.
+
 ## 0.67.1 — 2026-10-28
 
 - **Linux X11: backend dialogs from a tray action now come up in front
