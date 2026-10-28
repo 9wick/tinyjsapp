@@ -38,7 +38,9 @@ headless contract checks and the cross-platform native fixture.
   and another save cancellation. Each completed action reported no app
   windows. macOS version not recorded.
 - [x] **macOS Apple Silicon, dev, real tray** — user confirmed the same
-  tray/focus checks also worked in dev.
+  tray/focus checks also worked in dev. Re-checked by the maintainer after
+  the merge (v0.67.0): a tray-only app with no main window, dialogs opened
+  from the tray menu, worked as expected. *(2026-10-28, macOS 27.0.1.)*
 - [x] **macOS, built .app, save side effect** — user checked the accepted
   save path with `ls`; it reported no such file. The save panel returned
   the selected path without creating the file.
