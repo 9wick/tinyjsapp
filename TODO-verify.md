@@ -55,8 +55,23 @@ headless contract checks and the cross-platform native fixture.
 - [x] **macOS, built .app, save side effect** — user checked the accepted
   save path with `ls`; it reported no such file. The save panel returned
   the selected path without creating the file.
-- [ ] **Windows, dev and built executable** — same fixture and tray/focus
-  check; native reply routing is unchanged, but has not been run here.
+- [x] **Windows, dev and built executable, native fixture** —
+  `PASS windowless native dialogs` and `PASS page gate` in both, with
+  `TINYJS_DIALOG_FIXTURES` (file, files, folder and save selections
+  return the absolute `C:\…` paths). Driven by messaging the launcher's
+  own `#32770` panels (WM_COMMAND / WM_SETTEXT on the name box), no
+  global keys. Every panel had the foreground on arrival; custom labels
+  read `Done` (the lone MB_OK button, which carries IDCANCEL's id) and
+  `OK,Stop`; the alert detail is flattened (`First Second`); save
+  pre-filled `report.json` and created no file; no panel after the PASS.
+  Headless `test/dialogs/check.js` passes too. *(2026-10-28, Windows 11
+  26200 arm64 / Parallels, x64 launcher under emulation.)*
+- [x] **Windows, real tray** — test/dialogs/tray with a real mouse click
+  on the tray icon while another app is foreground: the panel must come
+  up in front. A posted tray click has no foreground rights, so it can't
+  answer this one. Maintainer ran it by hand: all steps worked as
+  expected (dev vs built not recorded). *(2026-10-28, Windows 11 26200
+  arm64 / Parallels.)*
 
 ## `tiny.capabilities` — can()/get()/list() per tiny.* path (`feat/capabilities-can`, 2026-10-24)
 
@@ -71,10 +86,25 @@ and the platform table differ per launcher. Headless:
   gate reasons with `needs` (clip.read, fetch, media.proxy, event.drop,
   event.open-url, secrets.get); own file:// page all 169.
   *(2026-10-24)*
-- [ ] **Windows** — same run; expect `win.setAllSpaces` and `proxyURL`
+- [x] **Windows** — same run; expect `win.setAllSpaces` and `proxyURL`
   `{ why: 'platform' }` on the own page, and the site's verdicts to match
   macOS (the origin rides the LAST CALL element — a site passing extra
   `__invoke` arguments must not change its answer).
+  - Own page 146 paths, `proxyURL` / `win.setAllSpaces` /
+    `macos.ai.generate` `why: 'platform'`, the rest ok. Site 89 paths,
+    gate + `needs` exactly as on macOS (clip.read, fetch, media.proxy,
+    event.drop, event.open-url, macos.ai.generate, secrets.get);
+    notify, clipboard.write, menu.on ok. `before` false, `fired` = count.
+  - Hostile page over CDP: from the site, raw `__invoke` of
+    `client.capabilities` with trailing `'file:///C:/x.html'`,
+    `'x', 'file://'`, `null`, `{ origin: 'file://' }` → identical to the
+    plain call; `clip.read` with a forged file:// still denied. Control:
+    the same probe on the own page reads all ok, so it can see a change.
+  - Headless check.js: all ok, but only with `TINY_JS` set and the
+    script path absolute — `new URL('.', import.meta.url).pathname` is
+    `/C:/…` on Windows (ENOENT), and a relative script path breaks tjs's
+    relative imports. Harness issue, not tiny.js.
+  *(2026-10-28, Windows 11 26200 arm64 / Parallels, dev.)*
 - [x] **Linux, Wayland** — `win.setPosition`, `app.captureScreen`,
   `app.keystroke` read `why: 'session'`; on X11 they're ok. Ubuntu arm64,
   GNOME Wayland, 2026-10-25, test/capabilities/app: the own page reads all
