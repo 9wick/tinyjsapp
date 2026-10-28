@@ -25,9 +25,20 @@ headless contract checks and the cross-platform native fixture.
   processes while the backend panel is open. The named page opened after
   the panels is denied `dialog.confirm` while the backend has used it
   under the same manifest. *(2026-10-25, GTK 3.24.49, WebKitGTK 2.50.4)*
-- [ ] **Linux desktop, X11/Wayland** — focus/activation from a real tray
+- [x] **Linux desktop, X11/Wayland** — focus/activation from a real tray
   action with a compositor, including accessory mode. Xvfb focus was set
   by the test driver and does not verify desktop focus-stealing rules.
+  *(2026-10-28, Ubuntu 24.04 arm64, GNOME 46, AppIndicator tray,
+  test/dialogs/tray, user at the desktop.)* Wayland: panels came up in
+  front and took keys; confirm → `true`, save cancel → `null`, no app
+  windows. X11 (`GDK_BACKEND=x11`) FAILED on v0.67.0: Mutter's
+  focus-stealing prevention showed "is ready" and placed the panel beside
+  the focused half-screen window; one confirm was left stranded. Fixed by
+  presenting the panels with a server timestamp (`present_dialog_x11` in
+  launcher-linux.cc); re-run with an app in front: panels raised and took
+  keys, confirm cancel → `false`, save cancel → `null`, no app windows. An
+  accepted desktop save wasn't repeated here — the path/no-file result is
+  the Xvfb box above.
 - [x] **macOS Apple Silicon, dev and built .app, native fixture** — user
   reported `PASS windowless native dialogs` and `PASS page gate` in both
   runs, including the optional file/folder selections. Dev also confirmed

@@ -2222,6 +2222,36 @@ static std::string unescape_lines(const std::string& s) {
 
 static std::string downloads_dir();
 
+// gtk_dialog_run only maps the panel — no timestamp — so on X11 Mutter's
+// focus-stealing prevention refuses it whenever another app has had input
+// since ours did: a "<app> is ready" notice, the panel placed beside the
+// focused window rather than over it. A windowless app (tray menu, hotkey)
+// hits that every time — seen on GNOME 46 under XWayland from a tray action.
+// present_now's server timestamp is the same cure as #89. Wayland is left
+// alone: it already raised these panels, and an untokened present there is
+// what earns the notice.
+static void present_dialog_x11(GtkWindow* win) {
+#ifdef GDK_WINDOWING_X11
+  if (GDK_IS_X11_DISPLAY(gtk_widget_get_display(GTK_WIDGET(win))))
+    present_now(win);
+#endif
+}
+
+// GtkFileChooserNative keeps its fallback GtkFileChooserDialog private (and
+// with a portal there's no window of ours at all), so present it from an idle
+// once gtk_native_dialog_run has shown it.
+static gboolean present_file_chooser_x11(gpointer) {
+  GList* tops = gtk_window_list_toplevels();
+  for (GList* l = tops; l; l = l->next) {
+    GtkWindow* w = GTK_WINDOW(l->data);
+    if (GTK_IS_FILE_CHOOSER_DIALOG(w) && gtk_widget_get_visible(GTK_WIDGET(w)) &&
+        !gtk_window_is_active(w))
+      present_dialog_x11(w);
+  }
+  g_list_free(tops);
+  return G_SOURCE_REMOVE;
+}
+
 static void do_dialog(const std::string& callid, const std::string& body) {
   auto f = split_tabs(body);
   std::string op = tab_field(f, 0);
@@ -2295,6 +2325,7 @@ static void do_dialog(const std::string& callid, const std::string& body) {
         g_object_unref(filt);
       }
     }
+    g_idle_add(present_file_chooser_x11, nullptr);
     gint res = gtk_native_dialog_run(GTK_NATIVE_DIALOG(dlg));
     if (res != GTK_RESPONSE_ACCEPT) {
       reply_to_call(callid, 0, "null");
@@ -2354,6 +2385,7 @@ static void do_dialog(const std::string& callid, const std::string& body) {
     }
     gtk_dialog_add_button(GTK_DIALOG(dlg), ok.c_str(), GTK_RESPONSE_OK);
     gtk_dialog_set_default_response(GTK_DIALOG(dlg), GTK_RESPONSE_OK);
+    present_dialog_x11(GTK_WINDOW(dlg));
     gint res = gtk_dialog_run(GTK_DIALOG(dlg));
     gtk_widget_destroy(dlg);
     if (op == "alert") reply_to_call(callid, 0, "true");
@@ -2381,6 +2413,7 @@ static void do_dialog(const std::string& callid, const std::string& body) {
     gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(content), entry, FALSE, FALSE, 0);
     gtk_widget_show_all(dlg);
+    present_dialog_x11(GTK_WINDOW(dlg));
     gint res = gtk_dialog_run(GTK_DIALOG(dlg));
     std::string text = gtk_entry_get_text(GTK_ENTRY(entry));
     gtk_widget_destroy(dlg);

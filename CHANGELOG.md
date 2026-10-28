@@ -4,6 +4,16 @@ All notable changes to tinyjs. Versions are git tags (`vX.Y.Z`); a tag push
 builds and publishes the release. The rendered version of this file lives at
 https://tinyjs.app/changelog.
 
+## Unreleased
+
+- **Linux X11: backend dialogs from a tray action now come up in front
+  (#95).** A windowless app's `app.dialog` panel was mapped without a
+  timestamp, so GNOME's focus-stealing prevention showed an "is ready"
+  notice and placed the panel beside the focused window instead of over it.
+  The launcher now presents confirm/alert/prompt panels and the file chooser
+  with an X server timestamp, as it already does for windows (#89). Wayland
+  is unchanged; it already raised them.
+
 ## 0.67.0 — 2026-10-28
 
 - **Backend native dialogs: `app.dialog` (#95).** All seven `tiny.dialog` methods
