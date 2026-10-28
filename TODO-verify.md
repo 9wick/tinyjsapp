@@ -69,8 +69,11 @@ A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
   text), checked 📁 (✓ in the check column), 👍🏽, 🏳️‍🌈 (ZWJ), ★ in text
   colour, submenu parent 🧮. A disabled item's icon is NOT greyed (GTK
   leaves images on insensitive items alone — pngs too), unlike Windows.
-- [ ] **`emoji:` on Linux, still to see** — 22.04 CI build, `GDK_SCALE=2`
-  sharpness, fallback without a colour emoji font.
+  `GDK_SCALE=2` (same day, bar + right-click): 👋 is 28×27 device px vs
+  14×14 at 1x, its 2×2 blocks mostly non-uniform — drawn at 2x, not
+  upscaled; sharp, about the size of a 32px png beside it.
+- [ ] **`emoji:` on Linux, still to see** — 22.04 CI build, fallback
+  without a colour emoji font.
 - [x] **Linux** — menu bar + right-click: label moved into a box behind a GtkImage
   (`menu_item_set_icon`). *(2026-10-29, arm64 Ubuntu 24.04 / GTK 3.24.41,
   dev, XWayland via `GDK_BACKEND=x11`; popups photographed with xwd, keys
@@ -104,8 +107,13 @@ A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
   stock Copy does the same (WebKit's can-execute answer); WebKit's own
   stock Copy used to grey out there. Stock labels are ours now
   (untranslated, as the menu bar's already were).
-- [ ] **Linux right-click, still to see** — a real mouse right-click (menu
-  at the pointer, not just Shift+F10); a SECONDARY window's right-click
+- [x] **Linux right-click, real mouse** (same day; XTest button events from
+  a 15-line C tool, since this VM has no xdotool) — right-click at root
+  (897,595) opened the menu window at (887,585), i.e. the visible menu at
+  the pointer after GTK's 10px shadow margin; at `GDK_SCALE=2` likewise
+  (12px margin). A left-click on an item sent its id to `menu.onContext`
+  and closed the menu.
+- [ ] **Linux right-click, still to see** — a SECONDARY window's right-click
   (stock items act on that window's webview); native Wayland (popup at
   pointer from a key event); kitchen-sink's emoji icons.
 
