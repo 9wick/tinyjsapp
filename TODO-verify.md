@@ -38,6 +38,18 @@ A submenu) carry icons — sf: on macOS, emoji drawn to png elsewhere.
   (Win32 draws the bitmap in the check column — tick or framed icon?);
   `menu.update` relabel KEEPS the icon (switched ModifyMenuW →
   SetMenuItemInfoW MIIM_STRING for that); 150%/200% scaling looks sharp.
+  *2026-10-29, Windows 11 26200 arm64, 200%, dev:* builds clean. SEEN in
+  the tray + right-click menus (screenshots), menu bar by the maintainer
+  and by reading back each item's `hbmpItem`: relative, absolute, a 4:1
+  png (aspect kept, it spills into the left gutter but not onto the
+  label), half-alpha + anti-aliased edges blend clean, no fringe;
+  disabled greys its icon; missing file / `sf:` / none are label-only and
+  aligned; submenu parent icons show in the menu bar AND the context menu;
+  relabel kept the same bitmap handle; clicks still arrive (`TRAY abs`);
+  32px icons crisp at 200%. **FAILS: a CHECKED item with an icon shows
+  NO tick** — the bitmap takes the check column, no frame either
+  (readback: `MFS_CHECKED` + bitmap). Needs a decision (e.g. drop the
+  bitmap while checked, or draw the tick into it). 150% not tried.
 - [ ] **Linux** — never compiled. Menu bar only: label moved into a box
   behind a GtkImage (`menu_item_set_icon`). Check: it builds (CI 22.04
   too); icons in the menu bar at 1x and 2x scale; Ctrl+<key> shortcut
